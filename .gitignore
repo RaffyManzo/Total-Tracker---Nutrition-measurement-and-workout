@@ -1,0 +1,37 @@
+# Flutter and Dart
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+
+# Android local files and signing material
+android/local.properties
+*.jks
+*.keystore
+
+# iOS generated/local files
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Pods/
+ios/.symlinks/
+ios/Runner.xcworkspace/
+
+# IDE and OS local files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Environment, credentials, local data
+.env
+.env.*
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary output
+*.log
+tmp/
+temp/

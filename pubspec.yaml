@@ -1,0 +1,38 @@
+name: total_tracker
+description: Total Tracker - Nutrition, measurement and workout.
+publish_to: none
+
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  drift: any
+  flutter_riverpod: any
+  freezed_annotation: any
+  go_router: any
+  json_annotation: any
+  path: any
+  path_provider: any
+  sqlite3_flutter_libs: any
+  uuid: any
+
+dev_dependencies:
+  build_runner: any
+  drift_dev: any
+  flutter_lints: any
+  flutter_test:
+    sdk: flutter
+  freezed: any
+  json_serializable: any
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/data/
+    - assets/icons/
+    - assets/images/
