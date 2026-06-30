@@ -1,9 +1,48 @@
 # Local Database
 
-SQLite will be the local database for Total Tracker.
+Total Tracker uses ObjectBox as the local database.
 
-Drift will provide the typed access layer for database queries and future persistence logic.
+The database is opened during app bootstrap through `ObjectBoxDatabase`, then
+the resulting `Store` is exposed to repositories through Riverpod providers.
+Repositories must receive the shared Store and must not open their own Store.
 
-The schema will be defined after the existing Obsidian files have been analyzed. No hypothetical tables, DAOs, migrations, or seed data should be created during this setup phase.
+Production data is stored under the application documents directory in the
+`total_tracker_objectbox` subfolder. Tests must pass an explicit temporary
+directory to `ObjectBoxDatabase.open()`.
 
-The initial architecture is local-first. Online synchronization may be added later after the product requirements and data ownership rules are clear.
+## Generated Model Files
+
+ObjectBox code generation is performed with:
+
+```bash
+dart run build_runner build --delete-conflicting-outputs
+```
+
+The generated `objectbox-model.json` and `lib/objectbox.g.dart` files are part
+of the source-controlled schema and must be versioned. The model file contains
+ObjectBox entity and property UIDs used for stable migrations; do not delete it
+or edit generated UIDs manually. Entity and property renames require care so the
+generator can preserve migration identity.
+
+## Current Scope
+
+Implemented in schema version 1:
+
+- user profile;
+- ingredients;
+- muscle catalog;
+- exercises;
+- exercise-muscle links.
+
+Not implemented in this phase:
+
+- fridge or food inventory;
+- meals;
+- recipes;
+- food plans;
+- body measurements;
+- routines;
+- workout sessions;
+- Health Connect;
+- online synchronization;
+- backend.

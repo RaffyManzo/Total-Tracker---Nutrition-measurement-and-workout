@@ -1,0 +1,2421 @@
+{
+  "_note1": "KEEP THIS FILE! Check it into a version control system (VCS) like git.",
+  "_note2": "ObjectBox manages crucial IDs for your object model. See docs for details.",
+  "_note3": "If you have VCS merge conflicts, you must resolve them according to ObjectBox docs.",
+  "entities": [
+    {
+      "id": "1:8971240386364181683",
+      "lastPropertyId": "11:7702786189616551464",
+      "name": "ExerciseEntity",
+      "properties": [
+        {
+          "id": "1:8797754607946539767",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:7314216810841277375",
+          "name": "uuid",
+          "indexId": "1:5639804850964851571",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:6941452677159927865",
+          "name": "name",
+          "indexId": "2:3560794589471599414",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "4:7134607980913357634",
+          "name": "exerciseModeCode",
+          "indexId": "3:3493211487989341217",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "5:8221545318750008421",
+          "name": "mediaPath",
+          "type": 9
+        },
+        {
+          "id": "6:1909442358244968260",
+          "name": "defaultRestSec",
+          "type": 6
+        },
+        {
+          "id": "7:5217071002248621269",
+          "name": "notes",
+          "type": 9
+        },
+        {
+          "id": "8:1002924584954867989",
+          "name": "isArchived",
+          "type": 1
+        },
+        {
+          "id": "9:6505081083282031262",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "10:4907419476500287305",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "11:7702786189616551464",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "2:3297002566885880444",
+      "lastPropertyId": "9:5416952431948005946",
+      "name": "ExerciseMuscleLinkEntity",
+      "properties": [
+        {
+          "id": "1:2557943590825649249",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:3091232122564922502",
+          "name": "uuid",
+          "indexId": "4:8927157293159469452",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:4553409229609811152",
+          "name": "exerciseId",
+          "indexId": "5:6206935006630510289",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "ExerciseEntity"
+        },
+        {
+          "id": "4:8185414565345199305",
+          "name": "muscleId",
+          "indexId": "6:1952263160448316731",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "MuscleEntity"
+        },
+        {
+          "id": "5:3076952000030208096",
+          "name": "roleCode",
+          "type": 9
+        },
+        {
+          "id": "6:1927805562905915577",
+          "name": "position",
+          "type": 6
+        },
+        {
+          "id": "7:972053623735078106",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "8:3717067980763031805",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "9:5416952431948005946",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "3:6586254234657971059",
+      "lastPropertyId": "26:357034344079110440",
+      "name": "IngredientEntity",
+      "properties": [
+        {
+          "id": "1:8672705741490181639",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:4666704391645914031",
+          "name": "uuid",
+          "indexId": "7:5536715099351933302",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:5862677765578994195",
+          "name": "name",
+          "indexId": "8:5025586034093467176",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "4:8605870241431994135",
+          "name": "brand",
+          "type": 9
+        },
+        {
+          "id": "5:56921413127077492",
+          "name": "baseUnit",
+          "type": 9
+        },
+        {
+          "id": "6:4395616788544701908",
+          "name": "barcode",
+          "indexId": "9:6235109439411817530",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "7:707173972161640974",
+          "name": "packageQuantity",
+          "type": 8
+        },
+        {
+          "id": "8:3339548728055646751",
+          "name": "sourceTypeCode",
+          "type": 9
+        },
+        {
+          "id": "9:3100295837578473960",
+          "name": "sourceName",
+          "type": 9
+        },
+        {
+          "id": "10:5888520379118200602",
+          "name": "sourceUrl",
+          "type": 9
+        },
+        {
+          "id": "11:2148600168498071268",
+          "name": "imageUrl",
+          "type": 9
+        },
+        {
+          "id": "12:5385762223921310246",
+          "name": "categories",
+          "type": 9
+        },
+        {
+          "id": "13:7099155083998411013",
+          "name": "notes",
+          "type": 9
+        },
+        {
+          "id": "14:3197578775721256003",
+          "name": "nutritionReferenceAmount",
+          "type": 8
+        },
+        {
+          "id": "15:756851353162564014",
+          "name": "nutritionReferenceUnitCode",
+          "type": 9
+        },
+        {
+          "id": "16:3700586876943333699",
+          "name": "kcalPerReference",
+          "type": 8
+        },
+        {
+          "id": "17:2023657716986036682",
+          "name": "proteinPerReference",
+          "type": 8
+        },
+        {
+          "id": "18:8724108494781228362",
+          "name": "carbsPerReference",
+          "type": 8
+        },
+        {
+          "id": "19:9029485992704474361",
+          "name": "fatPerReference",
+          "type": 8
+        },
+        {
+          "id": "20:7300689457241552856",
+          "name": "fiberPerReference",
+          "type": 8
+        },
+        {
+          "id": "21:2412772514483947839",
+          "name": "sugarPerReference",
+          "type": 8
+        },
+        {
+          "id": "22:7288747763241228615",
+          "name": "saltPerReference",
+          "type": 8
+        },
+        {
+          "id": "23:7748267606434496334",
+          "name": "isArchived",
+          "type": 1
+        },
+        {
+          "id": "24:3470349036962442955",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "25:6571410738315362110",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "26:357034344079110440",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "4:7804593302457239802",
+      "lastPropertyId": "12:6774777780062913429",
+      "name": "MuscleEntity",
+      "properties": [
+        {
+          "id": "1:4139488325676761743",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:7773635105804156721",
+          "name": "uuid",
+          "indexId": "10:1389677909240291450",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:7048198535439824685",
+          "name": "code",
+          "indexId": "11:6847143017984732240",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "4:4888971480589716047",
+          "name": "displayNameIt",
+          "type": 9
+        },
+        {
+          "id": "5:1273437139269752716",
+          "name": "displayNameEn",
+          "type": 9
+        },
+        {
+          "id": "6:131072856162678674",
+          "name": "groupCode",
+          "type": 9
+        },
+        {
+          "id": "7:8789581788519427482",
+          "name": "bodyRegionCode",
+          "type": 9
+        },
+        {
+          "id": "8:3315123450955603912",
+          "name": "sortOrder",
+          "type": 6
+        },
+        {
+          "id": "9:3811740297663410175",
+          "name": "isActive",
+          "type": 1
+        },
+        {
+          "id": "10:7680493896720755891",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "11:4262432727983641443",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "12:6774777780062913429",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "5:8645411654677832403",
+      "lastPropertyId": "20:7558321544276648307",
+      "name": "UserProfileEntity",
+      "properties": [
+        {
+          "id": "1:1909231570702451362",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:895235602725078974",
+          "name": "uuid",
+          "indexId": "12:5870279573577126880",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:6334425053779074355",
+          "name": "displayName",
+          "type": 9
+        },
+        {
+          "id": "4:2441083024067721731",
+          "name": "birthDateEpochDay",
+          "type": 6
+        },
+        {
+          "id": "5:1609883494759575802",
+          "name": "biologicalSexCode",
+          "type": 9
+        },
+        {
+          "id": "6:5785354729703639029",
+          "name": "heightCm",
+          "type": 8
+        },
+        {
+          "id": "7:8829436628483523206",
+          "name": "defaultStepGoal",
+          "type": 6
+        },
+        {
+          "id": "8:385929050049177417",
+          "name": "defaultTargetKcal",
+          "type": 6
+        },
+        {
+          "id": "9:324223466949298248",
+          "name": "waterGlassLiters",
+          "type": 8
+        },
+        {
+          "id": "10:2648118518749865900",
+          "name": "stepKcalCoefficient",
+          "type": 8
+        },
+        {
+          "id": "11:8114426800131261198",
+          "name": "adaptiveReferenceDays",
+          "type": 6
+        },
+        {
+          "id": "12:7667349047172331064",
+          "name": "adaptiveMinimumObservedDays",
+          "type": 6
+        },
+        {
+          "id": "13:7530395176113602864",
+          "name": "rmrActivityFactor",
+          "type": 8
+        },
+        {
+          "id": "14:6373600568650447113",
+          "name": "kcalPerKg",
+          "type": 8
+        },
+        {
+          "id": "15:6878312825044843432",
+          "name": "minimumReasonableTdee",
+          "type": 8
+        },
+        {
+          "id": "16:5474850180647377670",
+          "name": "maximumReasonableTdee",
+          "type": 8
+        },
+        {
+          "id": "17:4043069911248406785",
+          "name": "isActive",
+          "type": 1
+        },
+        {
+          "id": "18:5554541940786608024",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "19:4601831709695994668",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "20:7558321544276648307",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "6:1866238313368872607",
+      "lastPropertyId": "51:4266169536574169163",
+      "name": "DailyRecordEntity",
+      "properties": [
+        {
+          "id": "1:6096354909918171239",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:8846399767024269343",
+          "name": "uuid",
+          "indexId": "13:552664529014927945",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:8527820698063387039",
+          "name": "dateKey",
+          "indexId": "14:1449701628770337013",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "4:3201337742560115037",
+          "name": "weekCode",
+          "type": 9
+        },
+        {
+          "id": "5:9119299739885756825",
+          "name": "weekdayCode",
+          "type": 9
+        },
+        {
+          "id": "6:5783798629546608952",
+          "name": "weekdayLabel",
+          "type": 9
+        },
+        {
+          "id": "7:5421931055054563887",
+          "name": "weekdayIndex",
+          "type": 6
+        },
+        {
+          "id": "8:5646279174613507155",
+          "name": "targetKcal",
+          "type": 8
+        },
+        {
+          "id": "9:886599763664920929",
+          "name": "targetStatusCode",
+          "type": 9
+        },
+        {
+          "id": "10:8752942716318806457",
+          "name": "targetCalculatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "11:1398654389124167267",
+          "name": "targetSourceHash",
+          "type": 9
+        },
+        {
+          "id": "12:882378451622753699",
+          "name": "tdeeRefKcal",
+          "type": 8
+        },
+        {
+          "id": "13:3530288285764989759",
+          "name": "tdeeTheoreticalKcal",
+          "type": 8
+        },
+        {
+          "id": "14:4000456487975885206",
+          "name": "tdeeObservedKcal",
+          "type": 8
+        },
+        {
+          "id": "15:5265107297544109390",
+          "name": "observedConfidence",
+          "type": 8
+        },
+        {
+          "id": "16:2193781173958004491",
+          "name": "referenceDaysCount",
+          "type": 6
+        },
+        {
+          "id": "17:9083897543788010307",
+          "name": "validIntakeDays",
+          "type": 6
+        },
+        {
+          "id": "18:2454583194178575650",
+          "name": "validWeightDays",
+          "type": 6
+        },
+        {
+          "id": "19:7207251554157033776",
+          "name": "rmrKcal",
+          "type": 8
+        },
+        {
+          "id": "20:9156599029801419170",
+          "name": "weightRefKg",
+          "type": 8
+        },
+        {
+          "id": "21:7953487744256501561",
+          "name": "activeRefKcal",
+          "type": 8
+        },
+        {
+          "id": "22:362126269815750539",
+          "name": "activeKcalSteps",
+          "type": 8
+        },
+        {
+          "id": "23:7366580479595367801",
+          "name": "activeKcalWorkoutCompleted",
+          "type": 8
+        },
+        {
+          "id": "24:4293976370142649536",
+          "name": "activeKcalWorkoutInProgress",
+          "type": 8
+        },
+        {
+          "id": "25:5070906911846177229",
+          "name": "activeKcalWorkoutPlanned",
+          "type": 8
+        },
+        {
+          "id": "26:514961656934132004",
+          "name": "activeKcalWorkoutSkipped",
+          "type": 8
+        },
+        {
+          "id": "27:1291822209646318516",
+          "name": "activeKcalWorkoutUnknown",
+          "type": 8
+        },
+        {
+          "id": "28:2222134793657345773",
+          "name": "activeKcalActual",
+          "type": 8
+        },
+        {
+          "id": "29:73044407704700125",
+          "name": "activeEffectiveKcal",
+          "type": 8
+        },
+        {
+          "id": "30:1564610931657299678",
+          "name": "activityDeltaKcal",
+          "type": 8
+        },
+        {
+          "id": "31:337458035867545646",
+          "name": "activeStatusCode",
+          "type": 9
+        },
+        {
+          "id": "32:6782165060955820006",
+          "name": "caloriesInKcal",
+          "type": 8
+        },
+        {
+          "id": "33:9221232168914168034",
+          "name": "energyBalanceKcal",
+          "type": 8
+        },
+        {
+          "id": "34:3190282588250829905",
+          "name": "weightKg",
+          "type": 8
+        },
+        {
+          "id": "35:7026617484402518021",
+          "name": "weightReliabilityCode",
+          "type": 9
+        },
+        {
+          "id": "36:7873379296697064363",
+          "name": "freeMealModeCode",
+          "type": 9
+        },
+        {
+          "id": "37:7859675122798861118",
+          "name": "freeMealKcal",
+          "type": 8
+        },
+        {
+          "id": "38:5396207498052208584",
+          "name": "freeMealReliabilityCode",
+          "type": 9
+        },
+        {
+          "id": "39:5668371555327213993",
+          "name": "dataCompletenessScore",
+          "type": 8
+        },
+        {
+          "id": "40:4694384252107705000",
+          "name": "waterLiters",
+          "type": 8
+        },
+        {
+          "id": "41:8930575127941214933",
+          "name": "waterGlasses",
+          "type": 6
+        },
+        {
+          "id": "42:9156095060231358623",
+          "name": "sleepDeepHours",
+          "type": 8
+        },
+        {
+          "id": "43:5225369830238802470",
+          "name": "sleepLightHours",
+          "type": 8
+        },
+        {
+          "id": "44:8422974111432761248",
+          "name": "sleepQualityCode",
+          "type": 9
+        },
+        {
+          "id": "45:5993591062667574173",
+          "name": "steps",
+          "type": 6
+        },
+        {
+          "id": "46:4897452756398480057",
+          "name": "stepGoal",
+          "type": 6
+        },
+        {
+          "id": "47:5609045788589943886",
+          "name": "notes",
+          "type": 9
+        },
+        {
+          "id": "48:6966701674269830831",
+          "name": "activityBonusKcal",
+          "type": 8
+        },
+        {
+          "id": "49:6408749297536844908",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "50:811585518084860870",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "51:4266169536574169163",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "7:3771639615825130902",
+      "lastPropertyId": "16:5687474289444790069",
+      "name": "MealEntity",
+      "properties": [
+        {
+          "id": "1:8060030087067329625",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:4857386281631879892",
+          "name": "uuid",
+          "indexId": "15:5312199402551510983",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:2544925608832246446",
+          "name": "dateKey",
+          "indexId": "16:3162089969591041981",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "4:844922456577603089",
+          "name": "weekCode",
+          "type": 9
+        },
+        {
+          "id": "5:3553771654048537102",
+          "name": "weekdayCode",
+          "type": 9
+        },
+        {
+          "id": "6:8737459108375962545",
+          "name": "weekdayLabel",
+          "type": 9
+        },
+        {
+          "id": "7:1804529565836472910",
+          "name": "mealTypeCode",
+          "type": 9
+        },
+        {
+          "id": "8:936049372946893019",
+          "name": "title",
+          "type": 9
+        },
+        {
+          "id": "9:7558073883349859795",
+          "name": "mealModeCode",
+          "type": 9
+        },
+        {
+          "id": "10:8633894962796438743",
+          "name": "freeMealTrackingCode",
+          "type": 9
+        },
+        {
+          "id": "11:247331052530264814",
+          "name": "freeMealLabel",
+          "type": 9
+        },
+        {
+          "id": "12:897558896462878660",
+          "name": "freeMealNotes",
+          "type": 9
+        },
+        {
+          "id": "13:3710768600458361176",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "14:1098522872894355934",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "15:7717661194784277111",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "16:5687474289444790069",
+          "name": "dailyRecordId",
+          "indexId": "17:6936960554635454153",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "DailyRecordEntity"
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "8:80166195343537921",
+      "lastPropertyId": "20:5004204909801972972",
+      "name": "MealItemEntity",
+      "properties": [
+        {
+          "id": "1:4475951364267829263",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:2952278401196670193",
+          "name": "uuid",
+          "indexId": "18:8431142778309547255",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:7085979124792382211",
+          "name": "position",
+          "type": 6
+        },
+        {
+          "id": "4:6783015809260747089",
+          "name": "kindCode",
+          "type": 9
+        },
+        {
+          "id": "5:3706040272666162819",
+          "name": "sourceUuid",
+          "type": 9
+        },
+        {
+          "id": "6:45235389372885234",
+          "name": "itemNameSnapshot",
+          "type": 9
+        },
+        {
+          "id": "7:383371422247606186",
+          "name": "quantityModeCode",
+          "type": 9
+        },
+        {
+          "id": "8:8399060047062558923",
+          "name": "grams",
+          "type": 8
+        },
+        {
+          "id": "9:3959435866466674355",
+          "name": "portions",
+          "type": 8
+        },
+        {
+          "id": "10:5224503624397805118",
+          "name": "kcal",
+          "type": 8
+        },
+        {
+          "id": "11:6288644523652177921",
+          "name": "proteinGrams",
+          "type": 8
+        },
+        {
+          "id": "12:3896581929944922724",
+          "name": "carbsGrams",
+          "type": 8
+        },
+        {
+          "id": "13:6370880045779625119",
+          "name": "fatGrams",
+          "type": 8
+        },
+        {
+          "id": "14:6743147663418813696",
+          "name": "fiberGrams",
+          "type": 8
+        },
+        {
+          "id": "15:6477114453794761531",
+          "name": "sugarGrams",
+          "type": 8
+        },
+        {
+          "id": "16:8325159320569072485",
+          "name": "notes",
+          "type": 9
+        },
+        {
+          "id": "17:4516456227034405292",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "18:4828001582224195315",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "19:9103360921623154968",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "20:5004204909801972972",
+          "name": "mealId",
+          "indexId": "19:3425607056222623030",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "MealEntity"
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "9:6774976238031078359",
+      "lastPropertyId": "35:172047993905254704",
+      "name": "RecipeEntity",
+      "properties": [
+        {
+          "id": "1:7646567325179074491",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:5346509227250505753",
+          "name": "uuid",
+          "indexId": "20:3384464062039418497",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:1287528640327244467",
+          "name": "title",
+          "indexId": "21:4219111456879705703",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "4:1320968334927288739",
+          "name": "subtitle",
+          "type": 9
+        },
+        {
+          "id": "5:2713705416337037504",
+          "name": "summary",
+          "type": 9
+        },
+        {
+          "id": "6:623399823858262244",
+          "name": "imagePath",
+          "type": 9
+        },
+        {
+          "id": "7:5753859110310931922",
+          "name": "servings",
+          "type": 6
+        },
+        {
+          "id": "8:3928472156346603282",
+          "name": "prepTimeMinutes",
+          "type": 6
+        },
+        {
+          "id": "9:1272451738550189926",
+          "name": "cookTimeMinutes",
+          "type": 6
+        },
+        {
+          "id": "10:5841152573233727183",
+          "name": "restTimeMinutes",
+          "type": 6
+        },
+        {
+          "id": "11:6122216327265568026",
+          "name": "difficultyCode",
+          "type": 9
+        },
+        {
+          "id": "12:1328296422095332253",
+          "name": "courseCode",
+          "type": 9
+        },
+        {
+          "id": "13:2581264272785841343",
+          "name": "cuisineCode",
+          "type": 9
+        },
+        {
+          "id": "14:1660664022785638199",
+          "name": "source",
+          "type": 9
+        },
+        {
+          "id": "15:3937627207187294550",
+          "name": "satietyIndex",
+          "type": 8
+        },
+        {
+          "id": "16:1983652949659134393",
+          "name": "usageScore",
+          "type": 8
+        },
+        {
+          "id": "17:4164090677999427692",
+          "name": "totalWeightGrams",
+          "type": 8
+        },
+        {
+          "id": "18:2172859154625505468",
+          "name": "yieldGrams",
+          "type": 8
+        },
+        {
+          "id": "19:1866879272792199311",
+          "name": "cookedLossGrams",
+          "type": 8
+        },
+        {
+          "id": "20:3595579713265191488",
+          "name": "cookedLossPercent",
+          "type": 8
+        },
+        {
+          "id": "21:8302429732770841106",
+          "name": "caloriesTotal",
+          "type": 8
+        },
+        {
+          "id": "22:1263192315286802984",
+          "name": "proteinTotalGrams",
+          "type": 8
+        },
+        {
+          "id": "23:6829364546999232703",
+          "name": "carbsTotalGrams",
+          "type": 8
+        },
+        {
+          "id": "24:7288272051525747206",
+          "name": "fatTotalGrams",
+          "type": 8
+        },
+        {
+          "id": "25:7203491783255897600",
+          "name": "fiberTotalGrams",
+          "type": 8
+        },
+        {
+          "id": "26:3809504965409205027",
+          "name": "sugarTotalGrams",
+          "type": 8
+        },
+        {
+          "id": "27:2973769127994568516",
+          "name": "kcalPerServing",
+          "type": 8
+        },
+        {
+          "id": "28:2004834913050710751",
+          "name": "kcalPer100Grams",
+          "type": 8
+        },
+        {
+          "id": "29:1995067484581440511",
+          "name": "proteinPer100Grams",
+          "type": 8
+        },
+        {
+          "id": "30:8396470093464073781",
+          "name": "carbsPer100Grams",
+          "type": 8
+        },
+        {
+          "id": "31:3164938902740500476",
+          "name": "fatPer100Grams",
+          "type": 8
+        },
+        {
+          "id": "32:67998274883707605",
+          "name": "tagsJson",
+          "type": 9
+        },
+        {
+          "id": "33:2451679941626754115",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "34:4037307995502112015",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "35:172047993905254704",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "10:8694500467840328788",
+      "lastPropertyId": "18:6468381754880453634",
+      "name": "RecipeIngredientEntity",
+      "properties": [
+        {
+          "id": "1:8585538899830713195",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:79657220782092482",
+          "name": "uuid",
+          "indexId": "22:3319618982558380972",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:8808204422849627810",
+          "name": "position",
+          "type": 6
+        },
+        {
+          "id": "4:2248176828289952394",
+          "name": "ingredientUuid",
+          "type": 9
+        },
+        {
+          "id": "5:3162995954474598543",
+          "name": "nameSnapshot",
+          "type": 9
+        },
+        {
+          "id": "6:5322158759393401634",
+          "name": "grams",
+          "type": 8
+        },
+        {
+          "id": "7:8228471024183469812",
+          "name": "finalGrams",
+          "type": 8
+        },
+        {
+          "id": "8:658780621461266490",
+          "name": "preparationNote",
+          "type": 9
+        },
+        {
+          "id": "9:5817952175560238284",
+          "name": "calories",
+          "type": 8
+        },
+        {
+          "id": "10:4138921328287678570",
+          "name": "proteinGrams",
+          "type": 8
+        },
+        {
+          "id": "11:1960944992445288328",
+          "name": "carbsGrams",
+          "type": 8
+        },
+        {
+          "id": "12:773310818580111547",
+          "name": "fatGrams",
+          "type": 8
+        },
+        {
+          "id": "13:8409086264902953982",
+          "name": "fiberGrams",
+          "type": 8
+        },
+        {
+          "id": "14:4223147433726684134",
+          "name": "sugarGrams",
+          "type": 8
+        },
+        {
+          "id": "15:5731167082601458207",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "16:3103460940508148203",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "17:8919715734621796271",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "18:6468381754880453634",
+          "name": "recipeId",
+          "indexId": "23:1758317156246907586",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "RecipeEntity"
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "11:5028190616351192025",
+      "lastPropertyId": "10:8069316776287713490",
+      "name": "RecipeStepEntity",
+      "properties": [
+        {
+          "id": "1:2564188536377031963",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:4245647953875672044",
+          "name": "uuid",
+          "indexId": "24:4367380145397450131",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:3888599392258957204",
+          "name": "position",
+          "type": 6
+        },
+        {
+          "id": "4:4767669028390368198",
+          "name": "instruction",
+          "type": 9
+        },
+        {
+          "id": "5:4178216102629192896",
+          "name": "durationMinutes",
+          "type": 6
+        },
+        {
+          "id": "6:6320282882283200644",
+          "name": "notes",
+          "type": 9
+        },
+        {
+          "id": "7:2994012421542163425",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "8:3201705196123366753",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "9:7172732895272753040",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "10:8069316776287713490",
+          "name": "recipeId",
+          "indexId": "25:8505357724476458117",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "RecipeEntity"
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "12:5959814310924689182",
+      "lastPropertyId": "10:3465336512094678224",
+      "name": "RoutineEntity",
+      "properties": [
+        {
+          "id": "1:9181098322093388768",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:5695296743243892121",
+          "name": "uuid",
+          "indexId": "26:174487099793079755",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:2538180555152206228",
+          "name": "name",
+          "indexId": "27:6787897199588390624",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "4:841896639392080327",
+          "name": "slug",
+          "type": 9
+        },
+        {
+          "id": "5:1220550203067411146",
+          "name": "summary",
+          "type": 9
+        },
+        {
+          "id": "6:3456142910730764514",
+          "name": "goal",
+          "type": 9
+        },
+        {
+          "id": "7:5402760590499579826",
+          "name": "notes",
+          "type": 9
+        },
+        {
+          "id": "8:1260022446992816091",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "9:1042126374648792754",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "10:3465336512094678224",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "13:803969054996911686",
+      "lastPropertyId": "20:6024645309969094883",
+      "name": "RoutineExerciseEntity",
+      "properties": [
+        {
+          "id": "1:2661091224669359456",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:4701576215460763207",
+          "name": "uuid",
+          "indexId": "28:431751382800668310",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:9045933903627180495",
+          "name": "position",
+          "type": 6
+        },
+        {
+          "id": "4:7260531997935918709",
+          "name": "exerciseUuid",
+          "type": 9
+        },
+        {
+          "id": "5:3311819153980755827",
+          "name": "exerciseNameSnapshot",
+          "type": 9
+        },
+        {
+          "id": "6:8602075517878876643",
+          "name": "exerciseModeCode",
+          "type": 9
+        },
+        {
+          "id": "7:7915921404944822744",
+          "name": "mediaSnapshot",
+          "type": 9
+        },
+        {
+          "id": "8:2181981871222638618",
+          "name": "restSeconds",
+          "type": 6
+        },
+        {
+          "id": "9:3670830499693547051",
+          "name": "primaryMuscleCodesJson",
+          "type": 9
+        },
+        {
+          "id": "10:5087367570326885530",
+          "name": "secondaryMuscleCodesJson",
+          "type": 9
+        },
+        {
+          "id": "11:2756386466688257206",
+          "name": "activityTargetDurationMinutes",
+          "type": 6
+        },
+        {
+          "id": "12:6821463419200507672",
+          "name": "treadmillTargetDurationMinutes",
+          "type": 6
+        },
+        {
+          "id": "13:8695876700673671355",
+          "name": "treadmillTargetDistanceKm",
+          "type": 8
+        },
+        {
+          "id": "14:232399948340063727",
+          "name": "treadmillTargetAverageSpeedKmh",
+          "type": 8
+        },
+        {
+          "id": "15:2952729338649196455",
+          "name": "treadmillTargetAverageInclinePercent",
+          "type": 8
+        },
+        {
+          "id": "16:4036059906193761158",
+          "name": "notes",
+          "type": 9
+        },
+        {
+          "id": "17:1615779656141199571",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "18:4469501643161139463",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "19:3901055456378518645",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "20:6024645309969094883",
+          "name": "routineId",
+          "indexId": "29:4190456238417347578",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "RoutineEntity"
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "14:2854328141872213935",
+      "lastPropertyId": "14:4550688686703327363",
+      "name": "RoutineSetTemplateEntity",
+      "properties": [
+        {
+          "id": "1:1724927762683843208",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:1891514474849270219",
+          "name": "uuid",
+          "indexId": "30:3293727360093501391",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:3645249474809321384",
+          "name": "position",
+          "type": 6
+        },
+        {
+          "id": "4:6335498424149495790",
+          "name": "setRoleCode",
+          "type": 9
+        },
+        {
+          "id": "5:6303531788471342434",
+          "name": "targetRepetitions",
+          "type": 6
+        },
+        {
+          "id": "6:7244232080962177302",
+          "name": "effortTypeCode",
+          "type": 9
+        },
+        {
+          "id": "7:7929322346427500616",
+          "name": "rir",
+          "type": 6
+        },
+        {
+          "id": "8:5805969727874633523",
+          "name": "executionSpeedCode",
+          "type": 9
+        },
+        {
+          "id": "9:3923134158993247743",
+          "name": "executionQualityCode",
+          "type": 9
+        },
+        {
+          "id": "10:685069747568119365",
+          "name": "notes",
+          "type": 9
+        },
+        {
+          "id": "11:9086678999583707951",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "12:7389327135887408523",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "13:7215693954956322641",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "14:4550688686703327363",
+          "name": "routineExerciseId",
+          "indexId": "31:6023865790938965098",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "RoutineExerciseEntity"
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "15:483651621227573625",
+      "lastPropertyId": "23:3527260993934738533",
+      "name": "ScaleMeasurementEntity",
+      "properties": [
+        {
+          "id": "1:854404487718661230",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:5229824260591645738",
+          "name": "uuid",
+          "indexId": "32:5372906796963015305",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:7040667704214922705",
+          "name": "dateKey",
+          "indexId": "33:5629428536222924543",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "4:5152824690484673016",
+          "name": "title",
+          "type": 9
+        },
+        {
+          "id": "5:9064518958720729953",
+          "name": "weightKg",
+          "type": 8
+        },
+        {
+          "id": "6:56773191768465587",
+          "name": "weightSourceCode",
+          "type": 9
+        },
+        {
+          "id": "7:1368663175165810122",
+          "name": "bodyFatPercent",
+          "type": 8
+        },
+        {
+          "id": "8:5948310067716509343",
+          "name": "muscleMassKg",
+          "type": 8
+        },
+        {
+          "id": "9:1376806613160025961",
+          "name": "waterPercent",
+          "type": 8
+        },
+        {
+          "id": "10:9081041199508326371",
+          "name": "boneMassKg",
+          "type": 8
+        },
+        {
+          "id": "11:8481149091302280582",
+          "name": "visceralFat",
+          "type": 8
+        },
+        {
+          "id": "12:2792267805171856943",
+          "name": "subcutaneousFatPercent",
+          "type": 8
+        },
+        {
+          "id": "13:6703286712839413329",
+          "name": "basalMetabolismKcal",
+          "type": 8
+        },
+        {
+          "id": "14:7857581748694106726",
+          "name": "bmi",
+          "type": 8
+        },
+        {
+          "id": "15:3495364674378367990",
+          "name": "metabolicAge",
+          "type": 8
+        },
+        {
+          "id": "16:5791757036301354387",
+          "name": "physiqueRating",
+          "type": 9
+        },
+        {
+          "id": "17:2128701406853919949",
+          "name": "measurementTime",
+          "type": 9
+        },
+        {
+          "id": "18:3545185580785588648",
+          "name": "device",
+          "type": 9
+        },
+        {
+          "id": "19:8813153841822541063",
+          "name": "reliabilityCode",
+          "type": 9
+        },
+        {
+          "id": "20:8235247476353148026",
+          "name": "notes",
+          "type": 9
+        },
+        {
+          "id": "21:1543160560908260492",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "22:6687092069560135816",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "23:3527260993934738533",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "16:994408080159154244",
+      "lastPropertyId": "24:4731310559319798215",
+      "name": "SessionExerciseEntity",
+      "properties": [
+        {
+          "id": "1:1918227788608308670",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:1749399274518042868",
+          "name": "uuid",
+          "indexId": "34:7175930489187803833",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:3980300462889429608",
+          "name": "position",
+          "type": 6
+        },
+        {
+          "id": "4:3699308316098852067",
+          "name": "exerciseUuid",
+          "type": 9
+        },
+        {
+          "id": "5:6522694581873698281",
+          "name": "exerciseNameSnapshot",
+          "type": 9
+        },
+        {
+          "id": "6:5748482245412907493",
+          "name": "exerciseModeCode",
+          "type": 9
+        },
+        {
+          "id": "7:6936010346212480470",
+          "name": "mediaSnapshot",
+          "type": 9
+        },
+        {
+          "id": "8:7134511709395782340",
+          "name": "restSeconds",
+          "type": 6
+        },
+        {
+          "id": "9:8681718282755627558",
+          "name": "primaryMuscleCodesJson",
+          "type": 9
+        },
+        {
+          "id": "10:7576231063965452390",
+          "name": "secondaryMuscleCodesJson",
+          "type": 9
+        },
+        {
+          "id": "11:2628329863332989007",
+          "name": "activityDurationMinutes",
+          "type": 6
+        },
+        {
+          "id": "12:3538570789498665031",
+          "name": "activityAverageHeartRateBpm",
+          "type": 6
+        },
+        {
+          "id": "13:5922933301498197800",
+          "name": "activityKcalBurned",
+          "type": 8
+        },
+        {
+          "id": "14:6108305811685017578",
+          "name": "treadmillDurationMinutes",
+          "type": 6
+        },
+        {
+          "id": "15:6195605251738966763",
+          "name": "treadmillDistanceKm",
+          "type": 8
+        },
+        {
+          "id": "16:2207296139670974343",
+          "name": "treadmillAverageSpeedKmh",
+          "type": 8
+        },
+        {
+          "id": "17:154461794171635765",
+          "name": "treadmillAverageInclinePercent",
+          "type": 8
+        },
+        {
+          "id": "18:5261675600993709943",
+          "name": "treadmillAverageHeartRateBpm",
+          "type": 6
+        },
+        {
+          "id": "19:948216708619412714",
+          "name": "isCompleted",
+          "type": 1
+        },
+        {
+          "id": "20:3093109451287249009",
+          "name": "notes",
+          "type": 9
+        },
+        {
+          "id": "21:3175742161331984110",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "22:2515989813951863010",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "23:5814950171228607250",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "24:4731310559319798215",
+          "name": "workoutSessionId",
+          "indexId": "35:8769203601752329402",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "WorkoutSessionEntity"
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "17:2132629024100383383",
+      "lastPropertyId": "23:3766322332221567670",
+      "name": "SessionSetEntity",
+      "properties": [
+        {
+          "id": "1:3694296717188593523",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:2803105967772274747",
+          "name": "uuid",
+          "indexId": "36:4141279433331543512",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:3190972818845034603",
+          "name": "position",
+          "type": 6
+        },
+        {
+          "id": "4:431124586446166882",
+          "name": "setRoleCode",
+          "type": 9
+        },
+        {
+          "id": "5:8284906016459021851",
+          "name": "targetRepetitions",
+          "type": 6
+        },
+        {
+          "id": "6:4648292388773763214",
+          "name": "repetitionsDone",
+          "type": 6
+        },
+        {
+          "id": "7:6535178308863649978",
+          "name": "weightKg",
+          "type": 8
+        },
+        {
+          "id": "8:8895790578869298963",
+          "name": "previousRepetitionsDone",
+          "type": 6
+        },
+        {
+          "id": "9:853017209740502620",
+          "name": "previousWeightKg",
+          "type": 8
+        },
+        {
+          "id": "10:770062333817702837",
+          "name": "previousEffortTypeCode",
+          "type": 9
+        },
+        {
+          "id": "11:5019843386011217145",
+          "name": "previousRir",
+          "type": 6
+        },
+        {
+          "id": "12:2159342929708773960",
+          "name": "previousExecutionSpeedCode",
+          "type": 9
+        },
+        {
+          "id": "13:4996212911490456301",
+          "name": "previousExecutionQualityCode",
+          "type": 9
+        },
+        {
+          "id": "14:3271745588540416012",
+          "name": "effortTypeCode",
+          "type": 9
+        },
+        {
+          "id": "15:3039501894339719899",
+          "name": "rir",
+          "type": 6
+        },
+        {
+          "id": "16:2284917372273355212",
+          "name": "executionSpeedCode",
+          "type": 9
+        },
+        {
+          "id": "17:6022260000474703928",
+          "name": "executionQualityCode",
+          "type": 9
+        },
+        {
+          "id": "18:1351552588682962905",
+          "name": "setNote",
+          "type": 9
+        },
+        {
+          "id": "19:7665439797828983795",
+          "name": "isCompleted",
+          "type": 1
+        },
+        {
+          "id": "20:2997667904173722688",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "21:8510281731946679861",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "22:619778838130470580",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "23:3766322332221567670",
+          "name": "sessionExerciseId",
+          "indexId": "37:2827516576250040362",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "SessionExerciseEntity"
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "18:4430057548017746022",
+      "lastPropertyId": "10:4210919176703795052",
+      "name": "TapeMeasurementEntity",
+      "properties": [
+        {
+          "id": "1:6117203016195417204",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:8101203551392718046",
+          "name": "uuid",
+          "indexId": "38:2103619035342597625",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:9014129191468502674",
+          "name": "dateKey",
+          "indexId": "39:3408783771482134910",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "4:2139943469571393870",
+          "name": "title",
+          "type": 9
+        },
+        {
+          "id": "5:6971154222902188027",
+          "name": "measurementTime",
+          "type": 9
+        },
+        {
+          "id": "6:699849716566605842",
+          "name": "reliabilityCode",
+          "type": 9
+        },
+        {
+          "id": "7:4363021047920212404",
+          "name": "notes",
+          "type": 9
+        },
+        {
+          "id": "8:8735964304800830360",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "9:6067995054191633926",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "10:4210919176703795052",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "19:337638738158359795",
+      "lastPropertyId": "9:3899857371439053308",
+      "name": "TapeMeasurementEntryEntity",
+      "properties": [
+        {
+          "id": "1:3364888908231604548",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:7393291395589498627",
+          "name": "uuid",
+          "indexId": "40:4800124570145498483",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:1185021754327857574",
+          "name": "measurementCode",
+          "type": 9
+        },
+        {
+          "id": "4:2631762120529895704",
+          "name": "position",
+          "type": 6
+        },
+        {
+          "id": "5:120169897505596571",
+          "name": "valueCm",
+          "type": 8
+        },
+        {
+          "id": "6:8542997541253846537",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "7:462645480734962803",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "8:7739617716932695597",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "9:3899857371439053308",
+          "name": "tapeMeasurementId",
+          "indexId": "41:533640745079040914",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "TapeMeasurementEntity"
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "20:8328016615988627886",
+      "lastPropertyId": "10:3791761487130888696",
+      "name": "WorkoutPlanDayEntity",
+      "properties": [
+        {
+          "id": "1:482656216823849559",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:7826999145643981292",
+          "name": "uuid",
+          "indexId": "42:7189986134714187852",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:2412016096362266578",
+          "name": "dayCode",
+          "type": 9
+        },
+        {
+          "id": "4:5400407981886722844",
+          "name": "position",
+          "type": 6
+        },
+        {
+          "id": "5:4462548154291997358",
+          "name": "title",
+          "type": 9
+        },
+        {
+          "id": "6:4525708476653505850",
+          "name": "notes",
+          "type": 9
+        },
+        {
+          "id": "7:201988784566176185",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "8:8930580503267874608",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "9:7209136918459118672",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "10:3791761487130888696",
+          "name": "workoutPlanId",
+          "indexId": "43:7941260143183985892",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "WorkoutPlanEntity"
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "21:350706793793504972",
+      "lastPropertyId": "9:1301861848525075476",
+      "name": "WorkoutPlanEntity",
+      "properties": [
+        {
+          "id": "1:7991402185338390417",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:7348654945828378984",
+          "name": "uuid",
+          "indexId": "44:1316664701333515084",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:4992299265089218032",
+          "name": "name",
+          "indexId": "45:2437623399529319991",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "4:4491228452607891855",
+          "name": "levelCode",
+          "type": 9
+        },
+        {
+          "id": "5:719522509355817995",
+          "name": "statusCode",
+          "type": 9
+        },
+        {
+          "id": "6:2470612775134203542",
+          "name": "notes",
+          "type": 9
+        },
+        {
+          "id": "7:5081636301102346952",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "8:5372212322969249718",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "9:1301861848525075476",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "22:690250852618511788",
+      "lastPropertyId": "21:3729140720507830045",
+      "name": "WorkoutPlanExerciseEntity",
+      "properties": [
+        {
+          "id": "1:4357791024619447219",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:2016894670642424846",
+          "name": "uuid",
+          "indexId": "46:5296384583959529116",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:920827665543311234",
+          "name": "position",
+          "type": 6
+        },
+        {
+          "id": "4:7456079209617723761",
+          "name": "exerciseUuid",
+          "type": 9
+        },
+        {
+          "id": "5:4418105655753386495",
+          "name": "exerciseNameSnapshot",
+          "type": 9
+        },
+        {
+          "id": "6:6082841659194325584",
+          "name": "exerciseModeCode",
+          "type": 9
+        },
+        {
+          "id": "7:6315038169279103519",
+          "name": "setsCount",
+          "type": 6
+        },
+        {
+          "id": "8:2674404941522226852",
+          "name": "warmupSetsCount",
+          "type": 6
+        },
+        {
+          "id": "9:1999476844928852196",
+          "name": "repetitionsText",
+          "type": 9
+        },
+        {
+          "id": "10:149634083950500155",
+          "name": "restSeconds",
+          "type": 6
+        },
+        {
+          "id": "11:1864081266563252613",
+          "name": "activityDurationMinutes",
+          "type": 6
+        },
+        {
+          "id": "12:4022654376053531002",
+          "name": "treadmillDurationMinutes",
+          "type": 6
+        },
+        {
+          "id": "13:2824312361968807885",
+          "name": "treadmillDistanceKm",
+          "type": 8
+        },
+        {
+          "id": "14:2182038591319560704",
+          "name": "treadmillAverageSpeedKmh",
+          "type": 8
+        },
+        {
+          "id": "15:7367338236846271088",
+          "name": "treadmillAverageInclinePercent",
+          "type": 8
+        },
+        {
+          "id": "16:7048147721147152450",
+          "name": "note",
+          "type": 9
+        },
+        {
+          "id": "17:8799302411979738604",
+          "name": "mediaOverride",
+          "type": 9
+        },
+        {
+          "id": "18:775072814048841281",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "19:5327467344498333850",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "20:5189013353258187145",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "21:3729140720507830045",
+          "name": "workoutPlanDayId",
+          "indexId": "47:3479857648232860521",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "WorkoutPlanDayEntity"
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "23:8179285214134796333",
+      "lastPropertyId": "16:3609430721988264187",
+      "name": "WorkoutSessionEntity",
+      "properties": [
+        {
+          "id": "1:3351231674469713773",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:7205956437279616142",
+          "name": "uuid",
+          "indexId": "48:817477950660978109",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:2470312312549255424",
+          "name": "sessionDateKey",
+          "indexId": "49:6838236636949618618",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "4:1285250401519150299",
+          "name": "title",
+          "type": 9
+        },
+        {
+          "id": "5:7288120492502485965",
+          "name": "routineUuid",
+          "type": 9
+        },
+        {
+          "id": "6:2466069585336306322",
+          "name": "routineNameSnapshot",
+          "type": 9
+        },
+        {
+          "id": "7:7636052471436361020",
+          "name": "workoutPlanUuid",
+          "type": 9
+        },
+        {
+          "id": "8:8280769236933253647",
+          "name": "workoutPlanDayUuid",
+          "type": 9
+        },
+        {
+          "id": "9:8314388290091333598",
+          "name": "statusCode",
+          "type": 9
+        },
+        {
+          "id": "10:4458228565915775837",
+          "name": "durationMinutes",
+          "type": 6
+        },
+        {
+          "id": "11:2682283507381918842",
+          "name": "averageHeartRateBpm",
+          "type": 6
+        },
+        {
+          "id": "12:3394240757040735252",
+          "name": "estimatedKcalBurned",
+          "type": 8
+        },
+        {
+          "id": "13:8440279083605289933",
+          "name": "notes",
+          "type": 9
+        },
+        {
+          "id": "14:2130018208376216301",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "15:2061320061992872474",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "16:3609430721988264187",
+          "name": "deletedAtEpochMs",
+          "type": 6
+        }
+      ],
+      "relations": []
+    }
+  ],
+  "lastEntityId": "23:8179285214134796333",
+  "lastIndexId": "49:6838236636949618618",
+  "lastRelationId": "0:0",
+  "lastSequenceId": "0:0",
+  "modelVersion": 5,
+  "modelVersionParserMinimum": 5,
+  "retiredEntityUids": [],
+  "retiredIndexUids": [],
+  "retiredPropertyUids": [],
+  "retiredRelationUids": [],
+  "version": 1
+}

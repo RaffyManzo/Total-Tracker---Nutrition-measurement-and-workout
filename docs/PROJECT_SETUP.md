@@ -3,35 +3,14 @@
 ## Environment Detected
 
 - Operating system: Microsoft Windows 10.0.22631, x64
-- Flutter: not available in PATH (`flutter` command not recognized)
-- Dart: not available in PATH (`dart` command not recognized)
-- Java: 17.0.12 LTS
-- Git: 2.38.1.windows.1
-- GitHub CLI: not available in PATH (`gh` command not recognized)
+- Flutter: not available in PATH during the current Codex session
+- Dart: not available in PATH during the current Codex session
+- Git: available, but this checkout requires per-command `safe.directory`
+  because Git reports dubious ownership
 
-## Android SDK Status
-
-- Android SDK detected under the default local Android SDK location.
-- `ANDROID_HOME`: not set
-- `ANDROID_SDK_ROOT`: not set
-- `adb`: not available in PATH, but available inside the Android SDK.
-- Connected devices: none detected through the SDK `adb` binary.
-- Emulator AVDs: none listed.
-- Installed platforms detected: android-28, android-31, android-33, android-34, android-35, android-35-ext14
-- Installed build tools detected: 30.0.2, 33.0.0, 34.0.0, 35.0.0
-- Android license files detected: android-sdk-arm-dbt-license, android-sdk-license
-
-## Project Creation
-
-Expected Flutter command:
-
-```bash
-flutter create --org com.raffymanzo --project-name total_tracker --platforms android,ios .
-```
-
-The command could not be executed because Flutter is not installed or not available in PATH in the current environment.
-
-The initial project scaffold was created manually in the repository root so the work that does not require the Flutter SDK could still be completed.
+The repository must be built with Flutter stable and Dart 3. The current Codex
+session could not execute Flutter or Dart commands because neither executable is
+available in PATH.
 
 ## Identifiers
 
@@ -46,8 +25,8 @@ Runtime dependencies declared in `pubspec.yaml`:
 
 - `flutter_riverpod`
 - `go_router`
-- `drift`
-- `sqlite3_flutter_libs`
+- `objectbox`
+- `objectbox_flutter_libs`
 - `path`
 - `path_provider`
 - `uuid`
@@ -57,82 +36,79 @@ Runtime dependencies declared in `pubspec.yaml`:
 Development dependencies declared in `pubspec.yaml`:
 
 - `build_runner`
-- `drift_dev`
+- `objectbox_generator`
 - `freezed`
 - `json_serializable`
 - `flutter_lints`
 
-The package versions are intentionally left for the Dart package solver because `flutter pub add` and `flutter pub get` could not be executed without Flutter.
+ObjectBox dependencies should be resolved by the package solver with:
 
-## Structure Created
+```bash
+flutter pub get
+```
+
+## ObjectBox Generation
+
+After dependency resolution, generate ObjectBox artifacts with:
+
+```bash
+dart run build_runner build --delete-conflicting-outputs
+```
+
+Version the generated `objectbox-model.json` and `lib/objectbox.g.dart` files.
+Do not add generated runtime database files to Git.
+
+## Structure
 
 ```text
 lib/
   app/
-    app.dart
-    router/
-      app_router.dart
-    theme/
-      app_theme.dart
   core/
-    constants/
     database/
-      README.md
-    errors/
-    services/
-    utils/
+    identifiers/
+    time/
   features/
-    README.md
-  main.dart
+    nutrition/
+    profile/
+    workout/
 assets/
   data/
   icons/
   images/
 docs/
+  DATABASE_SCHEMA_V1.md
   PROJECT_SETUP.md
 test/
-  app_test.dart
 ```
 
 ## Verification Commands
 
-| Command | Result |
-| --- | --- |
-| `dart format .` | Blocked: `dart` command not recognized |
-| `flutter pub get` | Blocked: `flutter` command not recognized |
-| `flutter analyze` | Blocked: `flutter` command not recognized |
-| `flutter test` | Blocked: `flutter` command not recognized |
-| `flutter build apk --debug` | Blocked: `flutter` command not recognized |
-| `flutter doctor -v` | Blocked: `flutter` command not recognized |
-
-## Residual Issues
-
-- Flutter stable SDK must be installed or added to PATH.
-- Dart is not available separately in PATH.
-- GitHub CLI is not installed or not available in PATH, so `gh auth status` cannot be checked.
-- Android SDK exists, but Android SDK environment variables are not configured.
-- No Android device or emulator is currently available.
-- The Flutter-generated native project files could not be verified by a build in this environment.
-
-## Reproducing The Setup
-
-After installing Flutter stable and adding it to PATH:
+Run these after Flutter stable is available:
 
 ```bash
-flutter --version
-dart --version
-flutter doctor -v
+dart format .
 flutter pub get
+dart run build_runner build --delete-conflicting-outputs
 dart format .
 flutter analyze
 flutter test
+flutter clean
+flutter pub get
 flutter build apk --debug
 ```
 
-If GitHub CLI is installed:
+If Android `cmdline-tools` or licenses are missing, keep analyze and tests as
+the source of truth for the data layer and report the APK failure as an Android
+toolchain issue.
 
-```bash
-gh auth status
-```
+## Residual Environment Issues In This Session
 
-No backend, cloud synchronization, Drift tables, DAOs, migrations, nutritional models, workout models, or Obsidian data imports are part of this setup phase.
+- `where.exe flutter` did not find Flutter.
+- `where.exe dart` did not find Dart.
+- `flutter --version`, `dart --version`, and `flutter doctor -v` were blocked
+  because commands were not recognized.
+- Git global configuration was not modified; commands requiring Git use
+  `git -c safe.directory=C:/Users/raffa/develop/total_tracker ...`.
+
+No backend, cloud synchronization, meals, recipes, body measurements, routines,
+sessions, Health Connect, or fridge/inventory features are part of this phase.

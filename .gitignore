@@ -30,8 +30,18 @@ Thumbs.db
 *.db
 *.sqlite
 *.sqlite3
+*.mdb
+total_tracker_objectbox/
 
 # Temporary output
 *.log
 tmp/
 temp/
+.tt-logs/
+.tt-backups/
+download/
+android/.gradle/
+ios/Flutter/ephemeral/
+
+# Local development seeds with personal data
+assets/dev_seed/*.json

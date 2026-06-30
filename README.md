@@ -2,13 +2,31 @@
 
 Nutrition, measurement and workout
 
-Total Tracker - Nutrition, measurement and workout is a Flutter mobile application intended to progressively manage nutrition, daily calories, macronutrients, meal plans, body measurements, workouts, training plans, sessions, daily activity, steps, and active calorie expenditure.
+Total Tracker - Nutrition, measurement and workout is a Flutter mobile
+application intended to progressively manage nutrition, daily calories,
+macronutrients, meal plans, body measurements, workouts, training plans,
+sessions, daily activity, steps, and active calorie expenditure.
 
-Functional requirements come from an existing Obsidian system and will be imported gradually. This initial phase only prepares the mobile project structure and base architecture.
+Functional requirements come from an existing Obsidian system and will be
+imported gradually. The current phase establishes the local ObjectBox data
+foundation and the first domain primitives.
 
 ## Project Status
 
-Initial Flutter project scaffold. No definitive product features, nutritional models, workout models, calorie formulas, database schema, backend, or cloud synchronization are implemented yet.
+Initial Flutter project scaffold with the first bottom-up data layer:
+
+- local ObjectBox database configuration;
+- default user profile;
+- ingredients;
+- muscle catalog;
+- exercises;
+- exercise-muscle associations;
+- foundational repositories;
+- idempotent muscle catalog seeding;
+- data-layer tests.
+
+The fridge/inventory concept is intentionally not part of the application and
+is not represented in the schema.
 
 ## Technology Stack
 
@@ -17,10 +35,12 @@ Initial Flutter project scaffold. No definitive product features, nutritional mo
 - UI: Material 3
 - State management: Riverpod
 - Navigation: GoRouter
-- Future local database: SQLite through Drift
-- Immutable models: Freezed
-- Serialization: json_serializable
+- Local database: ObjectBox
 - Identifiers: UUID
+
+Freezed and json_serializable remain available only because they are already
+declared for future app layers; ObjectBox entities in this phase are plain
+mutable entity classes.
 
 ## Prerequisites
 
@@ -43,6 +63,17 @@ flutter pub get
 ```bash
 flutter run
 ```
+
+## Code Generation
+
+ObjectBox generated files are created with:
+
+```bash
+dart run build_runner build --delete-conflicting-outputs
+```
+
+`objectbox-model.json` and `lib/objectbox.g.dart` must be versioned once
+generated. Do not delete or regenerate model UIDs arbitrarily.
 
 ## Analysis
 
@@ -67,38 +98,41 @@ flutter build apk --debug
 ```text
 lib/
   app/
-    app.dart
-    router/
-      app_router.dart
-    theme/
-      app_theme.dart
   core/
-    constants/
     database/
-      README.md
-    errors/
-    services/
-    utils/
+    identifiers/
+    time/
   features/
-    README.md
+    nutrition/
+    profile/
+    workout/
   main.dart
 assets/
   data/
   icons/
   images/
 docs/
+  DATABASE_SCHEMA_V1.md
   PROJECT_SETUP.md
 test/
-  app_test.dart
 ```
 
 ## Local Database
 
-The first version will be local-first and will use SQLite through Drift. The schema will be defined only after the Obsidian files are analyzed. No hypothetical tables are part of this setup.
+The application is local-first and uses ObjectBox. Production data is stored in
+a dedicated application documents subdirectory named
+`total_tracker_objectbox`. Tests open independent temporary directories and
+must never use the real app database.
+
+See [docs/DATABASE_SCHEMA_V1.md](docs/DATABASE_SCHEMA_V1.md) for the first
+schema documentation.
 
 ## Future Development
 
-Future work will progressively import and translate the existing Obsidian rules and data into app features. A backend or synchronization system may be evaluated later, but neither is implemented at this stage.
+Future work will progressively import and translate the existing Obsidian rules
+and data into app features. Meals, recipes, body measurements, routines,
+sessions, Health Connect, online synchronization, and backend services are not
+implemented in this phase.
 
 ## Official Repository
 

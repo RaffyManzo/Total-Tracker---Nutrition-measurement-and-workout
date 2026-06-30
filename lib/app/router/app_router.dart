@@ -1,76 +1,162 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/home/presentation/home_screen.dart';
+import '../../features/nutrition/mock/presentation/ingredient_list_screen.dart'
+    as mock_nutrition;
+import '../../features/nutrition/presentation/food_v01_screens.dart';
+import '../../features/nutrition/presentation/measurement_screens.dart';
+import '../../features/tracking/mock/presentation/tracking_hub_screen.dart'
+    as mock_tracking;
+import '../../features/ui_preview/presentation/ui_foundation_preview_screen.dart';
+import '../../features/workout/mock/presentation/exercise_list_screen.dart'
+    as mock_workout;
+import '../../features/workout/presentation/workout_screens.dart';
+
 final GoRouter appRouter = GoRouter(
+  initialLocation: '/',
   routes: <RouteBase>[
     GoRoute(
       path: '/',
       builder: (BuildContext context, GoRouterState state) {
-        return const InitialSetupScreen();
+        return const HomeScreen();
+      },
+    ),
+    GoRoute(
+      path: '/food',
+      builder: (BuildContext context, GoRouterState state) {
+        return const FoodHubScreen();
+      },
+    ),
+    GoRoute(
+      path: '/food/week',
+      builder: (BuildContext context, GoRouterState state) {
+        return const FoodWeekScreen();
+      },
+    ),
+    GoRoute(
+      path: '/food/days',
+      builder: (BuildContext context, GoRouterState state) {
+        return const FoodDaysScreen();
+      },
+    ),
+    GoRoute(
+      path: '/food/days/:date',
+      builder: (BuildContext context, GoRouterState state) {
+        return FoodDayDetailScreen(date: state.pathParameters['date']!);
+      },
+    ),
+    GoRoute(
+      path: '/food/meals',
+      builder: (BuildContext context, GoRouterState state) {
+        return const FoodMealsScreen();
+      },
+    ),
+    GoRoute(
+      path: '/food/meals/:id',
+      builder: (BuildContext context, GoRouterState state) {
+        return FoodMealDetailScreen(
+          id: state.pathParameters['id']!,
+          initialDate: state.uri.queryParameters['date'],
+          initialSlot: state.uri.queryParameters['slot'],
+        );
+      },
+    ),
+    GoRoute(
+      path: '/food/ingredients',
+      builder: (BuildContext context, GoRouterState state) {
+        return const PersistentIngredientListScreen();
+      },
+    ),
+    GoRoute(
+      path: '/food/ingredients/scan',
+      builder: (BuildContext context, GoRouterState state) {
+        return const IngredientScannerScreen();
+      },
+    ),
+    GoRoute(
+      path: '/food/recipes',
+      builder: (BuildContext context, GoRouterState state) {
+        return const RecipesScreen();
+      },
+    ),
+    GoRoute(
+      path: '/food/recipes/:id',
+      builder: (BuildContext context, GoRouterState state) {
+        return RecipeDetailScreen(id: state.pathParameters['id']!);
+      },
+    ),
+    GoRoute(
+      path: '/measurements',
+      builder: (BuildContext context, GoRouterState state) {
+        return const MeasurementsHubScreen();
+      },
+    ),
+    GoRoute(
+      path: '/measurements/scale',
+      builder: (BuildContext context, GoRouterState state) {
+        return const ScaleMeasurementsScreen();
+      },
+    ),
+    GoRoute(
+      path: '/measurements/tape',
+      builder: (BuildContext context, GoRouterState state) {
+        return const TapeMeasurementsScreen();
+      },
+    ),
+    GoRoute(
+      path: '/workout',
+      builder: (BuildContext context, GoRouterState state) {
+        return const WorkoutHubScreen();
+      },
+    ),
+    GoRoute(
+      path: '/workout/exercises',
+      builder: (BuildContext context, GoRouterState state) {
+        return const WorkoutDisabledScreen();
+      },
+    ),
+    GoRoute(
+      path: '/workout/routines',
+      builder: (BuildContext context, GoRouterState state) {
+        return const WorkoutDisabledScreen();
+      },
+    ),
+    GoRoute(
+      path: '/workout/plans',
+      builder: (BuildContext context, GoRouterState state) {
+        return const WorkoutDisabledScreen();
+      },
+    ),
+    GoRoute(
+      path: '/workout/sessions',
+      builder: (BuildContext context, GoRouterState state) {
+        return const WorkoutDisabledScreen();
+      },
+    ),
+    GoRoute(
+      path: '/ui-preview',
+      builder: (BuildContext context, GoRouterState state) {
+        return const UiFoundationPreviewScreen();
+      },
+    ),
+    GoRoute(
+      path: '/dev/mock/tracking',
+      builder: (BuildContext context, GoRouterState state) {
+        return const mock_tracking.TrackingHubScreen();
+      },
+    ),
+    GoRoute(
+      path: '/dev/mock/ingredients',
+      builder: (BuildContext context, GoRouterState state) {
+        return const mock_nutrition.IngredientListScreen();
+      },
+    ),
+    GoRoute(
+      path: '/dev/mock/exercises',
+      builder: (BuildContext context, GoRouterState state) {
+        return const mock_workout.ExerciseListScreen();
       },
     ),
   ],
 );
-
-class InitialSetupScreen extends StatelessWidget {
-  const InitialSetupScreen({super.key});
-
-  static const EdgeInsets _pagePadding = EdgeInsets.all(24);
-  static const double _titleSpacing = 12;
-  static const double _bodySpacing = 28;
-
-  @override
-  Widget build(BuildContext context) {
-    final TextTheme textTheme = Theme.of(context).textTheme;
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: _pagePadding,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  'Total Tracker',
-                  textAlign: TextAlign.center,
-                  style: textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: colorScheme.onSurface,
-                  ),
-                ),
-                const SizedBox(height: _titleSpacing),
-                Text(
-                  'Nutrition, measurement and workout',
-                  textAlign: TextAlign.center,
-                  style: textTheme.titleMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: _bodySpacing),
-                Text(
-                  'Configurazione iniziale completata',
-                  textAlign: TextAlign.center,
-                  style: textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(height: _titleSpacing),
-                Text(
-                  'Le funzionalità verranno importate progressivamente dal '
-                  'sistema Obsidian esistente.',
-                  textAlign: TextAlign.center,
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
