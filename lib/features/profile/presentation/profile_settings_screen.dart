@@ -50,6 +50,14 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
   String _language = 'it';
   String _weightLossResponse = _WeightLossResponseCodes.standard;
   bool _isApplying = false;
+  Set<_TransferArea> _exportAreas = <_TransferArea>{
+    _TransferArea.food,
+    _TransferArea.workout,
+  };
+  Set<_TransferArea> _importAreas = <_TransferArea>{
+    _TransferArea.food,
+    _TransferArea.workout,
+  };
 
   @override
   void dispose() {
@@ -80,7 +88,8 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     _load(profile);
     final ScaleMeasurementEntity? latestScale =
         ref.watch(measurementRepositoryProvider).latestScale();
-    final double? currentWeight = latestScale?.weightKg ?? profile.initialWeightKg;
+    final double? currentWeight =
+        latestScale?.weightKg ?? profile.initialWeightKg;
     final ProfileNutritionTargets estimate =
         const ProfileNutritionCalculator().calculateFixedTargets(
       profile,
@@ -103,183 +112,194 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               AppSpacing.xxl,
             ),
             children: <Widget>[
-          _SummaryCard(
-            title: 'Target app',
-            icon: Icons.local_fire_department_outlined,
-            onTap: () => _showTargetExplanationSheet(
-              profile: profile,
-              estimate: estimate,
-              currentWeight: currentWeight,
-              hasScaleMeasurement: latestScale != null,
-            ),
-            rows: <_SettingRowData>[
-              _SettingRowData(
-                  'RMR', '${estimate.rmrKcal.round()} kcal'),
-              _SettingRowData('Moltiplicatore sedentario',
-                  'x${estimate.sedentaryMultiplier.toStringAsFixed(2)}'),
-              _SettingRowData(
-                  'Base sedentaria', '${estimate.sedentaryKcal.round()} kcal'),
-              _SettingRowData('Allenamenti medi',
-                  '${estimate.workoutDailyKcal.round()} kcal/giorno'),
-              _SettingRowData(
-                  'Target calcolato', '${estimate.targetKcal.round()} kcal'),
-              _SettingRowData(
-                'Peso attuale',
-                currentWeight == null
-                    ? 'n/d'
-                    : '${currentWeight.toStringAsFixed(1)} kg',
+              _SummaryCard(
+                title: 'Target app',
+                icon: Icons.local_fire_department_outlined,
+                onTap: () => _showTargetExplanationSheet(
+                  profile: profile,
+                  estimate: estimate,
+                  currentWeight: currentWeight,
+                  hasScaleMeasurement: latestScale != null,
+                ),
+                rows: <_SettingRowData>[
+                  _SettingRowData('RMR', '${estimate.rmrKcal.round()} kcal'),
+                  _SettingRowData('Moltiplicatore sedentario',
+                      'x${estimate.sedentaryMultiplier.toStringAsFixed(2)}'),
+                  _SettingRowData('Base sedentaria',
+                      '${estimate.sedentaryKcal.round()} kcal'),
+                  _SettingRowData('Allenamenti medi',
+                      '${estimate.workoutDailyKcal.round()} kcal/giorno'),
+                  _SettingRowData('Target calcolato',
+                      '${estimate.targetKcal.round()} kcal'),
+                  _SettingRowData(
+                    'Peso attuale',
+                    currentWeight == null
+                        ? 'n/d'
+                        : '${currentWeight.toStringAsFixed(1)} kg',
+                  ),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sectionGap),
-          const TtSectionHeader(title: 'Profilo'),
-          const SizedBox(height: AppSpacing.md),
-          _SummaryCard(
-            title: 'Dati personali',
-            icon: Icons.person_outline_rounded,
-            onEdit: () => _showProfileSheet(profile, currentWeight),
-            rows: <_SettingRowData>[
-              _SettingRowData(
-                  'Nome',
-                  profile.displayName.isEmpty
-                      ? 'Non impostato'
-                      : profile.displayName),
-              _SettingRowData('Eta', _age.text.isEmpty ? 'n/d' : _age.text),
-              _SettingRowData('Sesso', _sexLabel(profile.biologicalSexCode)),
-              _SettingRowData(
-                  'Peso iniziale',
-                  profile.initialWeightKg == null
-                      ? 'n/d'
-                      : '${_num(profile.initialWeightKg)} kg'),
-              _SettingRowData(
-                  'Altezza',
-                  profile.heightCm == null
-                      ? 'n/d'
-                      : '${_num(profile.heightCm)} cm'),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          _SummaryCard(
-            title: 'Target e attivita',
-            icon: Icons.tune_rounded,
-            onEdit: () => _showTargetSheet(profile, estimate),
-            rows: <_SettingRowData>[
-              _SettingRowData(
-                  'Modalita target', _targetModeLabel(profile.targetModeCode)),
-              _SettingRowData(
-                  'Target fisso', '${profile.defaultTargetKcal} kcal'),
-              _SettingRowData(
-                  'Target passi', '${profile.defaultStepGoal} passi'),
-              _SettingRowData(
-                  'Kcal per passo', _num(profile.stepKcalCoefficient)),
-              _SettingRowData(
-                'Allenamenti',
-                '${profile.averageWorkoutsPerWeek}/settimana, ${profile.averageWorkoutDurationMinutes} min',
+              const SizedBox(height: AppSpacing.sectionGap),
+              const TtSectionHeader(title: 'Profilo'),
+              const SizedBox(height: AppSpacing.md),
+              _SummaryCard(
+                title: 'Dati personali',
+                icon: Icons.person_outline_rounded,
+                onEdit: () => _showProfileSheet(profile, currentWeight),
+                rows: <_SettingRowData>[
+                  _SettingRowData(
+                      'Nome',
+                      profile.displayName.isEmpty
+                          ? 'Non impostato'
+                          : profile.displayName),
+                  _SettingRowData('Eta', _age.text.isEmpty ? 'n/d' : _age.text),
+                  _SettingRowData(
+                      'Sesso', _sexLabel(profile.biologicalSexCode)),
+                  _SettingRowData(
+                      'Peso iniziale',
+                      profile.initialWeightKg == null
+                          ? 'n/d'
+                          : '${_num(profile.initialWeightKg)} kg'),
+                  _SettingRowData(
+                      'Altezza',
+                      profile.heightCm == null
+                          ? 'n/d'
+                          : '${_num(profile.heightCm)} cm'),
+                ],
               ),
-              _SettingRowData('Tipo allenamento',
-                  _workoutLabel(profile.workoutActivityTypeCode)),
-              _SettingRowData('Risposta peso',
-                  _weightLossResponseLabel(_weightLossResponse)),
-              _SettingRowData(
-                'Finestra adattiva',
-                '${profile.adaptiveReferenceDays} giorni',
+              const SizedBox(height: AppSpacing.md),
+              _SummaryCard(
+                title: 'Target e attivita',
+                icon: Icons.tune_rounded,
+                onEdit: () => _showTargetSheet(profile, estimate),
+                rows: <_SettingRowData>[
+                  _SettingRowData('Modalita target',
+                      _targetModeLabel(profile.targetModeCode)),
+                  _SettingRowData(
+                      'Target fisso', '${profile.defaultTargetKcal} kcal'),
+                  _SettingRowData(
+                      'Target passi', '${profile.defaultStepGoal} passi'),
+                  _SettingRowData(
+                      'Kcal per passo', _num(profile.stepKcalCoefficient)),
+                  _SettingRowData(
+                    'Allenamenti',
+                    '${profile.averageWorkoutsPerWeek}/settimana, ${profile.averageWorkoutDurationMinutes} min',
+                  ),
+                  _SettingRowData('Tipo allenamento',
+                      _workoutLabel(profile.workoutActivityTypeCode)),
+                  _SettingRowData('Risposta peso',
+                      _weightLossResponseLabel(_weightLossResponse)),
+                  _SettingRowData(
+                    'Finestra adattiva',
+                    '${profile.adaptiveReferenceDays} giorni',
+                  ),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          _SummaryCard(
-            title: 'Macro nutrienti',
-            icon: Icons.pie_chart_outline_rounded,
-            onEdit: () => _showMacroSheet(profile),
-            rows: <_SettingRowData>[
-              _SettingRowData(
-                  'Modalita', _macroModeLabel(profile.macroModeCode)),
-              _SettingRowData('Proteine', '${estimate.proteinGrams.round()} g'),
-              _SettingRowData('Grassi', '${estimate.fatGrams.round()} g'),
-              _SettingRowData('Fibre', '${estimate.fiberGrams.round()} g'),
-              _SettingRowData(
-                  'Carboidrati', '${estimate.carbsGrams.round()} g'),
-              _SettingRowData('Zuccheri max', '${estimate.sugarGrams.round()} g'),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sectionGap),
-          const TtSectionHeader(title: 'App e dati'),
-          const SizedBox(height: AppSpacing.md),
-          _SummaryCard(
-            title: 'Preferenze',
-            icon: Icons.settings_outlined,
-            onEdit: () => _showAppSheet(profile),
-            rows: <_SettingRowData>[
-              _SettingRowData('Tema', _themeLabel(profile.themeModeCode)),
-              _SettingRowData('Lingua',
-                  profile.languageCode == 'en' ? 'English' : 'Italiano'),
-              const _SettingRowData(
-                'Dashboard iniziale',
-                'Food Plan',
+              const SizedBox(height: AppSpacing.md),
+              _SummaryCard(
+                title: 'Macro nutrienti',
+                icon: Icons.pie_chart_outline_rounded,
+                onEdit: () => _showMacroSheet(profile),
+                rows: <_SettingRowData>[
+                  _SettingRowData(
+                      'Modalita', _macroModeLabel(profile.macroModeCode)),
+                  _SettingRowData(
+                      'Proteine', '${estimate.proteinGrams.round()} g'),
+                  _SettingRowData('Grassi', '${estimate.fatGrams.round()} g'),
+                  _SettingRowData('Fibre', '${estimate.fiberGrams.round()} g'),
+                  _SettingRowData(
+                      'Carboidrati', '${estimate.carbsGrams.round()} g'),
+                  _SettingRowData(
+                      'Zuccheri max', '${estimate.sugarGrams.round()} g'),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          const _SummaryCard(
-            title: 'Import / Export',
-            icon: Icons.import_export_rounded,
-            rows: <_SettingRowData>[
-              _SettingRowData('Export JSON', 'Prossimamente'),
-              _SettingRowData('Import JSON', 'Prossimamente'),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          TtAppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
+              const SizedBox(height: AppSpacing.sectionGap),
+              const TtSectionHeader(title: 'App e dati'),
+              const SizedBox(height: AppSpacing.md),
+              _SummaryCard(
+                title: 'Preferenze',
+                icon: Icons.settings_outlined,
+                onEdit: () => _showAppSheet(profile),
+                rows: <_SettingRowData>[
+                  _SettingRowData('Tema', _themeLabel(profile.themeModeCode)),
+                  _SettingRowData('Lingua',
+                      profile.languageCode == 'en' ? 'English' : 'Italiano'),
+                  const _SettingRowData(
+                    'Dashboard iniziale',
+                    'Food Plan',
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _SummaryCard(
+                title: 'Import / Export',
+                icon: Icons.import_export_rounded,
+                onEdit: _showTransferSelectionSheet,
+                rows: <_SettingRowData>[
+                  _SettingRowData(
+                    'Esportazione',
+                    _transferAreaLabel(_exportAreas),
+                  ),
+                  _SettingRowData(
+                    'Importazione',
+                    _transferAreaLabel(_importAreas),
+                  ),
+                  const _SettingRowData(
+                    'Operazioni file',
+                    'Non ancora abilitate',
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              TtAppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Icon(
-                      Icons.storage_rounded,
-                      color: Theme.of(context).colorScheme.primary,
+                    Row(
+                      children: <Widget>[
+                        Icon(
+                          Icons.storage_rounded,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Text(
+                            'Dati locali',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Text(
-                        'Dati locali',
-                        style: Theme.of(context).textTheme.titleMedium,
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      dataPath,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Theme.of(context).colorScheme.error,
+                          side: BorderSide(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                        onPressed: () => _showDeleteDataSheet(dataPath),
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        label: const Text('Cancella dati'),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  dataPath,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Theme.of(context).colorScheme.error,
-                      side: BorderSide(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                    onPressed: () => _showDeleteDataSheet(dataPath),
-                    icon: const Icon(Icons.delete_outline_rounded),
-                    label: const Text('Cancella dati'),
-                  ),
-                ),
-              ],
-            ),
-          ),
+              ),
             ],
           ),
           if (_isApplying)
             Positioned.fill(
               child: ColoredBox(
-                color: Theme.of(context)
-                    .colorScheme
-                    .scrim
-                    .withValues(alpha: 0.42),
+                color:
+                    Theme.of(context).colorScheme.scrim.withValues(alpha: 0.42),
                 child: Center(
                   child: TtAppCard(
                     child: Column(
@@ -405,9 +425,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
                 rows: <_SettingRowData>[
                   _SettingRowData(
                     'Peso',
-                    currentWeight == null
-                        ? 'n/d'
-                        : '${_num(currentWeight)} kg',
+                    currentWeight == null ? 'n/d' : '${_num(currentWeight)} kg',
                   ),
                   _SettingRowData(
                     'Finestra adattiva',
@@ -593,7 +611,8 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
             enabled: false,
             decoration: const InputDecoration(
               labelText: 'Metabolismo basale',
-              helperText: 'Harris-Benedict in base a sesso, età, peso e altezza',
+              helperText:
+                  'Harris-Benedict in base a sesso, età, peso e altezza',
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -649,8 +668,8 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
           const SizedBox(height: AppSpacing.md),
           DropdownButtonFormField<String>(
             initialValue: _weightLossResponse,
-            decoration:
-                const InputDecoration(labelText: 'Quanto facilmente perdi peso'),
+            decoration: const InputDecoration(
+                labelText: 'Quanto facilmente perdi peso'),
             items: const <DropdownMenuItem<String>>[
               DropdownMenuItem<String>(
                 value: _WeightLossResponseCodes.easy,
@@ -891,6 +910,296 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       _copyProfileToControllers(profile);
       setState(() {});
     }
+  }
+
+  Future<void> _showTransferSelectionSheet() async {
+    _TransferDirection direction = _TransferDirection.export;
+    final Set<_TransferArea> exportSelection = <_TransferArea>{
+      ..._exportAreas,
+    };
+    final Set<_TransferArea> importSelection = <_TransferArea>{
+      ..._importAreas,
+    };
+    final bool? saved = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setSheetState) {
+            final Set<_TransferArea> selected =
+                direction == _TransferDirection.export
+                    ? exportSelection
+                    : importSelection;
+            return FractionallySizedBox(
+              heightFactor: 0.82,
+              child: Column(
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.sm,
+                      AppSpacing.sm,
+                      AppSpacing.md,
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color:
+                                Theme.of(context).colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(
+                            Icons.import_export_rounded,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onPrimaryContainer,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                'Seleziona aree dati',
+                                style:
+                                    Theme.of(context).textTheme.headlineSmall,
+                              ),
+                              Text(
+                                'Questa fase configura soltanto la selezione.',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Chiudi',
+                          onPressed: () =>
+                              Navigator.of(sheetContext).pop(false),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.lg,
+                        0,
+                        AppSpacing.lg,
+                        AppSpacing.md,
+                      ),
+                      children: <Widget>[
+                        SegmentedButton<_TransferDirection>(
+                          segments: const <ButtonSegment<_TransferDirection>>[
+                            ButtonSegment<_TransferDirection>(
+                              value: _TransferDirection.export,
+                              icon: Icon(Icons.upload_file_rounded),
+                              label: Text('Esportazione'),
+                            ),
+                            ButtonSegment<_TransferDirection>(
+                              value: _TransferDirection.import,
+                              icon: Icon(Icons.download_rounded),
+                              label: Text('Importazione'),
+                            ),
+                          ],
+                          selected: <_TransferDirection>{direction},
+                          onSelectionChanged: (Set<_TransferDirection> value) {
+                            setSheetState(() => direction = value.first);
+                          },
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        for (final _TransferArea area in _TransferArea.values)
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.md,
+                            ),
+                            child: TtAppCard(
+                              onTap: () {
+                                setSheetState(() {
+                                  if (selected.contains(area)) {
+                                    selected.remove(area);
+                                  } else {
+                                    selected.add(area);
+                                  }
+                                });
+                              },
+                              backgroundColor: selected.contains(area)
+                                  ? Theme.of(context)
+                                      .colorScheme
+                                      .primaryContainer
+                                      .withValues(alpha: 0.6)
+                                  : null,
+                              borderColor: selected.contains(area)
+                                  ? Theme.of(context).colorScheme.primary
+                                  : null,
+                              child: Row(
+                                children: <Widget>[
+                                  Container(
+                                    width: 46,
+                                    height: 46,
+                                    decoration: BoxDecoration(
+                                      color: selected.contains(area)
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .primary
+                                          : Theme.of(context)
+                                              .colorScheme
+                                              .surfaceContainerHighest,
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: Icon(
+                                      area.icon,
+                                      color: selected.contains(area)
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .onPrimary
+                                          : Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppSpacing.md),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Text(
+                                          area.label,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleMedium
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                        ),
+                                        const SizedBox(
+                                          height: AppSpacing.xxs,
+                                        ),
+                                        Text(
+                                          area.subtitle,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Checkbox(
+                                    value: selected.contains(area),
+                                    onChanged: (bool? value) {
+                                      setSheetState(() {
+                                        if (value ?? false) {
+                                          selected.add(area);
+                                        } else {
+                                          selected.remove(area);
+                                        }
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        Container(
+                          padding: const EdgeInsets.all(AppSpacing.md),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .secondaryContainer,
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Icon(
+                                Icons.info_outline_rounded,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSecondaryContainer,
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              Expanded(
+                                child: Text(
+                                  'Nessun file verrà creato, letto o modificato. '
+                                  'L importazione e l esportazione effettive '
+                                  'saranno implementate nella fase successiva.',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSecondaryContainer,
+                                      ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.lg,
+                        AppSpacing.sm,
+                        AppSpacing.lg,
+                        AppSpacing.lg,
+                      ),
+                      child: Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () =>
+                                  Navigator.of(sheetContext).pop(false),
+                              child: const Text('Annulla'),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: exportSelection.isEmpty ||
+                                      importSelection.isEmpty
+                                  ? null
+                                  : () => Navigator.of(sheetContext).pop(true),
+                              icon: const Icon(Icons.check_rounded),
+                              label: const Text('Conferma'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (saved != true || !mounted) {
+      return;
+    }
+    setState(() {
+      _exportAreas = <_TransferArea>{...exportSelection};
+      _importAreas = <_TransferArea>{...importSelection};
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Selezione aggiornata. Nessun import o export è stato eseguito.',
+        ),
+      ),
+    );
   }
 
   Future<void> _showDeleteDataSheet(String dataPath) async {
@@ -1156,7 +1465,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       profile.fiberGramsPerKg = _toDouble(_fiberKg.text) ?? 0.5;
       profile.carbsGramsPerKg = _toDouble(_carbsKg.text) ?? 3;
       profile.sugarCarbsPercent =
-          (_toDouble(_sugarCarbsPercent.text) ?? 25).clamp(0, 100).toDouble();
+          (_toDouble(_sugarCarbsPercent.text) ?? 15).clamp(0, 100).toDouble();
       profile.themeModeCode = _themeMode;
       profile.languageCode = _language;
       profile.kcalPerKg = _kcalPerKgForWeightLossResponse(_weightLossResponse);
@@ -1196,6 +1505,37 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       dailyRepository.save(day);
     }
   }
+}
+
+enum _TransferDirection { export, import }
+
+enum _TransferArea {
+  food(
+    'Alimentazione',
+    'Giorni, pasti, ingredienti, ricette e misurazioni corporee.',
+    Icons.restaurant_menu_rounded,
+  ),
+  workout(
+    'Allenamento',
+    'Esercizi, schede, routine e sessioni di allenamento.',
+    Icons.fitness_center_rounded,
+  );
+
+  const _TransferArea(this.label, this.subtitle, this.icon);
+
+  final String label;
+  final String subtitle;
+  final IconData icon;
+}
+
+String _transferAreaLabel(Set<_TransferArea> areas) {
+  if (areas.length == _TransferArea.values.length) {
+    return 'Alimentazione e allenamento';
+  }
+  if (areas.length == 1) {
+    return areas.single.label;
+  }
+  return 'Nessuna area';
 }
 
 enum _DataGroup {
@@ -1359,8 +1699,7 @@ class _ProfileExplanationCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
           Text(body),
           const SizedBox(height: AppSpacing.md),
-          for (final _SettingRowData row in rows)
-            _SettingsMetricRow(row: row),
+          for (final _SettingRowData row in rows) _SettingsMetricRow(row: row),
         ],
       ),
     );

@@ -93,6 +93,7 @@ class MealRepository {
   Box<MealItemEntity> get _itemBox => _store.box<MealItemEntity>();
 
   MealEntity save(MealEntity meal) {
+    _preserveStoredSlot(meal);
     _normalizeMeal(meal);
     _validateMeal(meal);
     _prepareMealForSave(meal);
@@ -106,6 +107,7 @@ class MealRepository {
     bool replaceItems = true,
   }) {
     return _store.runInTransaction(TxMode.write, () {
+      _preserveStoredSlot(meal);
       _normalizeMeal(meal);
       _validateMeal(meal);
       _prepareMealForSave(meal);
@@ -356,6 +358,44 @@ class MealRepository {
       }
       return meal;
     });
+  }
+
+  int clearItemsForDate(String dateKey) {
+    final String cleanDateKey = dateKey.trim();
+    if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(cleanDateKey)) {
+      throw ArgumentError.value(dateKey, 'dateKey', 'Use YYYY-MM-DD.');
+    }
+    return _store.runInTransaction(TxMode.write, () {
+      final int now = _clock.nowEpochMs();
+      final List<MealItemEntity> itemsToDelete = <MealItemEntity>[];
+      for (final MealEntity meal in getMealsForDate(cleanDateKey)) {
+        final List<MealItemEntity> activeItems = getItemsForMeal(meal.id);
+        if (activeItems.isEmpty) {
+          continue;
+        }
+        for (final MealItemEntity item in activeItems) {
+          item.deletedAtEpochMs = now;
+          item.updatedAtEpochMs = now;
+          itemsToDelete.add(item);
+        }
+        meal.updatedAtEpochMs = now;
+        _mealBox.put(meal);
+      }
+      if (itemsToDelete.isNotEmpty) {
+        _itemBox.putMany(itemsToDelete);
+      }
+      return itemsToDelete.length;
+    });
+  }
+
+  void _preserveStoredSlot(MealEntity meal) {
+    if (meal.id == 0) {
+      return;
+    }
+    final MealEntity? stored = _mealBox.get(meal.id);
+    if (stored != null) {
+      meal.mealTypeCode = stored.mealTypeCode;
+    }
   }
 
   void _prepareMealForSave(MealEntity meal) {

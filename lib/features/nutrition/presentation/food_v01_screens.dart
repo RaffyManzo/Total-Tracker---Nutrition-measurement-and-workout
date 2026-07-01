@@ -259,6 +259,11 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
             day: latest,
             profile: data.profile,
           );
+    final ActivityBreakdown? latestActivity = latest == null
+        ? null
+        : data.analytics.activityForDay(latest, profile: data.profile);
+    final double? latestWeight =
+        latest == null ? null : data.analytics.weightForDay(latest);
     final List<DailyRecordEntity> chartDays =
         _daysForChartRange(data.days, _chartFrom.text, _chartTo.text);
     final List<TtChartPoint> caloriePoints = _caloriePoints(chartDays, data);
@@ -281,9 +286,22 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
           totals: totals,
           targetKcal: latestTarget,
           macroTargets: macroTargets,
-          onTap: latest == null
+          onTap: latest == null || latestActivity == null
               ? null
-              : () => context.push('/food/days/${latest.dateKey}'),
+              : () => _showDayStatsSheet(
+                    context: context,
+                    day: latest,
+                    caloriesIn: totals.kcal,
+                    target: latestTarget,
+                    balance: totals.kcal - latestTarget,
+                    activity: latestActivity,
+                    weight: latestWeight,
+                    onOpenDay: () =>
+                        context.push('/food/days/${latest.dateKey}'),
+                  ),
+          onMealTap: (MealWithItems meal) {
+            context.push('/food/meals/${meal.meal.id}');
+          },
         ),
         if (data.hasPartialNutrition) ...<Widget>[
           const SizedBox(height: AppSpacing.md),
@@ -514,6 +532,7 @@ class _DashboardDailySummary extends StatelessWidget {
     required this.targetKcal,
     required this.macroTargets,
     required this.onTap,
+    this.onMealTap,
   });
 
   final DailyRecordEntity? day;
@@ -522,6 +541,7 @@ class _DashboardDailySummary extends StatelessWidget {
   final double targetKcal;
   final ProfileNutritionTargets macroTargets;
   final VoidCallback? onTap;
+  final ValueChanged<MealWithItems>? onMealTap;
 
   @override
   Widget build(BuildContext context) {
@@ -688,7 +708,11 @@ class _DashboardDailySummary extends StatelessWidget {
                 Expanded(
                   child: _MealCompletionCell(
                     emoji: _slotEmoji(slot),
+                    label: _slotLabel(slot),
                     selected: mealsBySlot[slot]?.items.isNotEmpty ?? false,
+                    onTap: mealsBySlot[slot] == null || onMealTap == null
+                        ? null
+                        : () => onMealTap!(mealsBySlot[slot]!),
                   ),
                 ),
             ],
@@ -748,25 +772,68 @@ class _WalkingProgressBar extends StatelessWidget {
 class _MealCompletionCell extends StatelessWidget {
   const _MealCompletionCell({
     required this.emoji,
+    required this.label,
     required this.selected,
+    this.onTap,
   });
 
   final String emoji;
+  final String label;
   final bool selected;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Text(emoji, style: const TextStyle(fontSize: 24)),
-        Icon(
-          selected ? Icons.radio_button_checked : Icons.radio_button_off,
-          color: selected
-              ? Theme.of(context).colorScheme.primary
-              : Theme.of(context).colorScheme.outline,
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final Color background = selected
+        ? colors.primaryContainer.withValues(alpha: 0.72)
+        : colors.surfaceContainerHighest.withValues(alpha: 0.6);
+    final Color foreground =
+        selected ? colors.onPrimaryContainer : colors.onSurfaceVariant;
+    return Semantics(
+      button: onTap != null,
+      label: '$label, ${selected ? 'registrato' : 'vuoto'}',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+        child: Material(
+          color: background,
+          borderRadius: BorderRadius.circular(16),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.xs,
+                vertical: AppSpacing.sm,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(emoji, style: const TextStyle(fontSize: 23)),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: foreground,
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Icon(
+                    selected
+                        ? Icons.check_circle_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                    size: 18,
+                    color: selected ? colors.primary : colors.outline,
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -1028,6 +1095,274 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
     _loaded = true;
   }
 
+  Future<void> _showDayObjectBoxDetails(
+    DailyRecordEntity day,
+    List<MealWithItems> meals,
+  ) async {
+    final int mealItemCount = meals.fold<int>(
+      0,
+      (int sum, MealWithItems meal) => sum + meal.items.length,
+    );
+    final bool? clearRequested = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) {
+        return FractionallySizedBox(
+          heightFactor: 0.9,
+          child: Column(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color:
+                            Theme.of(sheetContext).colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(
+                        Icons.storage_rounded,
+                        color: Theme.of(sheetContext)
+                            .colorScheme
+                            .onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Dettagli giornata',
+                            style:
+                                Theme.of(sheetContext).textTheme.headlineSmall,
+                          ),
+                          Text(
+                            'Campi persistenti salvati in ObjectBox',
+                            style: Theme.of(sheetContext).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Chiudi',
+                      onPressed: () => Navigator.of(sheetContext).pop(false),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    0,
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                  ),
+                  children: <Widget>[
+                    _TrackingSheetSection(
+                      emoji: '🧱',
+                      title: 'Identificativi',
+                      children: <Widget>[
+                        _detailRow('ObjectBox id', day.id.toString()),
+                        _detailRow('UUID', day.uuid),
+                      ],
+                    ),
+                    _TrackingSheetSection(
+                      emoji: '📅',
+                      title: 'Calendario',
+                      children: <Widget>[
+                        _detailRow('Data', day.dateKey),
+                        _detailRow('Settimana', day.weekCode),
+                        _detailRow('Weekday code', day.weekdayCode),
+                        _detailRow('Weekday label', day.weekdayLabel),
+                        _detailRow(
+                            'Weekday index', day.weekdayIndex.toString()),
+                      ],
+                    ),
+                    _TrackingSheetSection(
+                      emoji: '🎯',
+                      title: 'Target e attività',
+                      children: <Widget>[
+                        _detailRow('Target kcal',
+                            _fmtNullable(day.targetKcal, 'kcal')),
+                        _detailRow('Target status', day.targetStatusCode),
+                        _detailRow('Target source hash', day.targetSourceHash),
+                        _detailRow('RMR', _fmtNullable(day.rmrKcal, 'kcal')),
+                        _detailRow('TDEE riferimento',
+                            _fmtNullable(day.tdeeRefKcal, 'kcal')),
+                        _detailRow('TDEE teorico',
+                            _fmtNullable(day.tdeeTheoreticalKcal, 'kcal')),
+                        _detailRow('TDEE osservato',
+                            _fmtNullable(day.tdeeObservedKcal, 'kcal')),
+                        _detailRow('Attive effettive',
+                            _fmtNullable(day.activeEffectiveKcal, 'kcal')),
+                        _detailRow('Stato attività', day.activeStatusCode),
+                      ],
+                    ),
+                    _TrackingSheetSection(
+                      emoji: '📝',
+                      title: 'Monitoraggio',
+                      children: <Widget>[
+                        _detailRow('Pasti', meals.length.toString()),
+                        _detailRow('Voci nei pasti', mealItemCount.toString()),
+                        _detailRow('Passi', day.steps.toString()),
+                        _detailRow('Obiettivo passi', day.stepGoal.toString()),
+                        _detailRow('Acqua', _fmtNullable(day.waterLiters, 'l')),
+                        _detailRow(
+                            'Bicchieri', day.waterGlasses?.toString() ?? ''),
+                        _detailRow('Sonno profondo',
+                            _fmtNullable(day.sleepDeepHours, 'h')),
+                        _detailRow('Sonno leggero',
+                            _fmtNullable(day.sleepLightHours, 'h')),
+                        _detailRow('Qualità sonno', day.sleepQualityCode),
+                        _detailRow('Note', day.notes),
+                      ],
+                    ),
+                    _TrackingSheetSection(
+                      emoji: '🕒',
+                      title: 'Audit',
+                      children: <Widget>[
+                        _detailRow(
+                            'Creato epoch ms', day.createdAtEpochMs.toString()),
+                        _detailRow('Aggiornato epoch ms',
+                            day.updatedAtEpochMs.toString()),
+                        _detailRow(
+                          'Eliminato epoch ms',
+                          day.deletedAtEpochMs?.toString() ?? '',
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.sm,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor:
+                            Theme.of(sheetContext).colorScheme.error,
+                        side: BorderSide(
+                          color: Theme.of(sheetContext).colorScheme.error,
+                        ),
+                      ),
+                      onPressed: mealItemCount == 0
+                          ? null
+                          : () => Navigator.of(sheetContext).pop(true),
+                      icon: const Icon(Icons.delete_sweep_outlined),
+                      label: Text(
+                        mealItemCount == 0
+                            ? 'Nessuna voce da eliminare'
+                            : 'Svuota i pasti della giornata ($mealItemCount)',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (clearRequested != true || !mounted) {
+      return;
+    }
+    final bool? confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.sm,
+              AppSpacing.lg,
+              AppSpacing.lg,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Svuota i pasti della giornata',
+                  style: Theme.of(sheetContext).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'Verranno eliminate tutte le $mealItemCount voci presenti nei '
+                  'pasti del ${day.dateKey}. Gli slot Colazione, Pranzo, Spuntino '
+                  'e Cena resteranno disponibili.',
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(false),
+                        child: const Text('Annulla'),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor:
+                              Theme.of(sheetContext).colorScheme.error,
+                          foregroundColor:
+                              Theme.of(sheetContext).colorScheme.onError,
+                        ),
+                        onPressed: () => Navigator.of(sheetContext).pop(true),
+                        icon: const Icon(Icons.delete_sweep_outlined),
+                        label: const Text('Svuota'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    final int removed =
+        ref.read(mealRepositoryProvider).clearItemsForDate(day.dateKey);
+    _invalidateFood(ref);
+    setState(_load);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          removed == 1
+              ? 'Eliminata 1 voce dai pasti della giornata.'
+              : 'Eliminate $removed voci dai pasti della giornata.',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_loaded) {
@@ -1071,10 +1406,9 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
         title: Text('${day.weekdayLabel} ${day.dateKey}'),
         actions: <Widget>[
           IconButton(
-            tooltip: 'Aggiorna monitoraggio',
-            onPressed: () =>
-                _showDayTrackingDialog(day, weight, hasScaleMeasurement),
-            icon: const Icon(Icons.edit_note_rounded),
+            tooltip: 'Dettagli ObjectBox',
+            onPressed: () => _showDayObjectBoxDetails(day, meals),
+            icon: const Icon(Icons.info_outline_rounded),
           ),
         ],
       ),
@@ -1882,68 +2216,413 @@ Future<void> _showDayStatsSheet({
   required double? balance,
   required ActivityBreakdown activity,
   required double? weight,
+  VoidCallback? onOpenDay,
 }) async {
+  final double safeTarget = target == null || target <= 0 ? 1.0 : target;
+  final double calorieProgress =
+      (caloriesIn / safeTarget).clamp(0, 1).toDouble();
+  final double sleepTotal =
+      (day.sleepDeepHours ?? 0) + (day.sleepLightHours ?? 0);
   await showModalBottomSheet<void>(
     context: context,
-    showDragHandle: true,
+    showDragHandle: false,
     isScrollControlled: true,
-    builder: (BuildContext context) {
-      return SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.lg,
-            AppSpacing.sm,
-            AppSpacing.lg,
-            AppSpacing.lg,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                'Riepilogo ${day.dateKey}',
-                style: Theme.of(context).textTheme.headlineSmall,
+    useSafeArea: true,
+    builder: (BuildContext sheetContext) {
+      final ColorScheme colors = Theme.of(sheetContext).colorScheme;
+      return FractionallySizedBox(
+        heightFactor: 0.9,
+        child: Column(
+          children: <Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colors.outlineVariant,
+                borderRadius: BorderRadius.circular(999),
               ),
-              const SizedBox(height: AppSpacing.sectionGap),
-              _MetricGrid(
-                metrics: <_Metric>[
-                  _Metric('Target kcal', _fmtNullableKcal(target)),
-                  _Metric('Assunte', _fmtKcal(caloriesIn)),
-                  _Metric(
-                    'Bilancio',
-                    balance == null ? 'n/d' : _signedKcal(balance),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.md,
+                AppSpacing.sm,
+                AppSpacing.md,
+              ),
+              child: Row(
+                children: <Widget>[
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: colors.primaryContainer,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Icon(
+                      Icons.dashboard_customize_outlined,
+                      color: colors.onPrimaryContainer,
+                    ),
                   ),
-                  _Metric('Passi kcal', _fmtKcal(activity.stepKcal)),
-                  _Metric(
-                    'Workout completed',
-                    _fmtKcal(activity.completedWorkoutKcal),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'Riepilogo giornaliero',
+                          style: Theme.of(sheetContext).textTheme.headlineSmall,
+                        ),
+                        Text(
+                          '${day.weekdayLabel} ${day.dateKey}',
+                          style: Theme.of(sheetContext).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
                   ),
-                  _Metric(
-                      'Attive effettive', _fmtKcal(activity.actualTotalKcal)),
-                  _Metric('Peso', _fmtNullable(weight, 'kg')),
-                  _Metric('Acqua', _fmtNullable(day.waterLiters, 'l')),
-                  _Metric('Bicchieri', day.waterGlasses?.toString() ?? 'n/d'),
-                  _Metric(
-                    'Sonno profondo',
-                    _fmtNullable(day.sleepDeepHours, 'h'),
+                  IconButton(
+                    tooltip: 'Chiudi',
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                    icon: const Icon(Icons.close_rounded),
                   ),
-                  _Metric(
-                    'Sonno leggero',
-                    _fmtNullable(day.sleepLightHours, 'h'),
-                  ),
-                  _Metric(
-                    'Qualità sonno',
-                    day.sleepQualityCode.isEmpty ? 'n/d' : day.sleepQualityCode,
-                  ),
-                  _Metric('Passi', day.steps.toString()),
-                  _Metric('Obiettivo passi', day.stepGoal.toString()),
                 ],
               ),
-            ],
-          ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  0,
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                ),
+                children: <Widget>[
+                  Container(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    decoration: BoxDecoration(
+                      color: colors.primaryContainer.withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        SizedBox.square(
+                          dimension: 96,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: <Widget>[
+                              SizedBox.square(
+                                dimension: 88,
+                                child: CircularProgressIndicator(
+                                  value: calorieProgress,
+                                  strokeWidth: 9,
+                                  backgroundColor:
+                                      colors.surface.withValues(alpha: 0.72),
+                                ),
+                              ),
+                              Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  const Text('🔥',
+                                      style: TextStyle(fontSize: 20)),
+                                  Text(
+                                    caloriesIn.round().toString(),
+                                    style: Theme.of(sheetContext)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.copyWith(
+                                          color: colors.onPrimaryContainer,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.lg),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                'Calorie assunte',
+                                style: Theme.of(sheetContext)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(
+                                      color: colors.onPrimaryContainer,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                              ),
+                              const SizedBox(height: AppSpacing.xs),
+                              Text(
+                                'Target ${_fmtNullableKcal(target)}',
+                                style: Theme.of(sheetContext)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                      color: colors.onPrimaryContainer,
+                                    ),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.sm,
+                                  vertical: AppSpacing.xs,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: colors.surface.withValues(alpha: 0.74),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  balance == null
+                                      ? 'Bilancio n/d'
+                                      : 'Bilancio ${_signedKcal(balance)}',
+                                  style: Theme.of(sheetContext)
+                                      .textTheme
+                                      .labelLarge
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  _DaySummarySection(
+                    icon: Icons.directions_walk_rounded,
+                    title: 'Attività',
+                    values: <_DaySummaryValue>[
+                      _DaySummaryValue(
+                        icon: Icons.directions_walk_rounded,
+                        label: 'Passi',
+                        value: day.steps.toString(),
+                      ),
+                      _DaySummaryValue(
+                        icon: Icons.flag_outlined,
+                        label: 'Obiettivo',
+                        value: day.stepGoal.toString(),
+                      ),
+                      _DaySummaryValue(
+                        icon: Icons.local_fire_department_outlined,
+                        label: 'Passi kcal',
+                        value: _fmtKcal(activity.stepKcal),
+                      ),
+                      _DaySummaryValue(
+                        icon: Icons.fitness_center_rounded,
+                        label: 'Workout',
+                        value: _fmtKcal(activity.completedWorkoutKcal),
+                      ),
+                      _DaySummaryValue(
+                        icon: Icons.bolt_rounded,
+                        label: 'Attive effettive',
+                        value: _fmtKcal(activity.actualTotalKcal),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _DaySummarySection(
+                    icon: Icons.favorite_outline_rounded,
+                    title: 'Benessere',
+                    values: <_DaySummaryValue>[
+                      _DaySummaryValue(
+                        icon: Icons.monitor_weight_outlined,
+                        label: 'Peso',
+                        value: _fmtNullable(weight, 'kg'),
+                      ),
+                      _DaySummaryValue(
+                        icon: Icons.water_drop_outlined,
+                        label: 'Acqua',
+                        value: _fmtNullable(day.waterLiters, 'l'),
+                      ),
+                      _DaySummaryValue(
+                        icon: Icons.local_drink_outlined,
+                        label: 'Bicchieri',
+                        value: day.waterGlasses?.toString() ?? 'n/d',
+                      ),
+                      _DaySummaryValue(
+                        icon: Icons.bedtime_outlined,
+                        label: 'Sonno totale',
+                        value:
+                            sleepTotal <= 0 ? 'n/d' : '${_fmt(sleepTotal)} h',
+                      ),
+                      _DaySummaryValue(
+                        icon: Icons.dark_mode_outlined,
+                        label: 'Profondo',
+                        value: _fmtNullable(day.sleepDeepHours, 'h'),
+                      ),
+                      _DaySummaryValue(
+                        icon: Icons.light_mode_outlined,
+                        label: 'Leggero',
+                        value: _fmtNullable(day.sleepLightHours, 'h'),
+                      ),
+                      _DaySummaryValue(
+                        icon: Icons.auto_awesome_outlined,
+                        label: 'Qualità',
+                        value: day.sleepQualityCode.isEmpty
+                            ? 'n/d'
+                            : day.sleepQualityCode,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (onOpenDay != null)
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.sm,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        onOpenDay();
+                      },
+                      icon: const Icon(Icons.open_in_new_rounded),
+                      label: const Text('Apri giornata completa'),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       );
     },
   );
+}
+
+class _DaySummaryValue {
+  const _DaySummaryValue({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+}
+
+class _DaySummarySection extends StatelessWidget {
+  const _DaySummarySection({
+    required this.icon,
+    required this.title,
+    required this.values,
+  });
+
+  final IconData icon;
+  final String title;
+  final List<_DaySummaryValue> values;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: colors.secondaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon,
+                  size: 20,
+                  color: colors.onSecondaryContainer,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final double width = (constraints.maxWidth - AppSpacing.sm) / 2;
+              return Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                children: <Widget>[
+                  for (final _DaySummaryValue value in values)
+                    SizedBox(
+                      width: width,
+                      child: Container(
+                        constraints: const BoxConstraints(minHeight: 78),
+                        padding: const EdgeInsets.all(AppSpacing.sm),
+                        decoration: BoxDecoration(
+                          color: colors.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Icon(
+                              value.icon,
+                              size: 19,
+                              color: colors.primary,
+                            ),
+                            const SizedBox(width: AppSpacing.xs),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Text(
+                                    value.label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style:
+                                        Theme.of(context).textTheme.labelSmall,
+                                  ),
+                                  const SizedBox(height: AppSpacing.xxs),
+                                  Text(
+                                    value.value,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(fontWeight: FontWeight.w800),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class FoodMealsScreen extends ConsumerStatefulWidget {
@@ -2574,7 +3253,6 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
   Future<void> _showMealSettingsDialog() async {
     final TextEditingController title =
         TextEditingController(text: _details.meal.title);
-    String slot = _details.meal.mealTypeCode;
     String mode = _details.meal.mealModeCode;
     String freeTracking = _details.meal.freeMealTrackingCode.isEmpty
         ? 'tracked'
@@ -2637,24 +3315,35 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
                             title: 'Identita',
                             children: <Widget>[
                               _field(title, 'Titolo', isRequired: true),
-                              DropdownButtonFormField<String>(
-                                initialValue: slot,
-                                decoration:
-                                    const InputDecoration(labelText: 'Slot'),
-                                items: ObsidianFoodSeedConstants.mealSlots
-                                    .map((String value) {
-                                  return DropdownMenuItem<String>(
-                                    value: value,
-                                    child: Text(
-                                      '${_slotEmoji(value)} ${_slotLabel(value)}',
+                              InputDecorator(
+                                decoration: const InputDecoration(
+                                  labelText: 'Slot',
+                                  helperText:
+                                      'Lo slot è fisso e non può essere modificato.',
+                                ),
+                                child: Row(
+                                  children: <Widget>[
+                                    Text(
+                                      _slotEmoji(_details.meal.mealTypeCode),
+                                      style: const TextStyle(fontSize: 22),
                                     ),
-                                  );
-                                }).toList(),
-                                onChanged: (String? value) {
-                                  if (value != null) {
-                                    setSheetState(() => slot = value);
-                                  }
-                                },
+                                    const SizedBox(width: AppSpacing.sm),
+                                    Expanded(
+                                      child: Text(
+                                        _slotLabel(
+                                          _details.meal.mealTypeCode,
+                                        ),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyLarge
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                    ),
+                                    const Icon(Icons.lock_outline_rounded),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
@@ -2767,7 +3456,6 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
     }
     final MealEntity meal = _details.meal;
     meal.title = title.text.trim();
-    meal.mealTypeCode = slot;
     meal.mealModeCode = mode;
     meal.freeMealTrackingCode = mode == 'free' ? freeTracking : '';
     meal.freeMealLabel = mode == 'free' ? freeLabel.text.trim() : '';
