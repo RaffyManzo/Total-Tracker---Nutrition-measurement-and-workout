@@ -235,5 +235,12 @@ class UserProfileRepository {
         'Step coefficient cannot be negative.',
       );
     }
+    if (profile.sugarCarbsPercent < 0 || profile.sugarCarbsPercent > 100) {
+      throw ArgumentError.value(
+        profile.sugarCarbsPercent,
+        'sugarCarbsPercent',
+        'Sugar percentage must be between 0 and 100.',
+      );
+    }
   }
 }

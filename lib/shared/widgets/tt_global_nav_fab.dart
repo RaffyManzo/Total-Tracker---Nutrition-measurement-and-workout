@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -21,7 +23,16 @@ class TtFoodBottomNavBar extends StatefulWidget {
 }
 
 class _TtFoodBottomNavBarState extends State<TtFoodBottomNavBar> {
-  bool _quickOpen = false;
+  OverlayEntry? _quickOverlay;
+
+  bool get _quickOpen => _quickOverlay != null;
+
+  @override
+  void dispose() {
+    _quickOverlay?.remove();
+    _quickOverlay = null;
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,55 +42,11 @@ class _TtFoodBottomNavBarState extends State<TtFoodBottomNavBar> {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         child: SizedBox(
-          height: _quickOpen ? 330 : 86,
+          height: 86,
           child: Stack(
             clipBehavior: Clip.none,
             alignment: Alignment.bottomCenter,
             children: <Widget>[
-              if (_quickOpen)
-                Positioned(
-                  right: 14,
-                  bottom: 72,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      _QuickMenuDot(
-                        label: 'Oggi',
-                        icon: Icons.today_rounded,
-                        onPressed: () => _go(context, '/food/days/${_today()}'),
-                      ),
-                      _QuickMenuDot(
-                        label: 'Misure',
-                        icon: Icons.monitor_weight_outlined,
-                        onPressed: () => _go(context, '/measurements'),
-                      ),
-                      _QuickMenuDot(
-                        label: 'Ricette',
-                        icon: Icons.menu_book_rounded,
-                        onPressed: () => _go(context, '/food/recipes'),
-                      ),
-                      _QuickMenuDot(
-                        label: 'Alimenti',
-                        icon: Icons.inventory_2_outlined,
-                        onPressed: () => _go(context, '/food/ingredients'),
-                      ),
-                      _QuickMenuDot(
-                        label: 'Allenamento disabilitato',
-                        icon: Icons.fitness_center_rounded,
-                        onPressed: () {
-                          setState(() => _quickOpen = false);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Allenamento disabilitato in questa versione.',
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
               Positioned(
                 left: 0,
                 right: 0,
@@ -109,7 +76,7 @@ class _TtFoodBottomNavBarState extends State<TtFoodBottomNavBar> {
                           tooltip: 'Profilo e impostazioni',
                           icon: Icons.manage_accounts_outlined,
                           isActive: widget.activeItem == TtFoodNavItem.settings,
-                          onPressed: () => context.go('/settings'),
+                          onPressed: () => _go(context, '/settings'),
                         ),
                         const SizedBox(width: 92),
                         _NavSideButton(
@@ -119,9 +86,7 @@ class _TtFoodBottomNavBarState extends State<TtFoodBottomNavBar> {
                               : Icons.menu_rounded,
                           isActive: _quickOpen ||
                               widget.activeItem == TtFoodNavItem.menu,
-                          onPressed: () {
-                            setState(() => _quickOpen = !_quickOpen);
-                          },
+                          onPressed: () => _toggleQuickOverlay(context),
                         ),
                       ],
                     ),
@@ -132,7 +97,7 @@ class _TtFoodBottomNavBarState extends State<TtFoodBottomNavBar> {
                 bottom: widget.activeItem == TtFoodNavItem.dashboard ? 18 : 8,
                 child: _DashboardButton(
                   isActive: widget.activeItem == TtFoodNavItem.dashboard,
-                  onPressed: () => context.go('/'),
+                  onPressed: () => _go(context, '/'),
                 ),
               ),
             ],
@@ -143,8 +108,95 @@ class _TtFoodBottomNavBarState extends State<TtFoodBottomNavBar> {
   }
 
   void _go(BuildContext context, String route) {
-    setState(() => _quickOpen = false);
+    _removeQuickOverlay();
     context.go(route);
+  }
+
+  void _toggleQuickOverlay(BuildContext context) {
+    if (_quickOpen) {
+      _removeQuickOverlay();
+      return;
+    }
+    _quickOverlay = OverlayEntry(
+      builder: (BuildContext overlayContext) {
+        return Stack(
+          children: <Widget>[
+            Positioned.fill(
+              bottom: 112,
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                  child: ColoredBox(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .scrim
+                        .withValues(alpha: 0.18),
+                    child: const ModalBarrier(
+                      dismissible: false,
+                      color: Colors.transparent,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 34,
+              bottom: 96,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: <Widget>[
+                  _QuickMenuDot(
+                    label: 'Oggi',
+                    icon: Icons.today_rounded,
+                    onPressed: () => _go(context, '/food/days/${_today()}'),
+                  ),
+                  _QuickMenuDot(
+                    label: 'Misure',
+                    icon: Icons.monitor_weight_outlined,
+                    onPressed: () => _go(context, '/measurements'),
+                  ),
+                  _QuickMenuDot(
+                    label: 'Ricette',
+                    icon: Icons.menu_book_rounded,
+                    onPressed: () => _go(context, '/food/recipes'),
+                  ),
+                  _QuickMenuDot(
+                    label: 'Alimenti',
+                    icon: Icons.inventory_2_outlined,
+                    onPressed: () => _go(context, '/food/ingredients'),
+                  ),
+                  _QuickMenuDot(
+                    label: 'Allenamento',
+                    icon: Icons.fitness_center_rounded,
+                    onPressed: () {
+                      _removeQuickOverlay();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Allenamento disabilitato in questa versione.',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    Overlay.of(context).insert(_quickOverlay!);
+    setState(() {});
+  }
+
+  void _removeQuickOverlay() {
+    _quickOverlay?.remove();
+    _quickOverlay = null;
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   String _today() {
@@ -232,22 +284,47 @@ class _QuickMenuDot extends StatelessWidget {
     final ColorScheme colors = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Tooltip(
-        message: label,
-        child: Material(
-          color: colors.primary,
-          shape: const CircleBorder(),
-          elevation: 6,
-          shadowColor: colors.shadow.withValues(alpha: 0.22),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onPressed,
-            child: SizedBox.square(
-              dimension: 48,
-              child: Icon(icon, color: colors.onPrimary),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Material(
+            color: colors.inverseSurface.withValues(alpha: 0.95),
+            elevation: 8,
+            shadowColor: colors.shadow.withValues(alpha: 0.28),
+            borderRadius: BorderRadius.circular(999),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 7,
+              ),
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: colors.onInverseSurface,
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
             ),
           ),
-        ),
+          const SizedBox(width: 8),
+          Tooltip(
+            message: label,
+            child: Material(
+              color: colors.primary,
+              shape: const CircleBorder(),
+              elevation: 6,
+              shadowColor: colors.shadow.withValues(alpha: 0.22),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: onPressed,
+                child: SizedBox.square(
+                  dimension: 48,
+                  child: Icon(icon, color: colors.onPrimary),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

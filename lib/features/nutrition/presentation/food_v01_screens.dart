@@ -264,6 +264,7 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
     return ListView(
       padding: _screenPadding,
       children: <Widget>[
+        const SizedBox(height: AppSpacing.lg),
         Text(
           'Dashboard',
           style: Theme.of(context).textTheme.headlineLarge,
@@ -534,6 +535,7 @@ class _DashboardDailySummary extends StatelessWidget {
         : (day!.waterLiters! / 0.2).round();
     final double sleepHours =
         (day?.sleepDeepHours ?? 0) + (day?.sleepLightHours ?? 0);
+    final bool isToday = day?.dateKey == _dateKey(DateTime.now());
     final Map<String, MealWithItems> mealsBySlot = <String, MealWithItems>{
       for (final MealWithItems meal in meals) meal.meal.mealTypeCode: meal,
     };
@@ -549,7 +551,7 @@ class _DashboardDailySummary extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      '📅 Riepilogo giornaliero',
+                      'Riepilogo giornaliero',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     Text(
@@ -561,6 +563,16 @@ class _DashboardDailySummary extends StatelessWidget {
                   ],
                 ),
               ),
+              if (day != null && isToday) ...<Widget>[
+                const SizedBox(width: AppSpacing.sm),
+                Hero(
+                  tag: 'today-tag-${day!.dateKey}',
+                  child: const _StatusPill(
+                    label: 'Today',
+                    isWarning: false,
+                  ),
+                ),
+              ],
               _StatusPill(
                 label: '$mealsWithFood/4 pasti',
                 isWarning: mealsWithFood == 0,
@@ -621,16 +633,30 @@ class _DashboardDailySummary extends StatelessWidget {
                       value: totals.fatGrams,
                       target: macroTargets.fatGrams,
                     ),
+                    _MacroProgressLine(
+                      label: 'Fibre',
+                      value: totals.fiberGrams,
+                      target: macroTargets.fiberGrams,
+                    ),
+                    _MacroProgressLine(
+                      label: 'Zuccheri',
+                      value: totals.sugarGrams,
+                      target: macroTargets.sugarGrams,
+                    ),
                   ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: AppSpacing.md),
+          const _SummaryDivider(),
+          const SizedBox(height: AppSpacing.md),
           _WalkingProgressBar(
             value: stepProgress,
             label: '🚶 $steps / $stepGoal passi',
           ),
+          const SizedBox(height: AppSpacing.md),
+          const _SummaryDivider(),
           const SizedBox(height: AppSpacing.md),
           Row(
             children: <Widget>[
@@ -649,6 +675,8 @@ class _DashboardDailySummary extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: AppSpacing.md),
+          const _SummaryDivider(),
           const SizedBox(height: AppSpacing.md),
           Row(
             children: <Widget>[
@@ -1007,6 +1035,7 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
         scaleMeasurement?.weightKg ?? analytics.weightForDay(day);
     final bool hasScaleMeasurement = scaleMeasurement != null;
     final bool partial = analytics.hasPartialNutrition(day.dateKey);
+    final bool allMealsRegistered = _hasAllMealSlotsLogged(meals);
 
     return Scaffold(
       appBar: AppBar(
@@ -1034,7 +1063,13 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                 ),
               ),
               _StatusPill(
-                  label: partial ? 'Parziale' : 'Completo', isWarning: partial),
+                label: partial
+                    ? 'Parziale'
+                    : allMealsRegistered
+                        ? 'Completo'
+                        : 'Da completare',
+                isWarning: partial || !allMealsRegistered,
+              ),
             ],
           ),
           const SizedBox(height: AppSpacing.md),
@@ -1139,6 +1174,13 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
       },
     );
     if (saved != true) {
+      return;
+    }
+    final String? sleepError = _sleepTotalError(deep.text, light.text);
+    if (sleepError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(sleepError)),
+      );
       return;
     }
     day.waterLiters = _toDouble(water.text);
@@ -1326,23 +1368,22 @@ class _DayTrackingSheet extends StatelessWidget {
                         Row(
                           children: <Widget>[
                             Expanded(
-                              child: _field(
-                                deep,
-                                'Profondo h',
-                                keyboardType: TextInputType.number,
+                              child: _SleepDurationField(
+                                controller: deep,
+                                label: 'Profondo',
                               ),
                             ),
                             const SizedBox(width: AppSpacing.md),
                             Expanded(
-                              child: _field(
-                                light,
-                                'Leggero h',
-                                keyboardType: TextInputType.number,
+                              child: _SleepDurationField(
+                                controller: light,
+                                label: 'Leggero',
                               ),
                             ),
                           ],
                         ),
-                        _field(quality, 'Qualita sonno'),
+                        _SleepQualityDropdown(controller: quality),
+                        _SleepTotalPreview(deep: deep, light: light),
                       ],
                     ),
                     _TrackingSheetSection(
@@ -1402,9 +1443,20 @@ class _DayTrackingSheet extends StatelessWidget {
                     Expanded(
                       child: FilledButton.icon(
                         onPressed: () {
-                          if (formKey.currentState?.validate() ?? false) {
-                            Navigator.of(context).pop(true);
+                          final bool formOk =
+                              formKey.currentState?.validate() ?? false;
+                          if (!formOk) {
+                            return;
                           }
+                          final String? sleepError =
+                              _sleepTotalError(deep.text, light.text);
+                          if (sleepError != null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(sleepError)),
+                            );
+                            return;
+                          }
+                          Navigator.of(context).pop(true);
                         },
                         icon: const Icon(Icons.save_rounded),
                         label: const Text('Salva'),
@@ -1464,6 +1516,283 @@ class _TrackingSheetSection extends StatelessWidget {
   }
 }
 
+class _SleepDurationField extends StatefulWidget {
+  const _SleepDurationField({
+    required this.controller,
+    required this.label,
+  });
+
+  final TextEditingController controller;
+  final String label;
+
+  @override
+  State<_SleepDurationField> createState() => _SleepDurationFieldState();
+}
+
+class _SleepDurationFieldState extends State<_SleepDurationField> {
+  late final TextEditingController _hours;
+  late final TextEditingController _minutes;
+
+  @override
+  void initState() {
+    super.initState();
+    final double totalHours = _toDouble(widget.controller.text) ?? 0;
+    final int hours = totalHours.floor();
+    final int minutes = ((totalHours - hours) * 60).round().clamp(0, 59);
+    _hours = TextEditingController(text: hours == 0 ? '' : hours.toString());
+    _minutes =
+        TextEditingController(text: minutes == 0 ? '' : minutes.toString());
+  }
+
+  @override
+  void dispose() {
+    _hours.dispose();
+    _minutes.dispose();
+    super.dispose();
+  }
+
+  void _sync() {
+    final int hours = _toInt(_hours.text) ?? 0;
+    final int minutes = _toInt(_minutes.text) ?? 0;
+    if (hours < 0 || minutes < 0 || minutes > 59) {
+      return;
+    }
+    final double value = hours + minutes / 60;
+    if (value > 24) {
+      return;
+    }
+    widget.controller.text = value <= 0 ? '' : value.toStringAsFixed(2);
+  }
+
+  String? _validateHours(String? value) {
+    final String clean = value?.trim() ?? '';
+    if (clean.isEmpty) {
+      return null;
+    }
+    final int? hours = _toInt(clean);
+    if (hours == null || hours < 0) {
+      return 'Ore non valide';
+    }
+    if (hours > 24) {
+      return 'Max 24 ore';
+    }
+    return null;
+  }
+
+  String? _validateMinutes(String? value) {
+    final String clean = value?.trim() ?? '';
+    if (clean.isEmpty) {
+      return null;
+    }
+    final int? minutes = _toInt(clean);
+    if (minutes == null || minutes < 0 || minutes > 59) {
+      return '0-59 min';
+    }
+    final int hours = _toInt(_hours.text) ?? 0;
+    if (hours >= 24 && minutes > 0) {
+      return 'Totale oltre 24h';
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(widget.label, style: Theme.of(context).textTheme.labelLarge),
+        const SizedBox(height: AppSpacing.xs),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: TextFormField(
+                controller: _hours,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Ore'),
+                validator: _validateHours,
+                onChanged: (_) => _sync(),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: TextFormField(
+                controller: _minutes,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Min'),
+                validator: _validateMinutes,
+                onChanged: (_) => _sync(),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+      ],
+    );
+  }
+}
+
+class _SleepQualityDropdown extends StatefulWidget {
+  const _SleepQualityDropdown({required this.controller});
+
+  final TextEditingController controller;
+
+  @override
+  State<_SleepQualityDropdown> createState() => _SleepQualityDropdownState();
+}
+
+class _SleepQualityDropdownState extends State<_SleepQualityDropdown> {
+  static const Map<String, String> _options = <String, String>{
+    '': 'Non indicata',
+    'excellent': 'Ottima',
+    'good': 'Buona',
+    'average': 'Media',
+    'poor': 'Scarsa',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final String current = widget.controller.text.trim();
+    final List<DropdownMenuItem<String>> items = <DropdownMenuItem<String>>[
+      for (final MapEntry<String, String> entry in _options.entries)
+        DropdownMenuItem<String>(
+          value: entry.key,
+          child: Text(entry.value),
+        ),
+      if (current.isNotEmpty && !_options.containsKey(current))
+        DropdownMenuItem<String>(
+          value: current,
+          child: Text(current),
+        ),
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: DropdownButtonFormField<String>(
+        initialValue: items.any(
+          (DropdownMenuItem<String> item) => item.value == current,
+        )
+            ? current
+            : '',
+        decoration: const InputDecoration(labelText: 'Qualita sonno'),
+        items: items,
+        onChanged: (String? value) {
+          widget.controller.text = value ?? '';
+        },
+      ),
+    );
+  }
+}
+
+class _SleepTotalPreview extends StatefulWidget {
+  const _SleepTotalPreview({
+    required this.deep,
+    required this.light,
+  });
+
+  final TextEditingController deep;
+  final TextEditingController light;
+
+  @override
+  State<_SleepTotalPreview> createState() => _SleepTotalPreviewState();
+}
+
+class _SleepTotalPreviewState extends State<_SleepTotalPreview> {
+  @override
+  void initState() {
+    super.initState();
+    widget.deep.addListener(_refresh);
+    widget.light.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    widget.deep.removeListener(_refresh);
+    widget.light.removeListener(_refresh);
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double deep = _toDouble(widget.deep.text) ?? 0;
+    final double light = _toDouble(widget.light.text) ?? 0;
+    final double total = deep + light;
+    final String? error = _sleepTotalError(widget.deep.text, widget.light.text);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          color: error == null
+              ? colors.surfaceContainerHighest
+              : colors.errorContainer,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            children: <Widget>[
+              Icon(
+                error == null
+                    ? Icons.bedtime_outlined
+                    : Icons.error_outline_rounded,
+                color: error == null
+                    ? colors.onSurfaceVariant
+                    : colors.onErrorContainer,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  error ?? 'Sonno totale: ${_sleepDurationText(total)}',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: error == null
+                            ? colors.onSurfaceVariant
+                            : colors.onErrorContainer,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String? _sleepTotalError(String deepText, String lightText) {
+  final double deep = _toDouble(deepText) ?? 0;
+  final double light = _toDouble(lightText) ?? 0;
+  if (deep < 0 || light < 0) {
+    return 'Le ore di sonno non possono essere negative.';
+  }
+  final double total = deep + light;
+  if (total > 24) {
+    return 'Il sonno totale supera 24 ore.';
+  }
+  return null;
+}
+
+String _sleepDurationText(double hours) {
+  if (hours <= 0) {
+    return 'n/d';
+  }
+  int wholeHours = hours.floor();
+  int minutes = ((hours - wholeHours) * 60).round();
+  if (minutes == 60) {
+    wholeHours += 1;
+    minutes = 0;
+  }
+  if (minutes == 0) {
+    return '$wholeHours h';
+  }
+  return '$wholeHours h ${minutes.toString().padLeft(2, '0')} min';
+}
+
 class _MacroProgressLine extends StatelessWidget {
   const _MacroProgressLine({
     required this.label,
@@ -1497,6 +1826,22 @@ class _MacroProgressLine extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SummaryDivider extends StatelessWidget {
+  const _SummaryDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    return Divider(
+      height: 1,
+      thickness: 1,
+      color: isDark
+          ? Colors.white.withValues(alpha: 0.12)
+          : Colors.grey.shade300,
     );
   }
 }
@@ -1775,6 +2120,128 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
     _details = details;
   }
 
+  Future<void> _showMealObjectBoxDetails() async {
+    final MealEntity meal = _details.meal;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) {
+        return FractionallySizedBox(
+          heightFactor: 0.78,
+          child: Column(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Dettagli pasto',
+                            style: Theme.of(sheetContext)
+                                .textTheme
+                                .headlineSmall,
+                          ),
+                          Text(
+                            'Campi persistenti salvati in ObjectBox',
+                            style: Theme.of(sheetContext).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Chiudi',
+                      onPressed: () => Navigator.of(sheetContext).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    0,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                  ),
+                  children: <Widget>[
+                    _TrackingSheetSection(
+                      emoji: '🧱',
+                      title: 'Identificativi',
+                      children: <Widget>[
+                        _detailRow('ObjectBox id', meal.id.toString()),
+                        _detailRow('UUID', meal.uuid),
+                        _detailRow(
+                          'DailyRecord targetId',
+                          meal.dailyRecord.targetId.toString(),
+                        ),
+                      ],
+                    ),
+                    _TrackingSheetSection(
+                      emoji: '📅',
+                      title: 'Data e slot',
+                      children: <Widget>[
+                        _detailRow('Data', meal.dateKey),
+                        _detailRow('Settimana', meal.weekCode),
+                        _detailRow('Weekday code', meal.weekdayCode),
+                        _detailRow('Weekday label', meal.weekdayLabel),
+                        _detailRow('Meal type code', meal.mealTypeCode),
+                      ],
+                    ),
+                    _TrackingSheetSection(
+                      emoji: '🍽️',
+                      title: 'Configurazione',
+                      children: <Widget>[
+                        _detailRow('Titolo', meal.title),
+                        _detailRow('Meal mode', meal.mealModeCode),
+                        _detailRow(
+                          'Free tracking',
+                          meal.freeMealTrackingCode,
+                        ),
+                        _detailRow('Free label', meal.freeMealLabel),
+                        _detailRow('Free notes', meal.freeMealNotes),
+                        _detailRow('Voci collegate', _details.items.length.toString()),
+                        _detailRow(
+                          'Nutrizione parziale',
+                          _details.isNutritionPartial ? 'si' : 'no',
+                        ),
+                      ],
+                    ),
+                    _TrackingSheetSection(
+                      emoji: '🕒',
+                      title: 'Audit',
+                      children: <Widget>[
+                        _detailRow('Creato epoch ms', meal.createdAtEpochMs.toString()),
+                        _detailRow(
+                          'Aggiornato epoch ms',
+                          meal.updatedAtEpochMs.toString(),
+                        ),
+                        _detailRow(
+                          'Eliminato epoch ms',
+                          meal.deletedAtEpochMs?.toString() ?? '',
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final MealEntity meal = _details.meal;
@@ -1784,9 +2251,9 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
         title: Text('${_slotEmoji(meal.mealTypeCode)} ${meal.title}'),
         actions: <Widget>[
           IconButton(
-            tooltip: 'Modifica pasto',
-            onPressed: _showMealSettingsDialog,
-            icon: const Icon(Icons.tune_rounded),
+            tooltip: 'Dettagli ObjectBox',
+            onPressed: _showMealObjectBoxDetails,
+            icon: const Icon(Icons.info_outline_rounded),
           ),
         ],
       ),
@@ -1795,19 +2262,7 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
       body: ListView(
         padding: _screenPadding,
         children: <Widget>[
-          _MetricGrid(
-            metrics: <_Metric>[
-              _Metric(
-                  'Settimana', meal.weekCode.isEmpty ? 'n/d' : meal.weekCode),
-              _Metric('Calorie', _fmtKcal(totals.kcal)),
-              _Metric('Proteine', '${_fmt(totals.proteinGrams)} g'),
-              _Metric('Carboidrati', '${_fmt(totals.carbsGrams)} g'),
-              _Metric('Grassi', '${_fmt(totals.fatGrams)} g'),
-              _Metric('Fibre', '${_fmt(totals.fiberGrams)} g'),
-              _Metric('Zuccheri', '${_fmt(totals.sugarGrams)} g'),
-              _Metric('Modalità', meal.mealModeCode),
-            ],
-          ),
+          _MealNutritionRecap(meal: meal, totals: totals),
           if (_details.isNutritionPartial) ...<Widget>[
             const SizedBox(height: AppSpacing.md),
             const TtAppCard(
@@ -2098,95 +2553,180 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
         TextEditingController(text: _details.meal.freeMealLabel);
     final TextEditingController freeNotes =
         TextEditingController(text: _details.meal.freeMealNotes);
-    final bool? saved = await showDialog<bool>(
+    final bool? saved = await showModalBottomSheet<bool>(
       context: context,
-      builder: (BuildContext context) {
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) {
         return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setDialogState) {
-            return AlertDialog(
-              title: const Text('Modifica pasto'),
-              content: SingleChildScrollView(
+          builder: (BuildContext context, StateSetter setSheetState) {
+            return FractionallySizedBox(
+              heightFactor: 0.9,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.viewInsetsOf(context).bottom,
+                ),
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    _field(title, 'Titolo', isRequired: true),
-                    DropdownButtonFormField<String>(
-                      initialValue: slot,
-                      decoration: const InputDecoration(labelText: 'Slot'),
-                      items: ObsidianFoodSeedConstants.mealSlots
-                          .map((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child:
-                              Text('${_slotEmoji(value)} ${_slotLabel(value)}'),
-                        );
-                      }).toList(),
-                      onChanged: (String? value) {
-                        if (value != null) {
-                          setDialogState(() => slot = value);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    SegmentedButton<String>(
-                      segments: const <ButtonSegment<String>>[
-                        ButtonSegment<String>(
-                          value: 'standard',
-                          label: Text('Standard'),
-                        ),
-                        ButtonSegment<String>(
-                          value: 'free',
-                          label: Text('Libero'),
-                        ),
-                      ],
-                      selected: <String>{mode},
-                      onSelectionChanged: (Set<String> value) {
-                        setDialogState(() => mode = value.first);
-                      },
-                    ),
-                    if (mode == 'free') ...<Widget>[
-                      const SizedBox(height: AppSpacing.md),
-                      DropdownButtonFormField<String>(
-                        initialValue: freeTracking,
-                        decoration: const InputDecoration(
-                          labelText: 'Tracking pasto libero',
-                        ),
-                        items: const <DropdownMenuItem<String>>[
-                          DropdownMenuItem<String>(
-                            value: 'tracked',
-                            child: Text('Tracciato'),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.lg,
+                        AppSpacing.sm,
+                        AppSpacing.sm,
+                        AppSpacing.md,
+                      ),
+                      child: Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Text(
+                              'Modifica pasto',
+                              style: Theme.of(context).textTheme.headlineSmall,
+                            ),
                           ),
-                          DropdownMenuItem<String>(
-                            value: 'estimated',
-                            child: Text('Stimato'),
-                          ),
-                          DropdownMenuItem<String>(
-                            value: 'untracked',
-                            child: Text('Non tracciato'),
+                          IconButton(
+                            tooltip: 'Chiudi',
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(false),
+                            icon: const Icon(Icons.close_rounded),
                           ),
                         ],
-                        onChanged: (String? value) {
-                          if (value != null) {
-                            setDialogState(() => freeTracking = value);
-                          }
-                        },
                       ),
-                      _field(freeLabel, 'Etichetta'),
-                      _field(freeNotes, 'Note pasto libero', maxLines: 3),
-                    ],
+                    ),
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          0,
+                          AppSpacing.lg,
+                          AppSpacing.md,
+                        ),
+                        children: <Widget>[
+                          _TrackingSheetSection(
+                            emoji: '🍽️',
+                            title: 'Identita',
+                            children: <Widget>[
+                              _field(title, 'Titolo', isRequired: true),
+                              DropdownButtonFormField<String>(
+                                initialValue: slot,
+                                decoration:
+                                    const InputDecoration(labelText: 'Slot'),
+                                items: ObsidianFoodSeedConstants.mealSlots
+                                    .map((String value) {
+                                  return DropdownMenuItem<String>(
+                                    value: value,
+                                    child: Text(
+                                      '${_slotEmoji(value)} ${_slotLabel(value)}',
+                                    ),
+                                  );
+                                }).toList(),
+                                onChanged: (String? value) {
+                                  if (value != null) {
+                                    setSheetState(() => slot = value);
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                          _TrackingSheetSection(
+                            emoji: '🎯',
+                            title: 'Tipo pasto',
+                            children: <Widget>[
+                              SegmentedButton<String>(
+                                segments: const <ButtonSegment<String>>[
+                                  ButtonSegment<String>(
+                                    value: 'standard',
+                                    label: Text('Standard'),
+                                  ),
+                                  ButtonSegment<String>(
+                                    value: 'free',
+                                    label: Text('Libero'),
+                                  ),
+                                ],
+                                selected: <String>{mode},
+                                onSelectionChanged: (Set<String> value) {
+                                  setSheetState(() => mode = value.first);
+                                },
+                              ),
+                            ],
+                          ),
+                          if (mode == 'free')
+                            _TrackingSheetSection(
+                              emoji: '⚠️',
+                              title: 'Pasto libero',
+                              children: <Widget>[
+                                DropdownButtonFormField<String>(
+                                  initialValue: freeTracking,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Tracking pasto libero',
+                                  ),
+                                  items: const <DropdownMenuItem<String>>[
+                                    DropdownMenuItem<String>(
+                                      value: 'tracked',
+                                      child: Text('Tracciato'),
+                                    ),
+                                    DropdownMenuItem<String>(
+                                      value: 'estimated',
+                                      child: Text('Stimato'),
+                                    ),
+                                    DropdownMenuItem<String>(
+                                      value: 'untracked',
+                                      child: Text('Non tracciato'),
+                                    ),
+                                  ],
+                                  onChanged: (String? value) {
+                                    if (value != null) {
+                                      setSheetState(
+                                        () => freeTracking = value,
+                                      );
+                                    }
+                                  },
+                                ),
+                                _field(freeLabel, 'Etichetta'),
+                                _field(
+                                  freeNotes,
+                                  'Note pasto libero',
+                                  maxLines: 3,
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                    SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          AppSpacing.sm,
+                          AppSpacing.lg,
+                          AppSpacing.md,
+                        ),
+                        child: Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () =>
+                                    Navigator.of(sheetContext).pop(false),
+                                child: const Text('Annulla'),
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: FilledButton.icon(
+                                onPressed: () =>
+                                    Navigator.of(sheetContext).pop(true),
+                                icon: const Icon(Icons.save_rounded),
+                                label: const Text('Salva'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Annulla'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Salva'),
-                ),
-              ],
             );
           },
         );
@@ -2563,63 +3103,33 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
       _snack('Nessuna ricetta salvata.');
       return;
     }
-    RecipeEntity selected = recipes.first;
-    final TextEditingController portions = TextEditingController(text: '1');
-    final bool? saved = await showDialog<bool>(
+    final _RecipeMealSelection? selection =
+        await showModalBottomSheet<_RecipeMealSelection>(
       context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setDialogState) {
-            return AlertDialog(
-              title: const Text('Aggiungi ricetta'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  DropdownButtonFormField<RecipeEntity>(
-                    initialValue: selected,
-                    decoration: const InputDecoration(labelText: 'Ricetta'),
-                    items: recipes.map((RecipeEntity recipe) {
-                      return DropdownMenuItem<RecipeEntity>(
-                        value: recipe,
-                        child: Text(recipe.title),
-                      );
-                    }).toList(),
-                    onChanged: (RecipeEntity? value) {
-                      if (value != null) {
-                        setDialogState(() => selected = value);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _field(portions, 'Porzioni',
-                      keyboardType: TextInputType.number),
-                ],
-              ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Annulla'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Aggiungi'),
-                ),
-              ],
-            );
-          },
-        );
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext _) {
+        return _RecipeMealPickerSheet(recipes: recipes);
       },
     );
-    if (saved == true) {
-      setState(() {
-        _details = ref.read(foodPlanningServiceProvider).addRecipeToMeal(
-              meal: _details,
-              recipe: selected,
-              portions: _toDouble(portions.text) ?? 1,
-            );
-      });
-      _invalidateFood(ref);
+    if (selection == null) {
+      return;
     }
+    setState(() {
+      _details = ref.read(foodPlanningServiceProvider).addRecipeToMeal(
+            meal: _details,
+            recipe: selection.recipe,
+            quantityModeCode: selection.quantityModeCode,
+            portions: selection.quantityModeCode == 'portions'
+                ? selection.quantity
+                : 1,
+            grams: selection.quantityModeCode == 'grams'
+                ? selection.quantity
+                : null,
+          );
+    });
+    _invalidateFood(ref);
   }
 
   Future<void> _showManualEstimateDialog() async {
@@ -2628,35 +3138,131 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
     final TextEditingController protein = TextEditingController();
     final TextEditingController carbs = TextEditingController();
     final TextEditingController fat = TextEditingController();
-    final bool? saved = await showDialog<bool>(
+    final bool? saved = await showModalBottomSheet<bool>(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Stima manuale'),
-          content: SingleChildScrollView(
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) {
+        return FractionallySizedBox(
+          heightFactor: 0.82,
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+            ),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                _field(name, 'Nome'),
-                _field(kcal, 'Kcal', keyboardType: TextInputType.number),
-                _field(protein, 'Proteine g',
-                    keyboardType: TextInputType.number),
-                _field(carbs, 'Carboidrati g',
-                    keyboardType: TextInputType.number),
-                _field(fat, 'Grassi g', keyboardType: TextInputType.number),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.sm,
+                    AppSpacing.sm,
+                    AppSpacing.md,
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          'Stima manuale',
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Chiudi',
+                        onPressed: () => Navigator.of(sheetContext).pop(false),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      0,
+                      AppSpacing.lg,
+                      AppSpacing.md,
+                    ),
+                    children: <Widget>[
+                      _TrackingSheetSection(
+                        emoji: '📝',
+                        title: 'Descrizione',
+                        children: <Widget>[
+                          _field(name, 'Nome'),
+                        ],
+                      ),
+                      _TrackingSheetSection(
+                        emoji: '🔥',
+                        title: 'Valori nutrizionali',
+                        children: <Widget>[
+                          _field(
+                            kcal,
+                            'Kcal',
+                            keyboardType: TextInputType.number,
+                          ),
+                          Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: _field(
+                                  protein,
+                                  'Proteine g',
+                                  keyboardType: TextInputType.number,
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.md),
+                              Expanded(
+                                child: _field(
+                                  carbs,
+                                  'Carboidrati g',
+                                  keyboardType: TextInputType.number,
+                                ),
+                              ),
+                            ],
+                          ),
+                          _field(
+                            fat,
+                            'Grassi g',
+                            keyboardType: TextInputType.number,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.sm,
+                      AppSpacing.lg,
+                      AppSpacing.md,
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(false),
+                            child: const Text('Annulla'),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(true),
+                            icon: const Icon(Icons.add_rounded),
+                            label: const Text('Aggiungi'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Annulla'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Aggiungi'),
-            ),
-          ],
         );
       },
     );
@@ -3021,8 +3627,11 @@ class _PersistentIngredientListScreenState
     final TextEditingController carbs = TextEditingController();
     final TextEditingController fat = TextEditingController();
     final GlobalKey<FormState> formKey = GlobalKey<FormState>();
-    final bool? saved = await showDialog<bool>(
+    final bool? saved = await showModalBottomSheet<bool>(
       context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Nuovo ingrediente'),
@@ -4324,9 +4933,25 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     final TextEditingController image =
         TextEditingController(text: _image.text);
     final GlobalKey<FormState> formKey = GlobalKey<FormState>();
-    final bool? saved = await showDialog<bool>(
+    final bool? saved = await showModalBottomSheet<bool>(
       context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
       builder: (BuildContext context) {
+        return _buildRecipeMetaSheet(
+          sheetContext: context,
+          formKey: formKey,
+          title: title,
+          summary: summary,
+          servings: servings,
+          prep: prep,
+          cook: cook,
+          difficulty: difficulty,
+          yieldController: yieldController,
+          image: image,
+        );
+/*
         return AlertDialog(
           title: const Text('Dati ricetta'),
           content: Form(
@@ -4365,7 +4990,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
               child: const Text('Applica'),
             ),
           ],
-        );
+        );*/
       },
     );
     if (saved != true) {
@@ -4382,6 +5007,174 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       _image.text = image.text.trim();
     });
     _saveRecipe();
+  }
+
+  Widget _buildRecipeMetaSheet({
+    required BuildContext sheetContext,
+    required GlobalKey<FormState> formKey,
+    required TextEditingController title,
+    required TextEditingController summary,
+    required TextEditingController servings,
+    required TextEditingController prep,
+    required TextEditingController cook,
+    required TextEditingController difficulty,
+    required TextEditingController yieldController,
+    required TextEditingController image,
+  }) {
+    return FractionallySizedBox(
+      heightFactor: 0.9,
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+        ),
+        child: Column(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.sm,
+                AppSpacing.sm,
+                AppSpacing.md,
+              ),
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'Dati ricetta',
+                          style:
+                              Theme.of(sheetContext).textTheme.headlineSmall,
+                        ),
+                        Text(
+                          'Modifica titolo, resa e immagine.',
+                          style: Theme.of(sheetContext).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Chiudi',
+                    onPressed: () => Navigator.of(sheetContext).pop(false),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Form(
+                key: formKey,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    0,
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                  ),
+                  children: <Widget>[
+                    _TrackingSheetSection(
+                      emoji: '📘',
+                      title: 'Identita',
+                      children: <Widget>[
+                        _field(title, 'Titolo', isRequired: true),
+                        _field(summary, 'Descrizione', maxLines: 3),
+                        _field(image, 'URL o percorso immagine'),
+                      ],
+                    ),
+                    _TrackingSheetSection(
+                      emoji: '⚖️',
+                      title: 'Resa e porzioni',
+                      children: <Widget>[
+                        Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: _field(
+                                servings,
+                                'Porzioni',
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: _field(
+                                yieldController,
+                                'Peso finale g',
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    _TrackingSheetSection(
+                      emoji: '⏱️',
+                      title: 'Preparazione',
+                      children: <Widget>[
+                        Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: _field(
+                                prep,
+                                'Preparazione min',
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: _field(
+                                cook,
+                                'Cottura min',
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                          ],
+                        ),
+                        _field(difficulty, 'Difficolta'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                  AppSpacing.lg,
+                  AppSpacing.md,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () =>
+                            Navigator.of(sheetContext).pop(false),
+                        child: const Text('Annulla'),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () {
+                          if (formKey.currentState?.validate() ?? false) {
+                            Navigator.of(sheetContext).pop(true);
+                          }
+                        },
+                        icon: const Icon(Icons.save_rounded),
+                        label: const Text('Applica'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _showAddRecipeIngredientDialog() async {
@@ -5140,7 +5933,7 @@ class _MonthCalendarCardState extends State<_MonthCalendarCard> {
             children: <Widget>[
               Expanded(
                 child: Text(
-                  'Calendario',
+                  '📅 Calendario',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
@@ -5245,17 +6038,11 @@ class _MonthCalendarCardState extends State<_MonthCalendarCard> {
                     final bool hasFood = meals.any(
                       (MealWithItems meal) => meal.items.isNotEmpty,
                     );
-                    final bool hasFreeTrackedOrEstimated = meals.any(
+                    final bool hasFreeMeal = meals.any(
                       (MealWithItems meal) =>
-                          meal.meal.mealModeCode == 'free' &&
-                          (meal.meal.freeMealTrackingCode == 'tracked' ||
-                              meal.meal.freeMealTrackingCode == 'estimated'),
+                          meal.meal.mealModeCode == 'free',
                     );
-                    final bool hasFreeUntracked = meals.any(
-                      (MealWithItems meal) =>
-                          meal.meal.mealModeCode == 'free' &&
-                          meal.meal.freeMealTrackingCode == 'untracked',
-                    );
+                    final bool hasCompleteMeals = _hasAllMealSlotsLogged(meals);
                     return _CalendarDayCell(
                       date: date,
                       day: day,
@@ -5271,11 +6058,21 @@ class _MonthCalendarCardState extends State<_MonthCalendarCard> {
                               profile: widget.profile,
                             ),
                       hasFood: hasFood,
-                      hasFreeTrackedOrEstimated: hasFreeTrackedOrEstimated,
-                      hasFreeUntracked: hasFreeUntracked,
+                      hasCompleteMeals: hasCompleteMeals,
+                      hasFreeMeal: hasFreeMeal,
                     );
                   },
                 ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          const Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
+            children: <Widget>[
+              _CalendarLegendItem(color: Colors.green, label: '4/4 pasti'),
+              _CalendarLegendItem(color: Colors.amber, label: 'Parziale'),
+              _CalendarLegendItem(color: Colors.red, label: 'Pasto libero'),
             ],
           ),
         ],
@@ -5327,17 +6124,11 @@ class _WeekCalendarStrip extends StatelessWidget {
                 final bool hasFood = meals.any(
                   (MealWithItems meal) => meal.items.isNotEmpty,
                 );
-                final bool hasFreeTrackedOrEstimated = meals.any(
+                final bool hasFreeMeal = meals.any(
                   (MealWithItems meal) =>
-                      meal.meal.mealModeCode == 'free' &&
-                      (meal.meal.freeMealTrackingCode == 'tracked' ||
-                          meal.meal.freeMealTrackingCode == 'estimated'),
+                      meal.meal.mealModeCode == 'free',
                 );
-                final bool hasFreeUntracked = meals.any(
-                  (MealWithItems meal) =>
-                      meal.meal.mealModeCode == 'free' &&
-                      meal.meal.freeMealTrackingCode == 'untracked',
-                );
+                final bool hasCompleteMeals = _hasAllMealSlotsLogged(meals);
                 return SizedBox(
                   width: cellWidth,
                   height: 146,
@@ -5357,8 +6148,8 @@ class _WeekCalendarStrip extends StatelessWidget {
                           ),
                     compact: false,
                     hasFood: hasFood,
-                    hasFreeTrackedOrEstimated: hasFreeTrackedOrEstimated,
-                    hasFreeUntracked: hasFreeUntracked,
+                    hasCompleteMeals: hasCompleteMeals,
+                    hasFreeMeal: hasFreeMeal,
                     weight: day == null ? null : analytics.weightForDay(day),
                   ),
                 );
@@ -5399,8 +6190,8 @@ class _CalendarDayCell extends StatelessWidget {
     this.targetKcal,
     this.compact = true,
     this.hasFood = false,
-    this.hasFreeTrackedOrEstimated = false,
-    this.hasFreeUntracked = false,
+    this.hasCompleteMeals = false,
+    this.hasFreeMeal = false,
     this.weight,
   });
 
@@ -5411,8 +6202,8 @@ class _CalendarDayCell extends StatelessWidget {
   final double? targetKcal;
   final bool compact;
   final bool hasFood;
-  final bool hasFreeTrackedOrEstimated;
-  final bool hasFreeUntracked;
+  final bool hasCompleteMeals;
+  final bool hasFreeMeal;
   final double? weight;
 
   @override
@@ -5420,27 +6211,24 @@ class _CalendarDayCell extends StatelessWidget {
     final String dateKey = _dateKey(date);
     final bool hasData = day != null;
     final ColorScheme colors = Theme.of(context).colorScheme;
-    final double? target = targetKcal ?? day?.targetKcal;
-    final bool isOnTarget =
-        hasFood && target != null && (kcal - target).abs() <= 50;
-    final bool canColorByNutrition = hasFood;
-    final Color fillColor = canColorByNutrition && hasFreeUntracked
+    final bool canColorByNutrition = hasFood || hasFreeMeal;
+    final Color fillColor = hasFreeMeal
         ? colors.errorContainer.withValues(alpha: 0.88)
-        : canColorByNutrition && hasFreeTrackedOrEstimated
-            ? Colors.amber.withValues(alpha: 0.34)
-            : canColorByNutrition && isOnTarget
+        : canColorByNutrition && hasCompleteMeals
                 ? colors.primaryContainer.withValues(alpha: 0.88)
-                : colors.surfaceContainerHighest.withValues(alpha: 0.72);
-    final Color borderColor = canColorByNutrition && hasFreeUntracked
+                : canColorByNutrition
+                    ? Colors.amber.withValues(alpha: 0.34)
+                    : colors.surfaceContainerHighest.withValues(alpha: 0.72);
+    final Color borderColor = hasFreeMeal
         ? colors.error
-        : canColorByNutrition && hasFreeTrackedOrEstimated
-            ? Colors.amber.shade700
-            : canColorByNutrition && isOnTarget
+        : canColorByNutrition && hasCompleteMeals
                 ? colors.primary
-                : colors.outlineVariant;
-    final Color textColor = canColorByNutrition && hasFreeUntracked
+                : canColorByNutrition
+                    ? Colors.amber.shade700
+                    : colors.outlineVariant;
+    final Color textColor = hasFreeMeal
         ? colors.onErrorContainer
-        : canColorByNutrition && isOnTarget
+        : canColorByNutrition && hasCompleteMeals
             ? colors.onPrimaryContainer
             : colors.onSurfaceVariant;
     return Material(
@@ -5549,6 +6337,36 @@ class _WeekdayHeader extends StatelessWidget {
           style: Theme.of(context).textTheme.labelSmall,
         ),
       ),
+    );
+  }
+}
+
+class _CalendarLegendItem extends StatelessWidget {
+  const _CalendarLegendItem({
+    required this.color,
+    required this.label,
+  });
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        SizedBox.square(
+          dimension: 10,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.82),
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(label, style: Theme.of(context).textTheme.labelSmall),
+      ],
     );
   }
 }
@@ -5715,6 +6533,497 @@ class _MealAddActionCard extends StatelessWidget {
           const Icon(Icons.chevron_right_rounded),
         ],
       ),
+    );
+  }
+}
+
+class _MealNutritionRecap extends StatelessWidget {
+  const _MealNutritionRecap({
+    required this.meal,
+    required this.totals,
+  });
+
+  final MealEntity meal;
+  final MealNutritionTotals totals;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return TtAppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              SizedBox.square(
+                dimension: 0,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: <Widget>[
+                    CircularProgressIndicator(
+                      value: totals.kcal <= 0 ? 0 : 1,
+                      strokeWidth: 8,
+                      backgroundColor: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        const Text('🔥'),
+                        Text(
+                          totals.kcal.round().toString(),
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        Text(
+                          'kcal',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.lg),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      meal.title.trim().isEmpty
+                          ? _slotLabel(meal.mealTypeCode)
+                          : meal.title,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    Text(
+                      '${_slotLabel(meal.mealTypeCode)} - ${meal.dateKey}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Wrap(
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
+                      children: <Widget>[
+                        _StatusPill(
+                          label: meal.mealModeCode == 'free'
+                              ? 'Pasto libero'
+                              : 'Standard',
+                          isWarning: meal.mealModeCode == 'free',
+                        ),
+                        if (meal.mealModeCode == 'free')
+                          _StatusPill(
+                            label: meal.freeMealTrackingCode.isEmpty
+                                ? 'Tracking n/d'
+                                : meal.freeMealTrackingCode,
+                            isWarning:
+                                meal.freeMealTrackingCode == 'untracked',
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  color: colors.surfaceContainerHighest,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.sm,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        totals.kcal.round().toString(),
+                        style: Theme.of(context)
+                            .textTheme
+                            .headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                      Text('kcal', style: Theme.of(context).textTheme.labelSmall),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          const _SummaryDivider(),
+          const SizedBox(height: AppSpacing.md),
+          _MealMacroRow(label: 'Proteine', value: totals.proteinGrams),
+          _MealMacroRow(label: 'Carboidrati', value: totals.carbsGrams),
+          _MealMacroRow(label: 'Grassi', value: totals.fatGrams),
+          _MealMacroRow(label: 'Fibre', value: totals.fiberGrams),
+          _MealMacroRow(label: 'Zuccheri', value: totals.sugarGrams),
+        ],
+      ),
+    );
+  }
+}
+
+class _MealMacroRow extends StatelessWidget {
+  const _MealMacroRow({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final double value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+      child: Row(
+        children: <Widget>[
+          Expanded(child: Text(label)),
+          Text(
+            '${_fmt(value)} g',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecipeMealSelection {
+  const _RecipeMealSelection({
+    required this.recipe,
+    required this.quantityModeCode,
+    required this.quantity,
+  });
+
+  final RecipeEntity recipe;
+  final String quantityModeCode;
+  final double quantity;
+}
+
+class _RecipeMealPickerSheet extends StatefulWidget {
+  const _RecipeMealPickerSheet({required this.recipes});
+
+  final List<RecipeEntity> recipes;
+
+  @override
+  State<_RecipeMealPickerSheet> createState() => _RecipeMealPickerSheetState();
+}
+
+class _RecipeMealPickerSheetState extends State<_RecipeMealPickerSheet> {
+  final TextEditingController _query = TextEditingController();
+  final TextEditingController _quantity = TextEditingController(text: '1');
+  RecipeEntity? _selected;
+  String _difficultyFilter = 'all';
+  String _quantityModeCode = 'portions';
+
+  @override
+  void dispose() {
+    _query.dispose();
+    _quantity.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<String> difficultyFilters = widget.recipes
+        .map((RecipeEntity recipe) => recipe.difficultyCode.trim())
+        .where((String value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    final String clean = _query.text.trim().toLowerCase();
+    final List<RecipeEntity> filtered = widget.recipes.where(
+      (RecipeEntity recipe) {
+        final bool matchesText = clean.isEmpty ||
+            recipe.title.toLowerCase().contains(clean) ||
+            recipe.subtitle.toLowerCase().contains(clean) ||
+            recipe.summary.toLowerCase().contains(clean);
+        final bool matchesDifficulty = _difficultyFilter == 'all' ||
+            recipe.difficultyCode == _difficultyFilter;
+        return matchesText && matchesDifficulty;
+      },
+    ).toList();
+    final List<String> modes = _selected == null
+        ? const <String>['portions']
+        : _recipeQuantityModes(_selected!);
+    final String? visibleQuantityMode = modes.contains(_quantityModeCode)
+        ? _quantityModeCode
+        : modes.isEmpty
+            ? null
+            : modes.first;
+    final double quantity = _toDouble(_quantity.text) ?? 0;
+    final bool canAdd = _selected != null && modes.isNotEmpty && quantity > 0;
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.92,
+      minChildSize: 0.36,
+      maxChildSize: 0.96,
+      builder: (BuildContext context, ScrollController scrollController) {
+        return SafeArea(
+          child: Column(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                  AppSpacing.sm,
+                  AppSpacing.sm,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Aggiungi ricetta',
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                          Text(
+                            _selected == null
+                                ? 'Scegli una ricetta salvata.'
+                                : _selected!.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Chiudi',
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                child: Column(
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            key: ValueKey<String>(
+                              'recipe-meal-mode-${_selected?.id ?? 0}-'
+                              '${visibleQuantityMode ?? 'none'}',
+                            ),
+                            initialValue: visibleQuantityMode,
+                            decoration: const InputDecoration(
+                              labelText: 'Modalita',
+                            ),
+                            items: <DropdownMenuItem<String>>[
+                              if (modes.contains('portions'))
+                                const DropdownMenuItem<String>(
+                                  value: 'portions',
+                                  child: Text('Porzioni'),
+                                ),
+                              if (modes.contains('grams'))
+                                const DropdownMenuItem<String>(
+                                  value: 'grams',
+                                  child: Text('Grammi'),
+                                ),
+                            ],
+                            onChanged: modes.isEmpty
+                                ? null
+                                : (String? value) {
+                                    if (value == null) {
+                                      return;
+                                    }
+                                    setState(() {
+                                      _quantityModeCode = value;
+                                      _quantity.text =
+                                          value == 'grams' ? '100' : '1';
+                                    });
+                                  },
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: TextField(
+                            controller: _quantity,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: _quantityModeCode == 'grams'
+                                  ? 'Grammi'
+                                  : 'Quantita',
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_selected != null && modes.isEmpty) ...<Widget>[
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        'Questa ricetta non ha porzioni valide ne peso finale: non puo essere aggiunta.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                      ),
+                    ],
+                    const SizedBox(height: AppSpacing.sm),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: canAdd
+                            ? () => Navigator.of(context).pop(
+                                  _RecipeMealSelection(
+                                    recipe: _selected!,
+                                    quantityModeCode: _quantityModeCode,
+                                    quantity: quantity,
+                                  ),
+                                )
+                            : null,
+                        icon: const Icon(Icons.check_rounded),
+                        label: const Text('Aggiungi'),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    TextField(
+                      controller: _query,
+                      decoration: const InputDecoration(
+                        labelText: 'Cerca per nome o descrizione',
+                        prefixIcon: Icon(Icons.search_rounded),
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              SizedBox(
+                height: 44,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                  ),
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.only(right: AppSpacing.xs),
+                      child: ChoiceChip(
+                        label: const Text('Tutte'),
+                        selected: _difficultyFilter == 'all',
+                        onSelected: (_) {
+                          setState(() => _difficultyFilter = 'all');
+                        },
+                      ),
+                    ),
+                    for (final String code in difficultyFilters)
+                      Padding(
+                        padding: const EdgeInsets.only(right: AppSpacing.xs),
+                        child: ChoiceChip(
+                          label: Text(_recipeDifficultyLabel(code)),
+                          selected: _difficultyFilter == code,
+                          onSelected: (_) {
+                            setState(() => _difficultyFilter = code);
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: filtered.isEmpty
+                    ? const Center(
+                        child: _EmptyInline(
+                          message: 'Nessuna ricetta trovata.',
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          AppSpacing.sm,
+                          AppSpacing.lg,
+                          AppSpacing.lg,
+                        ),
+                        itemCount: filtered.length,
+                        itemBuilder: (BuildContext context, int index) {
+                          final RecipeEntity recipe = filtered[index];
+                          final bool isSelected = _selected?.id == recipe.id;
+                          return Padding(
+                            padding:
+                                const EdgeInsets.only(bottom: AppSpacing.sm),
+                            child: TtAppCard(
+                              onTap: () {
+                                setState(() {
+                                  _selected = recipe;
+                                  final List<String> nextModes =
+                                      _recipeQuantityModes(recipe);
+                                  _quantityModeCode =
+                                      nextModes.contains(_quantityModeCode)
+                                          ? _quantityModeCode
+                                          : nextModes.isEmpty
+                                              ? 'portions'
+                                              : nextModes.first;
+                                  _quantity.text =
+                                      _quantityModeCode == 'grams' ? '100' : '1';
+                                });
+                              },
+                              child: Row(
+                                children: <Widget>[
+                                  _FoodThumb(
+                                    imageUrl: recipe.imagePath,
+                                    fallbackIcon: Icons.menu_book_rounded,
+                                  ),
+                                  const SizedBox(width: AppSpacing.md),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Text(
+                                          recipe.title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleMedium,
+                                        ),
+                                        Text(
+                                          _recipeQuantitySummary(recipe),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall,
+                                        ),
+                                        Text(
+                                          recipe.kcalPerServing == null
+                                              ? 'Kcal n/d'
+                                              : '${_fmtKcal(recipe.kcalPerServing!)} per porzione',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelSmall,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Icon(
+                                    isSelected
+                                        ? Icons.check_circle_rounded
+                                        : Icons.circle_outlined,
+                                    color: isSelected
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Theme.of(context).colorScheme.outline,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -6427,6 +7736,14 @@ MealNutritionTotals _totalsForMeals(List<MealWithItems> meals) {
   );
 }
 
+bool _hasAllMealSlotsLogged(List<MealWithItems> meals) {
+  final Set<String> loggedSlots = meals
+      .where((MealWithItems meal) => meal.items.isNotEmpty)
+      .map((MealWithItems meal) => meal.meal.mealTypeCode)
+      .toSet();
+  return ObsidianFoodSeedConstants.mealSlots.every(loggedSlots.contains);
+}
+
 Widget _field(
   TextEditingController controller,
   String label, {
@@ -6523,6 +7840,43 @@ String _mealItemQuantityText(MealItemEntity item) {
   }
   final double grams = item.grams ?? 0;
   return grams <= 0 ? 'Quantità n/d' : '${_fmt(grams)} g';
+}
+
+String _recipeDifficultyLabel(String code) {
+  return const <String, String>{
+        'easy': 'Facile',
+        'medium': 'Media',
+        'hard': 'Difficile',
+      }[code] ??
+      (code.trim().isEmpty ? 'Non indicata' : code);
+}
+
+double? _recipeWeightGrams(RecipeEntity recipe) {
+  final double? value = recipe.yieldGrams ?? recipe.totalWeightGrams;
+  if (value == null || value <= 0) {
+    return null;
+  }
+  return value;
+}
+
+List<String> _recipeQuantityModes(RecipeEntity recipe) {
+  return <String>[
+    if (recipe.servings > 0) 'portions',
+    if (_recipeWeightGrams(recipe) != null) 'grams',
+  ];
+}
+
+String _recipeQuantitySummary(RecipeEntity recipe) {
+  final List<String> parts = <String>[];
+  if (recipe.servings > 0) {
+    parts.add('${recipe.servings} porzioni');
+  }
+  final double? weight = _recipeWeightGrams(recipe);
+  if (weight != null) {
+    parts.add('${_fmt(weight)} g finali');
+  }
+  parts.add(_recipeDifficultyLabel(recipe.difficultyCode));
+  return parts.join(' - ');
 }
 
 String _fmtNullable(double? value, String suffix) {

@@ -12,6 +12,7 @@ class ProfileNutritionTargets {
     required this.fatGrams,
     required this.fiberGrams,
     required this.carbsGrams,
+    required this.sugarGrams,
   });
 
   final double rmrKcal;
@@ -23,6 +24,7 @@ class ProfileNutritionTargets {
   final double fatGrams;
   final double fiberGrams;
   final double carbsGrams;
+  final double sugarGrams;
 }
 
 class ProfileNutritionCalculator {
@@ -43,6 +45,10 @@ class ProfileNutritionCalculator {
     final double target = profile.targetModeCode == TargetModeCodes.fixedUser
         ? profile.defaultTargetKcal.toDouble()
         : sedentary + workoutDaily;
+    final double carbsGrams = profile.carbsGramsPerKg * weightKg;
+    final double sugarPercent = profile.sugarCarbsPercent <= 0
+        ? 25
+        : profile.sugarCarbsPercent.clamp(0, 100).toDouble();
     return ProfileNutritionTargets(
       sedentaryKcal: sedentary,
       rmrKcal: rmr,
@@ -55,7 +61,8 @@ class ProfileNutritionCalculator {
       proteinGrams: profile.proteinGramsPerKg * weightKg,
       fatGrams: profile.fatGramsPerKg * weightKg,
       fiberGrams: profile.fiberGramsPerKg * weightKg,
-      carbsGrams: profile.carbsGramsPerKg * weightKg,
+      carbsGrams: carbsGrams,
+      sugarGrams: carbsGrams * sugarPercent / 100,
     );
   }
 

@@ -74,38 +74,43 @@ class FoodPlanningService {
   MealWithItems addRecipeToMeal({
     required MealWithItems meal,
     required RecipeEntity recipe,
-    required double portions,
+    double portions = 1,
+    double? grams,
+    String quantityModeCode = 'portions',
     String notes = '',
   }) {
     final int safeServings = recipe.servings <= 0 ? 1 : recipe.servings;
-    final double kcal = recipe.kcalPerServing ?? 0;
-    final double protein = recipe.proteinTotalGrams == null
-        ? 0
-        : recipe.proteinTotalGrams! / safeServings;
-    final double carbs = recipe.carbsTotalGrams == null
-        ? 0
-        : recipe.carbsTotalGrams! / safeServings;
-    final double fat =
-        recipe.fatTotalGrams == null ? 0 : recipe.fatTotalGrams! / safeServings;
-    final double fiber = recipe.fiberTotalGrams == null
-        ? 0
-        : recipe.fiberTotalGrams! / safeServings;
-    final double sugar = recipe.sugarTotalGrams == null
-        ? 0
-        : recipe.sugarTotalGrams! / safeServings;
+    final double? recipeWeightGrams =
+        recipe.yieldGrams ?? recipe.totalWeightGrams;
+    final bool gramsMode = quantityModeCode == 'grams' &&
+        recipeWeightGrams != null &&
+        recipeWeightGrams > 0;
+    final double safePortions = portions <= 0 ? 1 : portions;
+    final double safeGrams = (grams ?? 0) <= 0 ? 100 : grams!;
+    final double totalKcal =
+        recipe.caloriesTotal ?? ((recipe.kcalPerServing ?? 0) * safeServings);
+    final double factor = gramsMode
+        ? safeGrams / recipeWeightGrams!
+        : safePortions / safeServings;
+    final double protein = recipe.proteinTotalGrams ?? 0;
+    final double carbs = recipe.carbsTotalGrams ?? 0;
+    final double fat = recipe.fatTotalGrams ?? 0;
+    final double fiber = recipe.fiberTotalGrams ?? 0;
+    final double sugar = recipe.sugarTotalGrams ?? 0;
     final MealItemEntity item = MealItemEntity(
       uuid: '',
       kindCode: 'recipe',
       sourceUuid: recipe.uuid,
       itemNameSnapshot: recipe.title,
-      quantityModeCode: 'portions',
-      portions: portions,
-      kcal: kcal * portions,
-      proteinGrams: protein * portions,
-      carbsGrams: carbs * portions,
-      fatGrams: fat * portions,
-      fiberGrams: fiber * portions,
-      sugarGrams: sugar * portions,
+      quantityModeCode: gramsMode ? 'grams' : 'portions',
+      grams: gramsMode ? safeGrams : null,
+      portions: gramsMode ? null : safePortions,
+      kcal: totalKcal * factor,
+      proteinGrams: protein * factor,
+      carbsGrams: carbs * factor,
+      fatGrams: fat * factor,
+      fiberGrams: fiber * factor,
+      sugarGrams: sugar * factor,
       notes: notes,
       createdAtEpochMs: 0,
       updatedAtEpochMs: 0,

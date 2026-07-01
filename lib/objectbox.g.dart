@@ -431,7 +431,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(5, 8645411654677832403),
     name: 'UserProfileEntity',
-    lastPropertyId: const obx_int.IdUid(33, 1473179430350576053),
+    lastPropertyId: const obx_int.IdUid(34, 8192332974309952111),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -631,6 +631,12 @@ final _entities = <obx_int.ModelEntity>[
         id: const obx_int.IdUid(33, 1473179430350576053),
         name: 'languageCode',
         type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(34, 8192332974309952111),
+        name: 'sugarCarbsPercent',
+        type: 8,
         flags: 0,
       ),
     ],
@@ -3484,7 +3490,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final macroModeCodeOffset = fbb.writeString(object.macroModeCode);
         final themeModeCodeOffset = fbb.writeString(object.themeModeCode);
         final languageCodeOffset = fbb.writeString(object.languageCode);
-        fbb.startTable(34);
+        fbb.startTable(35);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, uuidOffset);
         fbb.addOffset(2, displayNameOffset);
@@ -3518,6 +3524,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addFloat64(30, object.carbsGramsPerKg);
         fbb.addOffset(31, themeModeCodeOffset);
         fbb.addOffset(32, languageCodeOffset);
+        fbb.addFloat64(33, object.sugarCarbsPercent);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -3663,6 +3670,12 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final languageCodeParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 68, '');
+        final sugarCarbsPercentParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          70,
+          25,
+        );
         final isActiveParam = const fb.BoolReader().vTableGet(
           buffer,
           rootOffset,
@@ -3716,6 +3729,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
           maximumReasonableTdee: maximumReasonableTdeeParam,
           themeModeCode: themeModeCodeParam,
           languageCode: languageCodeParam,
+          sugarCarbsPercent: sugarCarbsPercentParam,
           isActive: isActiveParam,
           createdAtEpochMs: createdAtEpochMsParam,
           updatedAtEpochMs: updatedAtEpochMsParam,
@@ -6834,6 +6848,11 @@ class UserProfileEntity_ {
   /// See [UserProfileEntity.languageCode].
   static final languageCode = obx.QueryStringProperty<UserProfileEntity>(
     _entities[4].properties[32],
+  );
+
+  /// See [UserProfileEntity.sugarCarbsPercent].
+  static final sugarCarbsPercent = obx.QueryDoubleProperty<UserProfileEntity>(
+    _entities[4].properties[33],
   );
 }
 

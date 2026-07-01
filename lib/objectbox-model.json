@@ -355,7 +355,7 @@
     },
     {
       "id": "5:8645411654677832403",
-      "lastPropertyId": "33:1473179430350576053",
+      "lastPropertyId": "34:8192332974309952111",
       "name": "UserProfileEntity",
       "properties": [
         {
@@ -525,6 +525,11 @@
           "id": "33:1473179430350576053",
           "name": "languageCode",
           "type": 9
+        },
+        {
+          "id": "34:8192332974309952111",
+          "name": "sugarCarbsPercent",
+          "type": 8
         }
       ],
       "relations": []

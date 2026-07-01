@@ -24,6 +24,7 @@ class UserProfileEntity {
     this.fatGramsPerKg = 1.0,
     this.fiberGramsPerKg = 0.5,
     this.carbsGramsPerKg = 3.0,
+    this.sugarCarbsPercent = 25,
     this.waterGlassLiters = 0.25,
     this.stepKcalCoefficient = 0.020,
     this.adaptiveReferenceDays = 28,
@@ -64,6 +65,7 @@ class UserProfileEntity {
   double fatGramsPerKg;
   double fiberGramsPerKg;
   double carbsGramsPerKg;
+  double sugarCarbsPercent;
   double waterGlassLiters;
   double stepKcalCoefficient;
 

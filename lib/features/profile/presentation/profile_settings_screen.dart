@@ -39,6 +39,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
   final TextEditingController _fatKg = TextEditingController();
   final TextEditingController _fiberKg = TextEditingController();
   final TextEditingController _carbsKg = TextEditingController();
+  final TextEditingController _sugarCarbsPercent = TextEditingController();
   bool _loaded = false;
   String _sex = BiologicalSexCodes.unspecified;
   String _targetMode = TargetModeCodes.adaptiveWeekly;
@@ -65,6 +66,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     _fatKg.dispose();
     _fiberKg.dispose();
     _carbsKg.dispose();
+    _sugarCarbsPercent.dispose();
     super.dispose();
   }
 
@@ -185,6 +187,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               _SettingRowData('Fibre', '${estimate.fiberGrams.round()} g'),
               _SettingRowData(
                   'Carboidrati', '${estimate.carbsGrams.round()} g'),
+              _SettingRowData('Zuccheri max', '${estimate.sugarGrams.round()} g'),
             ],
           ),
           const SizedBox(height: AppSpacing.sectionGap),
@@ -307,6 +310,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     _fatKg.text = _num(profile.fatGramsPerKg);
     _fiberKg.text = _num(profile.fiberGramsPerKg);
     _carbsKg.text = _num(profile.carbsGramsPerKg);
+    _sugarCarbsPercent.text = _num(profile.sugarCarbsPercent);
     _sex = _safeCode(
       profile.biologicalSexCode,
       BiologicalSexCodes.values,
@@ -549,6 +553,11 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
           _field(_fiberKg, 'Fibre g/kg', keyboardType: TextInputType.number),
           _field(_carbsKg, 'Carboidrati g/kg',
               keyboardType: TextInputType.number),
+          _field(
+            _sugarCarbsPercent,
+            'Zuccheri % carboidrati',
+            keyboardType: TextInputType.number,
+          ),
         ];
       },
     );
@@ -971,6 +980,8 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       profile.fatGramsPerKg = _toDouble(_fatKg.text) ?? 1;
       profile.fiberGramsPerKg = _toDouble(_fiberKg.text) ?? 0.5;
       profile.carbsGramsPerKg = _toDouble(_carbsKg.text) ?? 3;
+      profile.sugarCarbsPercent =
+          (_toDouble(_sugarCarbsPercent.text) ?? 25).clamp(0, 100).toDouble();
       profile.themeModeCode = _themeMode;
       profile.languageCode = _language;
       profile.kcalPerKg = _kcalPerKgForWeightLossResponse(_weightLossResponse);
