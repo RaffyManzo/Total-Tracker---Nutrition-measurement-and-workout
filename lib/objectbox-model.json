@@ -1631,7 +1631,7 @@
     },
     {
       "id": "15:483651621227573625",
-      "lastPropertyId": "23:3527260993934738533",
+      "lastPropertyId": "24:588871553541008539",
       "name": "ScaleMeasurementEntity",
       "properties": [
         {
@@ -1753,6 +1753,11 @@
           "id": "23:3527260993934738533",
           "name": "deletedAtEpochMs",
           "type": 6
+        },
+        {
+          "id": "24:588871553541008539",
+          "name": "weightAnomalyConfirmationKey",
+          "type": 9
         }
       ],
       "relations": []

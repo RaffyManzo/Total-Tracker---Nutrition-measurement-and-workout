@@ -390,6 +390,7 @@ class ScaleMeasurementEntity {
     this.measurementTime = '',
     this.device = '',
     this.reliabilityCode = 'normal',
+    this.weightAnomalyConfirmationKey = '',
     this.notes = '',
     required this.createdAtEpochMs,
     required this.updatedAtEpochMs,
@@ -421,6 +422,7 @@ class ScaleMeasurementEntity {
   String measurementTime;
   String device;
   String reliabilityCode;
+  String weightAnomalyConfirmationKey;
   String notes;
   int createdAtEpochMs;
   int updatedAtEpochMs;

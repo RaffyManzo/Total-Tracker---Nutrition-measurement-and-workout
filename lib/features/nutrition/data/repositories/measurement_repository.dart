@@ -169,9 +169,14 @@ class MeasurementRepository {
         : measurement.weightSourceCode.trim();
     measurement.measurementTime = measurement.measurementTime.trim();
     measurement.device = measurement.device.trim();
-    measurement.reliabilityCode = measurement.reliabilityCode.trim().isEmpty
-        ? 'normal'
-        : measurement.reliabilityCode.trim();
+    final String reliabilityCode =
+        measurement.reliabilityCode.trim().toLowerCase();
+    measurement.reliabilityCode =
+        reliabilityCode == 'low' || reliabilityCode == 'bassa'
+            ? 'low'
+            : 'normal';
+    measurement.weightAnomalyConfirmationKey =
+        measurement.weightAnomalyConfirmationKey.trim();
     measurement.notes = measurement.notes.trim();
     if (measurement.title.isEmpty) {
       measurement.title = 'Bilancia - ${measurement.dateKey}';

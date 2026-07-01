@@ -1931,7 +1931,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(15, 483651621227573625),
     name: 'ScaleMeasurementEntity',
-    lastPropertyId: const obx_int.IdUid(23, 3527260993934738533),
+    lastPropertyId: const obx_int.IdUid(24, 588871553541008539),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -2072,6 +2072,12 @@ final _entities = <obx_int.ModelEntity>[
         id: const obx_int.IdUid(23, 3527260993934738533),
         name: 'deletedAtEpochMs',
         type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(24, 588871553541008539),
+        name: 'weightAnomalyConfirmationKey',
+        type: 9,
         flags: 0,
       ),
     ],
@@ -3075,93 +3081,93 @@ obx_int.ModelDefinition getObjectBoxModel() {
     ),
     ExerciseMuscleLinkEntity:
         obx_int.EntityDefinition<ExerciseMuscleLinkEntity>(
-      model: _entities[1],
-      toOneRelations: (ExerciseMuscleLinkEntity object) => [
-        object.exercise,
-        object.muscle,
-      ],
-      toManyRelations: (ExerciseMuscleLinkEntity object) => {},
-      getId: (ExerciseMuscleLinkEntity object) => object.id,
-      setId: (ExerciseMuscleLinkEntity object, int id) {
-        object.id = id;
-      },
-      objectToFB: (ExerciseMuscleLinkEntity object, fb.Builder fbb) {
-        final uuidOffset = fbb.writeString(object.uuid);
-        final roleCodeOffset = fbb.writeString(object.roleCode);
-        fbb.startTable(10);
-        fbb.addInt64(0, object.id);
-        fbb.addOffset(1, uuidOffset);
-        fbb.addInt64(2, object.exercise.targetId);
-        fbb.addInt64(3, object.muscle.targetId);
-        fbb.addOffset(4, roleCodeOffset);
-        fbb.addInt64(5, object.position);
-        fbb.addInt64(6, object.createdAtEpochMs);
-        fbb.addInt64(7, object.updatedAtEpochMs);
-        fbb.addInt64(8, object.deletedAtEpochMs);
-        fbb.finish(fbb.endTable());
-        return object.id;
-      },
-      objectFromFB: (obx.Store store, ByteData fbData) {
-        final buffer = fb.BufferContext(fbData);
-        final rootOffset = buffer.derefObject(0);
-        final idParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          4,
-          0,
-        );
-        final uuidParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 6, '');
-        final roleCodeParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 12, '');
-        final positionParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          14,
-          0,
-        );
-        final createdAtEpochMsParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          16,
-          0,
-        );
-        final updatedAtEpochMsParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          18,
-          0,
-        );
-        final deletedAtEpochMsParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 20);
-        final object = ExerciseMuscleLinkEntity(
-          id: idParam,
-          uuid: uuidParam,
-          roleCode: roleCodeParam,
-          position: positionParam,
-          createdAtEpochMs: createdAtEpochMsParam,
-          updatedAtEpochMs: updatedAtEpochMsParam,
-          deletedAtEpochMs: deletedAtEpochMsParam,
-        );
-        object.exercise.targetId = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          8,
-          0,
-        );
-        object.exercise.attach(store);
-        object.muscle.targetId = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          10,
-          0,
-        );
-        object.muscle.attach(store);
-        return object;
-      },
-    ),
+          model: _entities[1],
+          toOneRelations: (ExerciseMuscleLinkEntity object) => [
+            object.exercise,
+            object.muscle,
+          ],
+          toManyRelations: (ExerciseMuscleLinkEntity object) => {},
+          getId: (ExerciseMuscleLinkEntity object) => object.id,
+          setId: (ExerciseMuscleLinkEntity object, int id) {
+            object.id = id;
+          },
+          objectToFB: (ExerciseMuscleLinkEntity object, fb.Builder fbb) {
+            final uuidOffset = fbb.writeString(object.uuid);
+            final roleCodeOffset = fbb.writeString(object.roleCode);
+            fbb.startTable(10);
+            fbb.addInt64(0, object.id);
+            fbb.addOffset(1, uuidOffset);
+            fbb.addInt64(2, object.exercise.targetId);
+            fbb.addInt64(3, object.muscle.targetId);
+            fbb.addOffset(4, roleCodeOffset);
+            fbb.addInt64(5, object.position);
+            fbb.addInt64(6, object.createdAtEpochMs);
+            fbb.addInt64(7, object.updatedAtEpochMs);
+            fbb.addInt64(8, object.deletedAtEpochMs);
+            fbb.finish(fbb.endTable());
+            return object.id;
+          },
+          objectFromFB: (obx.Store store, ByteData fbData) {
+            final buffer = fb.BufferContext(fbData);
+            final rootOffset = buffer.derefObject(0);
+            final idParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              4,
+              0,
+            );
+            final uuidParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 6, '');
+            final roleCodeParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 12, '');
+            final positionParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              14,
+              0,
+            );
+            final createdAtEpochMsParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              16,
+              0,
+            );
+            final updatedAtEpochMsParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              18,
+              0,
+            );
+            final deletedAtEpochMsParam = const fb.Int64Reader()
+                .vTableGetNullable(buffer, rootOffset, 20);
+            final object = ExerciseMuscleLinkEntity(
+              id: idParam,
+              uuid: uuidParam,
+              roleCode: roleCodeParam,
+              position: positionParam,
+              createdAtEpochMs: createdAtEpochMsParam,
+              updatedAtEpochMs: updatedAtEpochMsParam,
+              deletedAtEpochMs: deletedAtEpochMsParam,
+            );
+            object.exercise.targetId = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              8,
+              0,
+            );
+            object.exercise.attach(store);
+            object.muscle.targetId = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              10,
+              0,
+            );
+            object.muscle.attach(store);
+            return object;
+          },
+        ),
     IngredientEntity: obx_int.EntityDefinition<IngredientEntity>(
       model: _entities[2],
       toOneRelations: (IngredientEntity object) => [],
@@ -3262,8 +3268,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final notesParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 28, '');
-        final nutritionReferenceAmountParam =
-            const fb.Float64Reader().vTableGet(buffer, rootOffset, 30, 0);
+        final nutritionReferenceAmountParam = const fb.Float64Reader()
+            .vTableGet(buffer, rootOffset, 30, 0);
         final nutritionReferenceUnitCodeParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 32, '');
@@ -3588,8 +3594,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
           50,
           0,
         );
-        final averageWorkoutDurationMinutesParam =
-            const fb.Int64Reader().vTableGet(buffer, rootOffset, 52, 0);
+        final averageWorkoutDurationMinutesParam = const fb.Int64Reader()
+            .vTableGet(buffer, rootOffset, 52, 0);
         final workoutActivityTypeCodeParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 54, '');
@@ -3620,6 +3626,12 @@ obx_int.ModelDefinition getObjectBoxModel() {
           64,
           0,
         );
+        final sugarCarbsPercentParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          70,
+          0,
+        );
         final waterGlassLitersParam = const fb.Float64Reader().vTableGet(
           buffer,
           rootOffset,
@@ -3638,8 +3650,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
           24,
           0,
         );
-        final adaptiveMinimumObservedDaysParam =
-            const fb.Int64Reader().vTableGet(buffer, rootOffset, 26, 0);
+        final adaptiveMinimumObservedDaysParam = const fb.Int64Reader()
+            .vTableGet(buffer, rootOffset, 26, 0);
         final rmrActivityFactorParam = const fb.Float64Reader().vTableGet(
           buffer,
           rootOffset,
@@ -3670,12 +3682,6 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final languageCodeParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 68, '');
-        final sugarCarbsPercentParam = const fb.Float64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          70,
-          25,
-        );
         final isActiveParam = const fb.BoolReader().vTableGet(
           buffer,
           rootOffset,
@@ -3719,6 +3725,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
           fatGramsPerKg: fatGramsPerKgParam,
           fiberGramsPerKg: fiberGramsPerKgParam,
           carbsGramsPerKg: carbsGramsPerKgParam,
+          sugarCarbsPercent: sugarCarbsPercentParam,
           waterGlassLiters: waterGlassLitersParam,
           stepKcalCoefficient: stepKcalCoefficientParam,
           adaptiveReferenceDays: adaptiveReferenceDaysParam,
@@ -3729,7 +3736,6 @@ obx_int.ModelDefinition getObjectBoxModel() {
           maximumReasonableTdee: maximumReasonableTdeeParam,
           themeModeCode: themeModeCodeParam,
           languageCode: languageCodeParam,
-          sugarCarbsPercent: sugarCarbsPercentParam,
           isActive: isActiveParam,
           createdAtEpochMs: createdAtEpochMsParam,
           updatedAtEpochMs: updatedAtEpochMsParam,
@@ -3858,8 +3864,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final targetStatusCodeParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 20, '');
-        final targetCalculatedAtEpochMsParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 22);
+        final targetCalculatedAtEpochMsParam = const fb.Int64Reader()
+            .vTableGetNullable(buffer, rootOffset, 22);
         final targetSourceHashParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 24, '');
@@ -3868,14 +3874,14 @@ obx_int.ModelDefinition getObjectBoxModel() {
           rootOffset,
           26,
         );
-        final tdeeTheoreticalKcalParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 28);
-        final tdeeObservedKcalParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 30);
-        final observedConfidenceParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 32);
-        final referenceDaysCountParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 34);
+        final tdeeTheoreticalKcalParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 28);
+        final tdeeObservedKcalParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 30);
+        final observedConfidenceParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 32);
+        final referenceDaysCountParam = const fb.Int64Reader()
+            .vTableGetNullable(buffer, rootOffset, 34);
         final validIntakeDaysParam = const fb.Int64Reader().vTableGetNullable(
           buffer,
           rootOffset,
@@ -3906,22 +3912,22 @@ obx_int.ModelDefinition getObjectBoxModel() {
           rootOffset,
           46,
         );
-        final activeKcalWorkoutCompletedParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 48);
-        final activeKcalWorkoutInProgressParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 50);
-        final activeKcalWorkoutPlannedParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 52);
-        final activeKcalWorkoutSkippedParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 54);
-        final activeKcalWorkoutUnknownParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 56);
-        final activeKcalActualParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 58);
-        final activeEffectiveKcalParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 60);
-        final activityDeltaKcalParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 62);
+        final activeKcalWorkoutCompletedParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 48);
+        final activeKcalWorkoutInProgressParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 50);
+        final activeKcalWorkoutPlannedParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 52);
+        final activeKcalWorkoutSkippedParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 54);
+        final activeKcalWorkoutUnknownParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 56);
+        final activeKcalActualParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 58);
+        final activeEffectiveKcalParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 60);
+        final activityDeltaKcalParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 62);
         final activeStatusCodeParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 64, '');
@@ -3930,8 +3936,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
           rootOffset,
           66,
         );
-        final energyBalanceKcalParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 68);
+        final energyBalanceKcalParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 68);
         final weightKgParam = const fb.Float64Reader().vTableGetNullable(
           buffer,
           rootOffset,
@@ -3951,8 +3957,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final freeMealReliabilityCodeParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 78, '');
-        final dataCompletenessScoreParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 80);
+        final dataCompletenessScoreParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 80);
         final waterLitersParam = const fb.Float64Reader().vTableGetNullable(
           buffer,
           rootOffset,
@@ -4493,8 +4499,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
           rootOffset,
           34,
         );
-        final totalWeightGramsParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 36);
+        final totalWeightGramsParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 36);
         final yieldGramsParam = const fb.Float64Reader().vTableGetNullable(
           buffer,
           rootOffset,
@@ -4505,15 +4511,15 @@ obx_int.ModelDefinition getObjectBoxModel() {
           rootOffset,
           40,
         );
-        final cookedLossPercentParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 42);
+        final cookedLossPercentParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 42);
         final caloriesTotalParam = const fb.Float64Reader().vTableGetNullable(
           buffer,
           rootOffset,
           44,
         );
-        final proteinTotalGramsParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 46);
+        final proteinTotalGramsParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 46);
         final carbsTotalGramsParam = const fb.Float64Reader().vTableGetNullable(
           buffer,
           rootOffset,
@@ -4544,10 +4550,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
           rootOffset,
           58,
         );
-        final proteinPer100GramsParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 60);
-        final carbsPer100GramsParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 62);
+        final proteinPer100GramsParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 60);
+        final carbsPer100GramsParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 62);
         final fatPer100GramsParam = const fb.Float64Reader().vTableGetNullable(
           buffer,
           rootOffset,
@@ -5039,14 +5045,14 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final secondaryMuscleCodesJsonParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 22, '');
-        final activityTargetDurationMinutesParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 24);
-        final treadmillTargetDurationMinutesParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 26);
-        final treadmillTargetDistanceKmParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 28);
-        final treadmillTargetAverageSpeedKmhParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 30);
+        final activityTargetDurationMinutesParam = const fb.Int64Reader()
+            .vTableGetNullable(buffer, rootOffset, 24);
+        final treadmillTargetDurationMinutesParam = const fb.Int64Reader()
+            .vTableGetNullable(buffer, rootOffset, 26);
+        final treadmillTargetDistanceKmParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 28);
+        final treadmillTargetAverageSpeedKmhParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 30);
         final treadmillTargetAverageInclinePercentParam =
             const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 32);
         final notesParam = const fb.StringReader(
@@ -5103,127 +5109,127 @@ obx_int.ModelDefinition getObjectBoxModel() {
     ),
     RoutineSetTemplateEntity:
         obx_int.EntityDefinition<RoutineSetTemplateEntity>(
-      model: _entities[13],
-      toOneRelations: (RoutineSetTemplateEntity object) => [
-        object.routineExercise,
-      ],
-      toManyRelations: (RoutineSetTemplateEntity object) => {},
-      getId: (RoutineSetTemplateEntity object) => object.id,
-      setId: (RoutineSetTemplateEntity object, int id) {
-        object.id = id;
-      },
-      objectToFB: (RoutineSetTemplateEntity object, fb.Builder fbb) {
-        final uuidOffset = fbb.writeString(object.uuid);
-        final setRoleCodeOffset = fbb.writeString(object.setRoleCode);
-        final effortTypeCodeOffset = fbb.writeString(object.effortTypeCode);
-        final executionSpeedCodeOffset = fbb.writeString(
-          object.executionSpeedCode,
-        );
-        final executionQualityCodeOffset = fbb.writeString(
-          object.executionQualityCode,
-        );
-        final notesOffset = fbb.writeString(object.notes);
-        fbb.startTable(15);
-        fbb.addInt64(0, object.id);
-        fbb.addOffset(1, uuidOffset);
-        fbb.addInt64(2, object.position);
-        fbb.addOffset(3, setRoleCodeOffset);
-        fbb.addInt64(4, object.targetRepetitions);
-        fbb.addOffset(5, effortTypeCodeOffset);
-        fbb.addInt64(6, object.rir);
-        fbb.addOffset(7, executionSpeedCodeOffset);
-        fbb.addOffset(8, executionQualityCodeOffset);
-        fbb.addOffset(9, notesOffset);
-        fbb.addInt64(10, object.createdAtEpochMs);
-        fbb.addInt64(11, object.updatedAtEpochMs);
-        fbb.addInt64(12, object.deletedAtEpochMs);
-        fbb.addInt64(13, object.routineExercise.targetId);
-        fbb.finish(fbb.endTable());
-        return object.id;
-      },
-      objectFromFB: (obx.Store store, ByteData fbData) {
-        final buffer = fb.BufferContext(fbData);
-        final rootOffset = buffer.derefObject(0);
-        final idParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          4,
-          0,
-        );
-        final uuidParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 6, '');
-        final positionParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          8,
-          0,
-        );
-        final setRoleCodeParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 10, '');
-        final targetRepetitionsParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          12,
-          0,
-        );
-        final effortTypeCodeParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 14, '');
-        final rirParam = const fb.Int64Reader().vTableGetNullable(
-          buffer,
-          rootOffset,
-          16,
-        );
-        final executionSpeedCodeParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 18, '');
-        final executionQualityCodeParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 20, '');
-        final notesParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 22, '');
-        final createdAtEpochMsParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          24,
-          0,
-        );
-        final updatedAtEpochMsParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          26,
-          0,
-        );
-        final deletedAtEpochMsParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 28);
-        final object = RoutineSetTemplateEntity(
-          id: idParam,
-          uuid: uuidParam,
-          position: positionParam,
-          setRoleCode: setRoleCodeParam,
-          targetRepetitions: targetRepetitionsParam,
-          effortTypeCode: effortTypeCodeParam,
-          rir: rirParam,
-          executionSpeedCode: executionSpeedCodeParam,
-          executionQualityCode: executionQualityCodeParam,
-          notes: notesParam,
-          createdAtEpochMs: createdAtEpochMsParam,
-          updatedAtEpochMs: updatedAtEpochMsParam,
-          deletedAtEpochMs: deletedAtEpochMsParam,
-        );
-        object.routineExercise.targetId = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          30,
-          0,
-        );
-        object.routineExercise.attach(store);
-        return object;
-      },
-    ),
+          model: _entities[13],
+          toOneRelations: (RoutineSetTemplateEntity object) => [
+            object.routineExercise,
+          ],
+          toManyRelations: (RoutineSetTemplateEntity object) => {},
+          getId: (RoutineSetTemplateEntity object) => object.id,
+          setId: (RoutineSetTemplateEntity object, int id) {
+            object.id = id;
+          },
+          objectToFB: (RoutineSetTemplateEntity object, fb.Builder fbb) {
+            final uuidOffset = fbb.writeString(object.uuid);
+            final setRoleCodeOffset = fbb.writeString(object.setRoleCode);
+            final effortTypeCodeOffset = fbb.writeString(object.effortTypeCode);
+            final executionSpeedCodeOffset = fbb.writeString(
+              object.executionSpeedCode,
+            );
+            final executionQualityCodeOffset = fbb.writeString(
+              object.executionQualityCode,
+            );
+            final notesOffset = fbb.writeString(object.notes);
+            fbb.startTable(15);
+            fbb.addInt64(0, object.id);
+            fbb.addOffset(1, uuidOffset);
+            fbb.addInt64(2, object.position);
+            fbb.addOffset(3, setRoleCodeOffset);
+            fbb.addInt64(4, object.targetRepetitions);
+            fbb.addOffset(5, effortTypeCodeOffset);
+            fbb.addInt64(6, object.rir);
+            fbb.addOffset(7, executionSpeedCodeOffset);
+            fbb.addOffset(8, executionQualityCodeOffset);
+            fbb.addOffset(9, notesOffset);
+            fbb.addInt64(10, object.createdAtEpochMs);
+            fbb.addInt64(11, object.updatedAtEpochMs);
+            fbb.addInt64(12, object.deletedAtEpochMs);
+            fbb.addInt64(13, object.routineExercise.targetId);
+            fbb.finish(fbb.endTable());
+            return object.id;
+          },
+          objectFromFB: (obx.Store store, ByteData fbData) {
+            final buffer = fb.BufferContext(fbData);
+            final rootOffset = buffer.derefObject(0);
+            final idParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              4,
+              0,
+            );
+            final uuidParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 6, '');
+            final positionParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              8,
+              0,
+            );
+            final setRoleCodeParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 10, '');
+            final targetRepetitionsParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              12,
+              0,
+            );
+            final effortTypeCodeParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 14, '');
+            final rirParam = const fb.Int64Reader().vTableGetNullable(
+              buffer,
+              rootOffset,
+              16,
+            );
+            final executionSpeedCodeParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 18, '');
+            final executionQualityCodeParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 20, '');
+            final notesParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 22, '');
+            final createdAtEpochMsParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              24,
+              0,
+            );
+            final updatedAtEpochMsParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              26,
+              0,
+            );
+            final deletedAtEpochMsParam = const fb.Int64Reader()
+                .vTableGetNullable(buffer, rootOffset, 28);
+            final object = RoutineSetTemplateEntity(
+              id: idParam,
+              uuid: uuidParam,
+              position: positionParam,
+              setRoleCode: setRoleCodeParam,
+              targetRepetitions: targetRepetitionsParam,
+              effortTypeCode: effortTypeCodeParam,
+              rir: rirParam,
+              executionSpeedCode: executionSpeedCodeParam,
+              executionQualityCode: executionQualityCodeParam,
+              notes: notesParam,
+              createdAtEpochMs: createdAtEpochMsParam,
+              updatedAtEpochMs: updatedAtEpochMsParam,
+              deletedAtEpochMs: deletedAtEpochMsParam,
+            );
+            object.routineExercise.targetId = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              30,
+              0,
+            );
+            object.routineExercise.attach(store);
+            return object;
+          },
+        ),
     ScaleMeasurementEntity: obx_int.EntityDefinition<ScaleMeasurementEntity>(
       model: _entities[14],
       toOneRelations: (ScaleMeasurementEntity object) => [],
@@ -5242,7 +5248,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final deviceOffset = fbb.writeString(object.device);
         final reliabilityCodeOffset = fbb.writeString(object.reliabilityCode);
         final notesOffset = fbb.writeString(object.notes);
-        fbb.startTable(24);
+        final weightAnomalyConfirmationKeyOffset = fbb.writeString(
+          object.weightAnomalyConfirmationKey,
+        );
+        fbb.startTable(25);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, uuidOffset);
         fbb.addOffset(2, dateKeyOffset);
@@ -5266,6 +5275,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addInt64(20, object.createdAtEpochMs);
         fbb.addInt64(21, object.updatedAtEpochMs);
         fbb.addInt64(22, object.deletedAtEpochMs);
+        fbb.addOffset(23, weightAnomalyConfirmationKeyOffset);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -5320,10 +5330,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
           rootOffset,
           24,
         );
-        final subcutaneousFatPercentParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 26);
-        final basalMetabolismKcalParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 28);
+        final subcutaneousFatPercentParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 26);
+        final basalMetabolismKcalParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 28);
         final bmiParam = const fb.Float64Reader().vTableGetNullable(
           buffer,
           rootOffset,
@@ -5346,6 +5356,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final reliabilityCodeParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 40, '');
+        final weightAnomalyConfirmationKeyParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 50, '');
         final notesParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 42, '');
@@ -5386,6 +5399,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
           measurementTime: measurementTimeParam,
           device: deviceParam,
           reliabilityCode: reliabilityCodeParam,
+          weightAnomalyConfirmationKey: weightAnomalyConfirmationKeyParam,
           notes: notesParam,
           createdAtEpochMs: createdAtEpochMsParam,
           updatedAtEpochMs: updatedAtEpochMsParam,
@@ -5487,22 +5501,22 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final secondaryMuscleCodesJsonParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 22, '');
-        final activityDurationMinutesParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 24);
-        final activityAverageHeartRateBpmParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 26);
-        final activityKcalBurnedParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 28);
-        final treadmillDurationMinutesParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 30);
-        final treadmillDistanceKmParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 32);
-        final treadmillAverageSpeedKmhParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 34);
-        final treadmillAverageInclinePercentParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 36);
-        final treadmillAverageHeartRateBpmParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 38);
+        final activityDurationMinutesParam = const fb.Int64Reader()
+            .vTableGetNullable(buffer, rootOffset, 24);
+        final activityAverageHeartRateBpmParam = const fb.Int64Reader()
+            .vTableGetNullable(buffer, rootOffset, 26);
+        final activityKcalBurnedParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 28);
+        final treadmillDurationMinutesParam = const fb.Int64Reader()
+            .vTableGetNullable(buffer, rootOffset, 30);
+        final treadmillDistanceKmParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 32);
+        final treadmillAverageSpeedKmhParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 34);
+        final treadmillAverageInclinePercentParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 36);
+        final treadmillAverageHeartRateBpmParam = const fb.Int64Reader()
+            .vTableGetNullable(buffer, rootOffset, 38);
         final isCompletedParam = const fb.BoolReader().vTableGet(
           buffer,
           rootOffset,
@@ -5655,10 +5669,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
           rootOffset,
           16,
         );
-        final previousRepetitionsDoneParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 18);
-        final previousWeightKgParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 20);
+        final previousRepetitionsDoneParam = const fb.Int64Reader()
+            .vTableGetNullable(buffer, rootOffset, 18);
+        final previousWeightKgParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 20);
         final previousEffortTypeCodeParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 22, '');
@@ -5838,93 +5852,93 @@ obx_int.ModelDefinition getObjectBoxModel() {
     ),
     TapeMeasurementEntryEntity:
         obx_int.EntityDefinition<TapeMeasurementEntryEntity>(
-      model: _entities[18],
-      toOneRelations: (TapeMeasurementEntryEntity object) => [
-        object.tapeMeasurement,
-      ],
-      toManyRelations: (TapeMeasurementEntryEntity object) => {},
-      getId: (TapeMeasurementEntryEntity object) => object.id,
-      setId: (TapeMeasurementEntryEntity object, int id) {
-        object.id = id;
-      },
-      objectToFB: (TapeMeasurementEntryEntity object, fb.Builder fbb) {
-        final uuidOffset = fbb.writeString(object.uuid);
-        final measurementCodeOffset = fbb.writeString(
-          object.measurementCode,
-        );
-        fbb.startTable(10);
-        fbb.addInt64(0, object.id);
-        fbb.addOffset(1, uuidOffset);
-        fbb.addOffset(2, measurementCodeOffset);
-        fbb.addInt64(3, object.position);
-        fbb.addFloat64(4, object.valueCm);
-        fbb.addInt64(5, object.createdAtEpochMs);
-        fbb.addInt64(6, object.updatedAtEpochMs);
-        fbb.addInt64(7, object.deletedAtEpochMs);
-        fbb.addInt64(8, object.tapeMeasurement.targetId);
-        fbb.finish(fbb.endTable());
-        return object.id;
-      },
-      objectFromFB: (obx.Store store, ByteData fbData) {
-        final buffer = fb.BufferContext(fbData);
-        final rootOffset = buffer.derefObject(0);
-        final idParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          4,
-          0,
-        );
-        final uuidParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 6, '');
-        final measurementCodeParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 8, '');
-        final positionParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          10,
-          0,
-        );
-        final valueCmParam = const fb.Float64Reader().vTableGetNullable(
-          buffer,
-          rootOffset,
-          12,
-        );
-        final createdAtEpochMsParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          14,
-          0,
-        );
-        final updatedAtEpochMsParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          16,
-          0,
-        );
-        final deletedAtEpochMsParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 18);
-        final object = TapeMeasurementEntryEntity(
-          id: idParam,
-          uuid: uuidParam,
-          measurementCode: measurementCodeParam,
-          position: positionParam,
-          valueCm: valueCmParam,
-          createdAtEpochMs: createdAtEpochMsParam,
-          updatedAtEpochMs: updatedAtEpochMsParam,
-          deletedAtEpochMs: deletedAtEpochMsParam,
-        );
-        object.tapeMeasurement.targetId = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          20,
-          0,
-        );
-        object.tapeMeasurement.attach(store);
-        return object;
-      },
-    ),
+          model: _entities[18],
+          toOneRelations: (TapeMeasurementEntryEntity object) => [
+            object.tapeMeasurement,
+          ],
+          toManyRelations: (TapeMeasurementEntryEntity object) => {},
+          getId: (TapeMeasurementEntryEntity object) => object.id,
+          setId: (TapeMeasurementEntryEntity object, int id) {
+            object.id = id;
+          },
+          objectToFB: (TapeMeasurementEntryEntity object, fb.Builder fbb) {
+            final uuidOffset = fbb.writeString(object.uuid);
+            final measurementCodeOffset = fbb.writeString(
+              object.measurementCode,
+            );
+            fbb.startTable(10);
+            fbb.addInt64(0, object.id);
+            fbb.addOffset(1, uuidOffset);
+            fbb.addOffset(2, measurementCodeOffset);
+            fbb.addInt64(3, object.position);
+            fbb.addFloat64(4, object.valueCm);
+            fbb.addInt64(5, object.createdAtEpochMs);
+            fbb.addInt64(6, object.updatedAtEpochMs);
+            fbb.addInt64(7, object.deletedAtEpochMs);
+            fbb.addInt64(8, object.tapeMeasurement.targetId);
+            fbb.finish(fbb.endTable());
+            return object.id;
+          },
+          objectFromFB: (obx.Store store, ByteData fbData) {
+            final buffer = fb.BufferContext(fbData);
+            final rootOffset = buffer.derefObject(0);
+            final idParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              4,
+              0,
+            );
+            final uuidParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 6, '');
+            final measurementCodeParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 8, '');
+            final positionParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              10,
+              0,
+            );
+            final valueCmParam = const fb.Float64Reader().vTableGetNullable(
+              buffer,
+              rootOffset,
+              12,
+            );
+            final createdAtEpochMsParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              14,
+              0,
+            );
+            final updatedAtEpochMsParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              16,
+              0,
+            );
+            final deletedAtEpochMsParam = const fb.Int64Reader()
+                .vTableGetNullable(buffer, rootOffset, 18);
+            final object = TapeMeasurementEntryEntity(
+              id: idParam,
+              uuid: uuidParam,
+              measurementCode: measurementCodeParam,
+              position: positionParam,
+              valueCm: valueCmParam,
+              createdAtEpochMs: createdAtEpochMsParam,
+              updatedAtEpochMs: updatedAtEpochMsParam,
+              deletedAtEpochMs: deletedAtEpochMsParam,
+            );
+            object.tapeMeasurement.targetId = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              20,
+              0,
+            );
+            object.tapeMeasurement.attach(store);
+            return object;
+          },
+        ),
     WorkoutPlanDayEntity: obx_int.EntityDefinition<WorkoutPlanDayEntity>(
       model: _entities[19],
       toOneRelations: (WorkoutPlanDayEntity object) => [object.workoutPlan],
@@ -6102,158 +6116,159 @@ obx_int.ModelDefinition getObjectBoxModel() {
     ),
     WorkoutPlanExerciseEntity:
         obx_int.EntityDefinition<WorkoutPlanExerciseEntity>(
-      model: _entities[21],
-      toOneRelations: (WorkoutPlanExerciseEntity object) => [
-        object.workoutPlanDay,
-      ],
-      toManyRelations: (WorkoutPlanExerciseEntity object) => {},
-      getId: (WorkoutPlanExerciseEntity object) => object.id,
-      setId: (WorkoutPlanExerciseEntity object, int id) {
-        object.id = id;
-      },
-      objectToFB: (WorkoutPlanExerciseEntity object, fb.Builder fbb) {
-        final uuidOffset = fbb.writeString(object.uuid);
-        final exerciseUuidOffset = fbb.writeString(object.exerciseUuid);
-        final exerciseNameSnapshotOffset = fbb.writeString(
-          object.exerciseNameSnapshot,
-        );
-        final exerciseModeCodeOffset = fbb.writeString(
-          object.exerciseModeCode,
-        );
-        final repetitionsTextOffset = fbb.writeString(
-          object.repetitionsText,
-        );
-        final noteOffset = fbb.writeString(object.note);
-        final mediaOverrideOffset = fbb.writeString(object.mediaOverride);
-        fbb.startTable(22);
-        fbb.addInt64(0, object.id);
-        fbb.addOffset(1, uuidOffset);
-        fbb.addInt64(2, object.position);
-        fbb.addOffset(3, exerciseUuidOffset);
-        fbb.addOffset(4, exerciseNameSnapshotOffset);
-        fbb.addOffset(5, exerciseModeCodeOffset);
-        fbb.addInt64(6, object.setsCount);
-        fbb.addInt64(7, object.warmupSetsCount);
-        fbb.addOffset(8, repetitionsTextOffset);
-        fbb.addInt64(9, object.restSeconds);
-        fbb.addInt64(10, object.activityDurationMinutes);
-        fbb.addInt64(11, object.treadmillDurationMinutes);
-        fbb.addFloat64(12, object.treadmillDistanceKm);
-        fbb.addFloat64(13, object.treadmillAverageSpeedKmh);
-        fbb.addFloat64(14, object.treadmillAverageInclinePercent);
-        fbb.addOffset(15, noteOffset);
-        fbb.addOffset(16, mediaOverrideOffset);
-        fbb.addInt64(17, object.createdAtEpochMs);
-        fbb.addInt64(18, object.updatedAtEpochMs);
-        fbb.addInt64(19, object.deletedAtEpochMs);
-        fbb.addInt64(20, object.workoutPlanDay.targetId);
-        fbb.finish(fbb.endTable());
-        return object.id;
-      },
-      objectFromFB: (obx.Store store, ByteData fbData) {
-        final buffer = fb.BufferContext(fbData);
-        final rootOffset = buffer.derefObject(0);
-        final idParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          4,
-          0,
-        );
-        final uuidParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 6, '');
-        final positionParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          8,
-          0,
-        );
-        final exerciseUuidParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 10, '');
-        final exerciseNameSnapshotParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 12, '');
-        final exerciseModeCodeParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 14, '');
-        final setsCountParam = const fb.Int64Reader().vTableGetNullable(
-          buffer,
-          rootOffset,
-          16,
-        );
-        final warmupSetsCountParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 18);
-        final repetitionsTextParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 20, '');
-        final restSecondsParam = const fb.Int64Reader().vTableGetNullable(
-          buffer,
-          rootOffset,
-          22,
-        );
-        final activityDurationMinutesParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 24);
-        final treadmillDurationMinutesParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 26);
-        final treadmillDistanceKmParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 28);
-        final treadmillAverageSpeedKmhParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 30);
-        final treadmillAverageInclinePercentParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 32);
-        final noteParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 34, '');
-        final mediaOverrideParam = const fb.StringReader(
-          asciiOptimization: true,
-        ).vTableGet(buffer, rootOffset, 36, '');
-        final createdAtEpochMsParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          38,
-          0,
-        );
-        final updatedAtEpochMsParam = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          40,
-          0,
-        );
-        final deletedAtEpochMsParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 42);
-        final object = WorkoutPlanExerciseEntity(
-          id: idParam,
-          uuid: uuidParam,
-          position: positionParam,
-          exerciseUuid: exerciseUuidParam,
-          exerciseNameSnapshot: exerciseNameSnapshotParam,
-          exerciseModeCode: exerciseModeCodeParam,
-          setsCount: setsCountParam,
-          warmupSetsCount: warmupSetsCountParam,
-          repetitionsText: repetitionsTextParam,
-          restSeconds: restSecondsParam,
-          activityDurationMinutes: activityDurationMinutesParam,
-          treadmillDurationMinutes: treadmillDurationMinutesParam,
-          treadmillDistanceKm: treadmillDistanceKmParam,
-          treadmillAverageSpeedKmh: treadmillAverageSpeedKmhParam,
-          treadmillAverageInclinePercent: treadmillAverageInclinePercentParam,
-          note: noteParam,
-          mediaOverride: mediaOverrideParam,
-          createdAtEpochMs: createdAtEpochMsParam,
-          updatedAtEpochMs: updatedAtEpochMsParam,
-          deletedAtEpochMs: deletedAtEpochMsParam,
-        );
-        object.workoutPlanDay.targetId = const fb.Int64Reader().vTableGet(
-          buffer,
-          rootOffset,
-          44,
-          0,
-        );
-        object.workoutPlanDay.attach(store);
-        return object;
-      },
-    ),
+          model: _entities[21],
+          toOneRelations: (WorkoutPlanExerciseEntity object) => [
+            object.workoutPlanDay,
+          ],
+          toManyRelations: (WorkoutPlanExerciseEntity object) => {},
+          getId: (WorkoutPlanExerciseEntity object) => object.id,
+          setId: (WorkoutPlanExerciseEntity object, int id) {
+            object.id = id;
+          },
+          objectToFB: (WorkoutPlanExerciseEntity object, fb.Builder fbb) {
+            final uuidOffset = fbb.writeString(object.uuid);
+            final exerciseUuidOffset = fbb.writeString(object.exerciseUuid);
+            final exerciseNameSnapshotOffset = fbb.writeString(
+              object.exerciseNameSnapshot,
+            );
+            final exerciseModeCodeOffset = fbb.writeString(
+              object.exerciseModeCode,
+            );
+            final repetitionsTextOffset = fbb.writeString(
+              object.repetitionsText,
+            );
+            final noteOffset = fbb.writeString(object.note);
+            final mediaOverrideOffset = fbb.writeString(object.mediaOverride);
+            fbb.startTable(22);
+            fbb.addInt64(0, object.id);
+            fbb.addOffset(1, uuidOffset);
+            fbb.addInt64(2, object.position);
+            fbb.addOffset(3, exerciseUuidOffset);
+            fbb.addOffset(4, exerciseNameSnapshotOffset);
+            fbb.addOffset(5, exerciseModeCodeOffset);
+            fbb.addInt64(6, object.setsCount);
+            fbb.addInt64(7, object.warmupSetsCount);
+            fbb.addOffset(8, repetitionsTextOffset);
+            fbb.addInt64(9, object.restSeconds);
+            fbb.addInt64(10, object.activityDurationMinutes);
+            fbb.addInt64(11, object.treadmillDurationMinutes);
+            fbb.addFloat64(12, object.treadmillDistanceKm);
+            fbb.addFloat64(13, object.treadmillAverageSpeedKmh);
+            fbb.addFloat64(14, object.treadmillAverageInclinePercent);
+            fbb.addOffset(15, noteOffset);
+            fbb.addOffset(16, mediaOverrideOffset);
+            fbb.addInt64(17, object.createdAtEpochMs);
+            fbb.addInt64(18, object.updatedAtEpochMs);
+            fbb.addInt64(19, object.deletedAtEpochMs);
+            fbb.addInt64(20, object.workoutPlanDay.targetId);
+            fbb.finish(fbb.endTable());
+            return object.id;
+          },
+          objectFromFB: (obx.Store store, ByteData fbData) {
+            final buffer = fb.BufferContext(fbData);
+            final rootOffset = buffer.derefObject(0);
+            final idParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              4,
+              0,
+            );
+            final uuidParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 6, '');
+            final positionParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              8,
+              0,
+            );
+            final exerciseUuidParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 10, '');
+            final exerciseNameSnapshotParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 12, '');
+            final exerciseModeCodeParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 14, '');
+            final setsCountParam = const fb.Int64Reader().vTableGetNullable(
+              buffer,
+              rootOffset,
+              16,
+            );
+            final warmupSetsCountParam = const fb.Int64Reader()
+                .vTableGetNullable(buffer, rootOffset, 18);
+            final repetitionsTextParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 20, '');
+            final restSecondsParam = const fb.Int64Reader().vTableGetNullable(
+              buffer,
+              rootOffset,
+              22,
+            );
+            final activityDurationMinutesParam = const fb.Int64Reader()
+                .vTableGetNullable(buffer, rootOffset, 24);
+            final treadmillDurationMinutesParam = const fb.Int64Reader()
+                .vTableGetNullable(buffer, rootOffset, 26);
+            final treadmillDistanceKmParam = const fb.Float64Reader()
+                .vTableGetNullable(buffer, rootOffset, 28);
+            final treadmillAverageSpeedKmhParam = const fb.Float64Reader()
+                .vTableGetNullable(buffer, rootOffset, 30);
+            final treadmillAverageInclinePercentParam = const fb.Float64Reader()
+                .vTableGetNullable(buffer, rootOffset, 32);
+            final noteParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 34, '');
+            final mediaOverrideParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 36, '');
+            final createdAtEpochMsParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              38,
+              0,
+            );
+            final updatedAtEpochMsParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              40,
+              0,
+            );
+            final deletedAtEpochMsParam = const fb.Int64Reader()
+                .vTableGetNullable(buffer, rootOffset, 42);
+            final object = WorkoutPlanExerciseEntity(
+              id: idParam,
+              uuid: uuidParam,
+              position: positionParam,
+              exerciseUuid: exerciseUuidParam,
+              exerciseNameSnapshot: exerciseNameSnapshotParam,
+              exerciseModeCode: exerciseModeCodeParam,
+              setsCount: setsCountParam,
+              warmupSetsCount: warmupSetsCountParam,
+              repetitionsText: repetitionsTextParam,
+              restSeconds: restSecondsParam,
+              activityDurationMinutes: activityDurationMinutesParam,
+              treadmillDurationMinutes: treadmillDurationMinutesParam,
+              treadmillDistanceKm: treadmillDistanceKmParam,
+              treadmillAverageSpeedKmh: treadmillAverageSpeedKmhParam,
+              treadmillAverageInclinePercent:
+                  treadmillAverageInclinePercentParam,
+              note: noteParam,
+              mediaOverride: mediaOverrideParam,
+              createdAtEpochMs: createdAtEpochMsParam,
+              updatedAtEpochMs: updatedAtEpochMsParam,
+              deletedAtEpochMs: deletedAtEpochMsParam,
+            );
+            object.workoutPlanDay.targetId = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              44,
+              0,
+            );
+            object.workoutPlanDay.attach(store);
+            return object;
+          },
+        ),
     WorkoutSessionEntity: obx_int.EntityDefinition<WorkoutSessionEntity>(
       model: _entities[22],
       toOneRelations: (WorkoutSessionEntity object) => [],
@@ -6334,10 +6349,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
           rootOffset,
           22,
         );
-        final averageHeartRateBpmParam =
-            const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 24);
-        final estimatedKcalBurnedParam =
-            const fb.Float64Reader().vTableGetNullable(buffer, rootOffset, 26);
+        final averageHeartRateBpmParam = const fb.Int64Reader()
+            .vTableGetNullable(buffer, rootOffset, 24);
+        final estimatedKcalBurnedParam = const fb.Float64Reader()
+            .vTableGetNullable(buffer, rootOffset, 26);
         final notesParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 28, '');
@@ -6458,14 +6473,14 @@ class ExerciseMuscleLinkEntity_ {
   /// See [ExerciseMuscleLinkEntity.exercise].
   static final exercise =
       obx.QueryRelationToOne<ExerciseMuscleLinkEntity, ExerciseEntity>(
-    _entities[1].properties[2],
-  );
+        _entities[1].properties[2],
+      );
 
   /// See [ExerciseMuscleLinkEntity.muscle].
   static final muscle =
       obx.QueryRelationToOne<ExerciseMuscleLinkEntity, MuscleEntity>(
-    _entities[1].properties[3],
-  );
+        _entities[1].properties[3],
+      );
 
   /// See [ExerciseMuscleLinkEntity.roleCode].
   static final roleCode = obx.QueryStringProperty<ExerciseMuscleLinkEntity>(
@@ -6480,20 +6495,20 @@ class ExerciseMuscleLinkEntity_ {
   /// See [ExerciseMuscleLinkEntity.createdAtEpochMs].
   static final createdAtEpochMs =
       obx.QueryIntegerProperty<ExerciseMuscleLinkEntity>(
-    _entities[1].properties[6],
-  );
+        _entities[1].properties[6],
+      );
 
   /// See [ExerciseMuscleLinkEntity.updatedAtEpochMs].
   static final updatedAtEpochMs =
       obx.QueryIntegerProperty<ExerciseMuscleLinkEntity>(
-    _entities[1].properties[7],
-  );
+        _entities[1].properties[7],
+      );
 
   /// See [ExerciseMuscleLinkEntity.deletedAtEpochMs].
   static final deletedAtEpochMs =
       obx.QueryIntegerProperty<ExerciseMuscleLinkEntity>(
-    _entities[1].properties[8],
-  );
+        _entities[1].properties[8],
+      );
 }
 
 /// [IngredientEntity] entity fields to define ObjectBox queries.
@@ -7185,8 +7200,8 @@ class MealEntity_ {
   /// See [MealEntity.dailyRecord].
   static final dailyRecord =
       obx.QueryRelationToOne<MealEntity, DailyRecordEntity>(
-    _entities[6].properties[15],
-  );
+        _entities[6].properties[15],
+      );
 }
 
 /// [MealItemEntity] entity fields to define ObjectBox queries.
@@ -7510,8 +7525,8 @@ class RecipeIngredientEntity_ {
   /// See [RecipeIngredientEntity.preparationNote].
   static final preparationNote =
       obx.QueryStringProperty<RecipeIngredientEntity>(
-    _entities[9].properties[7],
-  );
+        _entities[9].properties[7],
+      );
 
   /// See [RecipeIngredientEntity.calories].
   static final calories = obx.QueryDoubleProperty<RecipeIngredientEntity>(
@@ -7546,26 +7561,26 @@ class RecipeIngredientEntity_ {
   /// See [RecipeIngredientEntity.createdAtEpochMs].
   static final createdAtEpochMs =
       obx.QueryIntegerProperty<RecipeIngredientEntity>(
-    _entities[9].properties[14],
-  );
+        _entities[9].properties[14],
+      );
 
   /// See [RecipeIngredientEntity.updatedAtEpochMs].
   static final updatedAtEpochMs =
       obx.QueryIntegerProperty<RecipeIngredientEntity>(
-    _entities[9].properties[15],
-  );
+        _entities[9].properties[15],
+      );
 
   /// See [RecipeIngredientEntity.deletedAtEpochMs].
   static final deletedAtEpochMs =
       obx.QueryIntegerProperty<RecipeIngredientEntity>(
-    _entities[9].properties[16],
-  );
+        _entities[9].properties[16],
+      );
 
   /// See [RecipeIngredientEntity.recipe].
   static final recipe =
       obx.QueryRelationToOne<RecipeIngredientEntity, RecipeEntity>(
-    _entities[9].properties[17],
-  );
+        _entities[9].properties[17],
+      );
 }
 
 /// [RecipeStepEntity] entity fields to define ObjectBox queries.
@@ -7699,14 +7714,14 @@ class RoutineExerciseEntity_ {
   /// See [RoutineExerciseEntity.exerciseNameSnapshot].
   static final exerciseNameSnapshot =
       obx.QueryStringProperty<RoutineExerciseEntity>(
-    _entities[12].properties[4],
-  );
+        _entities[12].properties[4],
+      );
 
   /// See [RoutineExerciseEntity.exerciseModeCode].
   static final exerciseModeCode =
       obx.QueryStringProperty<RoutineExerciseEntity>(
-    _entities[12].properties[5],
-  );
+        _entities[12].properties[5],
+      );
 
   /// See [RoutineExerciseEntity.mediaSnapshot].
   static final mediaSnapshot = obx.QueryStringProperty<RoutineExerciseEntity>(
@@ -7721,44 +7736,44 @@ class RoutineExerciseEntity_ {
   /// See [RoutineExerciseEntity.primaryMuscleCodesJson].
   static final primaryMuscleCodesJson =
       obx.QueryStringProperty<RoutineExerciseEntity>(
-    _entities[12].properties[8],
-  );
+        _entities[12].properties[8],
+      );
 
   /// See [RoutineExerciseEntity.secondaryMuscleCodesJson].
   static final secondaryMuscleCodesJson =
       obx.QueryStringProperty<RoutineExerciseEntity>(
-    _entities[12].properties[9],
-  );
+        _entities[12].properties[9],
+      );
 
   /// See [RoutineExerciseEntity.activityTargetDurationMinutes].
   static final activityTargetDurationMinutes =
       obx.QueryIntegerProperty<RoutineExerciseEntity>(
-    _entities[12].properties[10],
-  );
+        _entities[12].properties[10],
+      );
 
   /// See [RoutineExerciseEntity.treadmillTargetDurationMinutes].
   static final treadmillTargetDurationMinutes =
       obx.QueryIntegerProperty<RoutineExerciseEntity>(
-    _entities[12].properties[11],
-  );
+        _entities[12].properties[11],
+      );
 
   /// See [RoutineExerciseEntity.treadmillTargetDistanceKm].
   static final treadmillTargetDistanceKm =
       obx.QueryDoubleProperty<RoutineExerciseEntity>(
-    _entities[12].properties[12],
-  );
+        _entities[12].properties[12],
+      );
 
   /// See [RoutineExerciseEntity.treadmillTargetAverageSpeedKmh].
   static final treadmillTargetAverageSpeedKmh =
       obx.QueryDoubleProperty<RoutineExerciseEntity>(
-    _entities[12].properties[13],
-  );
+        _entities[12].properties[13],
+      );
 
   /// See [RoutineExerciseEntity.treadmillTargetAverageInclinePercent].
   static final treadmillTargetAverageInclinePercent =
       obx.QueryDoubleProperty<RoutineExerciseEntity>(
-    _entities[12].properties[14],
-  );
+        _entities[12].properties[14],
+      );
 
   /// See [RoutineExerciseEntity.notes].
   static final notes = obx.QueryStringProperty<RoutineExerciseEntity>(
@@ -7768,26 +7783,26 @@ class RoutineExerciseEntity_ {
   /// See [RoutineExerciseEntity.createdAtEpochMs].
   static final createdAtEpochMs =
       obx.QueryIntegerProperty<RoutineExerciseEntity>(
-    _entities[12].properties[16],
-  );
+        _entities[12].properties[16],
+      );
 
   /// See [RoutineExerciseEntity.updatedAtEpochMs].
   static final updatedAtEpochMs =
       obx.QueryIntegerProperty<RoutineExerciseEntity>(
-    _entities[12].properties[17],
-  );
+        _entities[12].properties[17],
+      );
 
   /// See [RoutineExerciseEntity.deletedAtEpochMs].
   static final deletedAtEpochMs =
       obx.QueryIntegerProperty<RoutineExerciseEntity>(
-    _entities[12].properties[18],
-  );
+        _entities[12].properties[18],
+      );
 
   /// See [RoutineExerciseEntity.routine].
   static final routine =
       obx.QueryRelationToOne<RoutineExerciseEntity, RoutineEntity>(
-    _entities[12].properties[19],
-  );
+        _entities[12].properties[19],
+      );
 }
 
 /// [RoutineSetTemplateEntity] entity fields to define ObjectBox queries.
@@ -7815,14 +7830,14 @@ class RoutineSetTemplateEntity_ {
   /// See [RoutineSetTemplateEntity.targetRepetitions].
   static final targetRepetitions =
       obx.QueryIntegerProperty<RoutineSetTemplateEntity>(
-    _entities[13].properties[4],
-  );
+        _entities[13].properties[4],
+      );
 
   /// See [RoutineSetTemplateEntity.effortTypeCode].
   static final effortTypeCode =
       obx.QueryStringProperty<RoutineSetTemplateEntity>(
-    _entities[13].properties[5],
-  );
+        _entities[13].properties[5],
+      );
 
   /// See [RoutineSetTemplateEntity.rir].
   static final rir = obx.QueryIntegerProperty<RoutineSetTemplateEntity>(
@@ -7832,14 +7847,14 @@ class RoutineSetTemplateEntity_ {
   /// See [RoutineSetTemplateEntity.executionSpeedCode].
   static final executionSpeedCode =
       obx.QueryStringProperty<RoutineSetTemplateEntity>(
-    _entities[13].properties[7],
-  );
+        _entities[13].properties[7],
+      );
 
   /// See [RoutineSetTemplateEntity.executionQualityCode].
   static final executionQualityCode =
       obx.QueryStringProperty<RoutineSetTemplateEntity>(
-    _entities[13].properties[8],
-  );
+        _entities[13].properties[8],
+      );
 
   /// See [RoutineSetTemplateEntity.notes].
   static final notes = obx.QueryStringProperty<RoutineSetTemplateEntity>(
@@ -7849,26 +7864,26 @@ class RoutineSetTemplateEntity_ {
   /// See [RoutineSetTemplateEntity.createdAtEpochMs].
   static final createdAtEpochMs =
       obx.QueryIntegerProperty<RoutineSetTemplateEntity>(
-    _entities[13].properties[10],
-  );
+        _entities[13].properties[10],
+      );
 
   /// See [RoutineSetTemplateEntity.updatedAtEpochMs].
   static final updatedAtEpochMs =
       obx.QueryIntegerProperty<RoutineSetTemplateEntity>(
-    _entities[13].properties[11],
-  );
+        _entities[13].properties[11],
+      );
 
   /// See [RoutineSetTemplateEntity.deletedAtEpochMs].
   static final deletedAtEpochMs =
       obx.QueryIntegerProperty<RoutineSetTemplateEntity>(
-    _entities[13].properties[12],
-  );
+        _entities[13].properties[12],
+      );
 
   /// See [RoutineSetTemplateEntity.routineExercise].
   static final routineExercise =
       obx.QueryRelationToOne<RoutineSetTemplateEntity, RoutineExerciseEntity>(
-    _entities[13].properties[13],
-  );
+        _entities[13].properties[13],
+      );
 }
 
 /// [ScaleMeasurementEntity] entity fields to define ObjectBox queries.
@@ -7901,8 +7916,8 @@ class ScaleMeasurementEntity_ {
   /// See [ScaleMeasurementEntity.weightSourceCode].
   static final weightSourceCode =
       obx.QueryStringProperty<ScaleMeasurementEntity>(
-    _entities[14].properties[5],
-  );
+        _entities[14].properties[5],
+      );
 
   /// See [ScaleMeasurementEntity.bodyFatPercent].
   static final bodyFatPercent = obx.QueryDoubleProperty<ScaleMeasurementEntity>(
@@ -7932,14 +7947,14 @@ class ScaleMeasurementEntity_ {
   /// See [ScaleMeasurementEntity.subcutaneousFatPercent].
   static final subcutaneousFatPercent =
       obx.QueryDoubleProperty<ScaleMeasurementEntity>(
-    _entities[14].properties[11],
-  );
+        _entities[14].properties[11],
+      );
 
   /// See [ScaleMeasurementEntity.basalMetabolismKcal].
   static final basalMetabolismKcal =
       obx.QueryDoubleProperty<ScaleMeasurementEntity>(
-    _entities[14].properties[12],
-  );
+        _entities[14].properties[12],
+      );
 
   /// See [ScaleMeasurementEntity.bmi].
   static final bmi = obx.QueryDoubleProperty<ScaleMeasurementEntity>(
@@ -7959,8 +7974,8 @@ class ScaleMeasurementEntity_ {
   /// See [ScaleMeasurementEntity.measurementTime].
   static final measurementTime =
       obx.QueryStringProperty<ScaleMeasurementEntity>(
-    _entities[14].properties[16],
-  );
+        _entities[14].properties[16],
+      );
 
   /// See [ScaleMeasurementEntity.device].
   static final device = obx.QueryStringProperty<ScaleMeasurementEntity>(
@@ -7970,8 +7985,8 @@ class ScaleMeasurementEntity_ {
   /// See [ScaleMeasurementEntity.reliabilityCode].
   static final reliabilityCode =
       obx.QueryStringProperty<ScaleMeasurementEntity>(
-    _entities[14].properties[18],
-  );
+        _entities[14].properties[18],
+      );
 
   /// See [ScaleMeasurementEntity.notes].
   static final notes = obx.QueryStringProperty<ScaleMeasurementEntity>(
@@ -7981,20 +7996,26 @@ class ScaleMeasurementEntity_ {
   /// See [ScaleMeasurementEntity.createdAtEpochMs].
   static final createdAtEpochMs =
       obx.QueryIntegerProperty<ScaleMeasurementEntity>(
-    _entities[14].properties[20],
-  );
+        _entities[14].properties[20],
+      );
 
   /// See [ScaleMeasurementEntity.updatedAtEpochMs].
   static final updatedAtEpochMs =
       obx.QueryIntegerProperty<ScaleMeasurementEntity>(
-    _entities[14].properties[21],
-  );
+        _entities[14].properties[21],
+      );
 
   /// See [ScaleMeasurementEntity.deletedAtEpochMs].
   static final deletedAtEpochMs =
       obx.QueryIntegerProperty<ScaleMeasurementEntity>(
-    _entities[14].properties[22],
-  );
+        _entities[14].properties[22],
+      );
+
+  /// See [ScaleMeasurementEntity.weightAnomalyConfirmationKey].
+  static final weightAnomalyConfirmationKey =
+      obx.QueryStringProperty<ScaleMeasurementEntity>(
+        _entities[14].properties[23],
+      );
 }
 
 /// [SessionExerciseEntity] entity fields to define ObjectBox queries.
@@ -8022,14 +8043,14 @@ class SessionExerciseEntity_ {
   /// See [SessionExerciseEntity.exerciseNameSnapshot].
   static final exerciseNameSnapshot =
       obx.QueryStringProperty<SessionExerciseEntity>(
-    _entities[15].properties[4],
-  );
+        _entities[15].properties[4],
+      );
 
   /// See [SessionExerciseEntity.exerciseModeCode].
   static final exerciseModeCode =
       obx.QueryStringProperty<SessionExerciseEntity>(
-    _entities[15].properties[5],
-  );
+        _entities[15].properties[5],
+      );
 
   /// See [SessionExerciseEntity.mediaSnapshot].
   static final mediaSnapshot = obx.QueryStringProperty<SessionExerciseEntity>(
@@ -8044,62 +8065,62 @@ class SessionExerciseEntity_ {
   /// See [SessionExerciseEntity.primaryMuscleCodesJson].
   static final primaryMuscleCodesJson =
       obx.QueryStringProperty<SessionExerciseEntity>(
-    _entities[15].properties[8],
-  );
+        _entities[15].properties[8],
+      );
 
   /// See [SessionExerciseEntity.secondaryMuscleCodesJson].
   static final secondaryMuscleCodesJson =
       obx.QueryStringProperty<SessionExerciseEntity>(
-    _entities[15].properties[9],
-  );
+        _entities[15].properties[9],
+      );
 
   /// See [SessionExerciseEntity.activityDurationMinutes].
   static final activityDurationMinutes =
       obx.QueryIntegerProperty<SessionExerciseEntity>(
-    _entities[15].properties[10],
-  );
+        _entities[15].properties[10],
+      );
 
   /// See [SessionExerciseEntity.activityAverageHeartRateBpm].
   static final activityAverageHeartRateBpm =
       obx.QueryIntegerProperty<SessionExerciseEntity>(
-    _entities[15].properties[11],
-  );
+        _entities[15].properties[11],
+      );
 
   /// See [SessionExerciseEntity.activityKcalBurned].
   static final activityKcalBurned =
       obx.QueryDoubleProperty<SessionExerciseEntity>(
-    _entities[15].properties[12],
-  );
+        _entities[15].properties[12],
+      );
 
   /// See [SessionExerciseEntity.treadmillDurationMinutes].
   static final treadmillDurationMinutes =
       obx.QueryIntegerProperty<SessionExerciseEntity>(
-    _entities[15].properties[13],
-  );
+        _entities[15].properties[13],
+      );
 
   /// See [SessionExerciseEntity.treadmillDistanceKm].
   static final treadmillDistanceKm =
       obx.QueryDoubleProperty<SessionExerciseEntity>(
-    _entities[15].properties[14],
-  );
+        _entities[15].properties[14],
+      );
 
   /// See [SessionExerciseEntity.treadmillAverageSpeedKmh].
   static final treadmillAverageSpeedKmh =
       obx.QueryDoubleProperty<SessionExerciseEntity>(
-    _entities[15].properties[15],
-  );
+        _entities[15].properties[15],
+      );
 
   /// See [SessionExerciseEntity.treadmillAverageInclinePercent].
   static final treadmillAverageInclinePercent =
       obx.QueryDoubleProperty<SessionExerciseEntity>(
-    _entities[15].properties[16],
-  );
+        _entities[15].properties[16],
+      );
 
   /// See [SessionExerciseEntity.treadmillAverageHeartRateBpm].
   static final treadmillAverageHeartRateBpm =
       obx.QueryIntegerProperty<SessionExerciseEntity>(
-    _entities[15].properties[17],
-  );
+        _entities[15].properties[17],
+      );
 
   /// See [SessionExerciseEntity.isCompleted].
   static final isCompleted = obx.QueryBooleanProperty<SessionExerciseEntity>(
@@ -8114,26 +8135,26 @@ class SessionExerciseEntity_ {
   /// See [SessionExerciseEntity.createdAtEpochMs].
   static final createdAtEpochMs =
       obx.QueryIntegerProperty<SessionExerciseEntity>(
-    _entities[15].properties[20],
-  );
+        _entities[15].properties[20],
+      );
 
   /// See [SessionExerciseEntity.updatedAtEpochMs].
   static final updatedAtEpochMs =
       obx.QueryIntegerProperty<SessionExerciseEntity>(
-    _entities[15].properties[21],
-  );
+        _entities[15].properties[21],
+      );
 
   /// See [SessionExerciseEntity.deletedAtEpochMs].
   static final deletedAtEpochMs =
       obx.QueryIntegerProperty<SessionExerciseEntity>(
-    _entities[15].properties[22],
-  );
+        _entities[15].properties[22],
+      );
 
   /// See [SessionExerciseEntity.workoutSession].
   static final workoutSession =
       obx.QueryRelationToOne<SessionExerciseEntity, WorkoutSessionEntity>(
-    _entities[15].properties[23],
-  );
+        _entities[15].properties[23],
+      );
 }
 
 /// [SessionSetEntity] entity fields to define ObjectBox queries.
@@ -8247,8 +8268,8 @@ class SessionSetEntity_ {
   /// See [SessionSetEntity.sessionExercise].
   static final sessionExercise =
       obx.QueryRelationToOne<SessionSetEntity, SessionExerciseEntity>(
-    _entities[16].properties[22],
-  );
+        _entities[16].properties[22],
+      );
 }
 
 /// [TapeMeasurementEntity] entity fields to define ObjectBox queries.
@@ -8291,20 +8312,20 @@ class TapeMeasurementEntity_ {
   /// See [TapeMeasurementEntity.createdAtEpochMs].
   static final createdAtEpochMs =
       obx.QueryIntegerProperty<TapeMeasurementEntity>(
-    _entities[17].properties[7],
-  );
+        _entities[17].properties[7],
+      );
 
   /// See [TapeMeasurementEntity.updatedAtEpochMs].
   static final updatedAtEpochMs =
       obx.QueryIntegerProperty<TapeMeasurementEntity>(
-    _entities[17].properties[8],
-  );
+        _entities[17].properties[8],
+      );
 
   /// See [TapeMeasurementEntity.deletedAtEpochMs].
   static final deletedAtEpochMs =
       obx.QueryIntegerProperty<TapeMeasurementEntity>(
-    _entities[17].properties[9],
-  );
+        _entities[17].properties[9],
+      );
 }
 
 /// [TapeMeasurementEntryEntity] entity fields to define ObjectBox queries.
@@ -8322,8 +8343,8 @@ class TapeMeasurementEntryEntity_ {
   /// See [TapeMeasurementEntryEntity.measurementCode].
   static final measurementCode =
       obx.QueryStringProperty<TapeMeasurementEntryEntity>(
-    _entities[18].properties[2],
-  );
+        _entities[18].properties[2],
+      );
 
   /// See [TapeMeasurementEntryEntity.position].
   static final position = obx.QueryIntegerProperty<TapeMeasurementEntryEntity>(
@@ -8338,26 +8359,26 @@ class TapeMeasurementEntryEntity_ {
   /// See [TapeMeasurementEntryEntity.createdAtEpochMs].
   static final createdAtEpochMs =
       obx.QueryIntegerProperty<TapeMeasurementEntryEntity>(
-    _entities[18].properties[5],
-  );
+        _entities[18].properties[5],
+      );
 
   /// See [TapeMeasurementEntryEntity.updatedAtEpochMs].
   static final updatedAtEpochMs =
       obx.QueryIntegerProperty<TapeMeasurementEntryEntity>(
-    _entities[18].properties[6],
-  );
+        _entities[18].properties[6],
+      );
 
   /// See [TapeMeasurementEntryEntity.deletedAtEpochMs].
   static final deletedAtEpochMs =
       obx.QueryIntegerProperty<TapeMeasurementEntryEntity>(
-    _entities[18].properties[7],
-  );
+        _entities[18].properties[7],
+      );
 
   /// See [TapeMeasurementEntryEntity.tapeMeasurement].
   static final tapeMeasurement =
       obx.QueryRelationToOne<TapeMeasurementEntryEntity, TapeMeasurementEntity>(
-    _entities[18].properties[8],
-  );
+        _entities[18].properties[8],
+      );
 }
 
 /// [WorkoutPlanDayEntity] entity fields to define ObjectBox queries.
@@ -8395,26 +8416,26 @@ class WorkoutPlanDayEntity_ {
   /// See [WorkoutPlanDayEntity.createdAtEpochMs].
   static final createdAtEpochMs =
       obx.QueryIntegerProperty<WorkoutPlanDayEntity>(
-    _entities[19].properties[6],
-  );
+        _entities[19].properties[6],
+      );
 
   /// See [WorkoutPlanDayEntity.updatedAtEpochMs].
   static final updatedAtEpochMs =
       obx.QueryIntegerProperty<WorkoutPlanDayEntity>(
-    _entities[19].properties[7],
-  );
+        _entities[19].properties[7],
+      );
 
   /// See [WorkoutPlanDayEntity.deletedAtEpochMs].
   static final deletedAtEpochMs =
       obx.QueryIntegerProperty<WorkoutPlanDayEntity>(
-    _entities[19].properties[8],
-  );
+        _entities[19].properties[8],
+      );
 
   /// See [WorkoutPlanDayEntity.workoutPlan].
   static final workoutPlan =
       obx.QueryRelationToOne<WorkoutPlanDayEntity, WorkoutPlanEntity>(
-    _entities[19].properties[9],
-  );
+        _entities[19].properties[9],
+      );
 }
 
 /// [WorkoutPlanEntity] entity fields to define ObjectBox queries.
@@ -8485,20 +8506,20 @@ class WorkoutPlanExerciseEntity_ {
   /// See [WorkoutPlanExerciseEntity.exerciseUuid].
   static final exerciseUuid =
       obx.QueryStringProperty<WorkoutPlanExerciseEntity>(
-    _entities[21].properties[3],
-  );
+        _entities[21].properties[3],
+      );
 
   /// See [WorkoutPlanExerciseEntity.exerciseNameSnapshot].
   static final exerciseNameSnapshot =
       obx.QueryStringProperty<WorkoutPlanExerciseEntity>(
-    _entities[21].properties[4],
-  );
+        _entities[21].properties[4],
+      );
 
   /// See [WorkoutPlanExerciseEntity.exerciseModeCode].
   static final exerciseModeCode =
       obx.QueryStringProperty<WorkoutPlanExerciseEntity>(
-    _entities[21].properties[5],
-  );
+        _entities[21].properties[5],
+      );
 
   /// See [WorkoutPlanExerciseEntity.setsCount].
   static final setsCount = obx.QueryIntegerProperty<WorkoutPlanExerciseEntity>(
@@ -8508,50 +8529,50 @@ class WorkoutPlanExerciseEntity_ {
   /// See [WorkoutPlanExerciseEntity.warmupSetsCount].
   static final warmupSetsCount =
       obx.QueryIntegerProperty<WorkoutPlanExerciseEntity>(
-    _entities[21].properties[7],
-  );
+        _entities[21].properties[7],
+      );
 
   /// See [WorkoutPlanExerciseEntity.repetitionsText].
   static final repetitionsText =
       obx.QueryStringProperty<WorkoutPlanExerciseEntity>(
-    _entities[21].properties[8],
-  );
+        _entities[21].properties[8],
+      );
 
   /// See [WorkoutPlanExerciseEntity.restSeconds].
   static final restSeconds =
       obx.QueryIntegerProperty<WorkoutPlanExerciseEntity>(
-    _entities[21].properties[9],
-  );
+        _entities[21].properties[9],
+      );
 
   /// See [WorkoutPlanExerciseEntity.activityDurationMinutes].
   static final activityDurationMinutes =
       obx.QueryIntegerProperty<WorkoutPlanExerciseEntity>(
-    _entities[21].properties[10],
-  );
+        _entities[21].properties[10],
+      );
 
   /// See [WorkoutPlanExerciseEntity.treadmillDurationMinutes].
   static final treadmillDurationMinutes =
       obx.QueryIntegerProperty<WorkoutPlanExerciseEntity>(
-    _entities[21].properties[11],
-  );
+        _entities[21].properties[11],
+      );
 
   /// See [WorkoutPlanExerciseEntity.treadmillDistanceKm].
   static final treadmillDistanceKm =
       obx.QueryDoubleProperty<WorkoutPlanExerciseEntity>(
-    _entities[21].properties[12],
-  );
+        _entities[21].properties[12],
+      );
 
   /// See [WorkoutPlanExerciseEntity.treadmillAverageSpeedKmh].
   static final treadmillAverageSpeedKmh =
       obx.QueryDoubleProperty<WorkoutPlanExerciseEntity>(
-    _entities[21].properties[13],
-  );
+        _entities[21].properties[13],
+      );
 
   /// See [WorkoutPlanExerciseEntity.treadmillAverageInclinePercent].
   static final treadmillAverageInclinePercent =
       obx.QueryDoubleProperty<WorkoutPlanExerciseEntity>(
-    _entities[21].properties[14],
-  );
+        _entities[21].properties[14],
+      );
 
   /// See [WorkoutPlanExerciseEntity.note].
   static final note = obx.QueryStringProperty<WorkoutPlanExerciseEntity>(
@@ -8561,32 +8582,32 @@ class WorkoutPlanExerciseEntity_ {
   /// See [WorkoutPlanExerciseEntity.mediaOverride].
   static final mediaOverride =
       obx.QueryStringProperty<WorkoutPlanExerciseEntity>(
-    _entities[21].properties[16],
-  );
+        _entities[21].properties[16],
+      );
 
   /// See [WorkoutPlanExerciseEntity.createdAtEpochMs].
   static final createdAtEpochMs =
       obx.QueryIntegerProperty<WorkoutPlanExerciseEntity>(
-    _entities[21].properties[17],
-  );
+        _entities[21].properties[17],
+      );
 
   /// See [WorkoutPlanExerciseEntity.updatedAtEpochMs].
   static final updatedAtEpochMs =
       obx.QueryIntegerProperty<WorkoutPlanExerciseEntity>(
-    _entities[21].properties[18],
-  );
+        _entities[21].properties[18],
+      );
 
   /// See [WorkoutPlanExerciseEntity.deletedAtEpochMs].
   static final deletedAtEpochMs =
       obx.QueryIntegerProperty<WorkoutPlanExerciseEntity>(
-    _entities[21].properties[19],
-  );
+        _entities[21].properties[19],
+      );
 
   /// See [WorkoutPlanExerciseEntity.workoutPlanDay].
   static final workoutPlanDay =
       obx.QueryRelationToOne<WorkoutPlanExerciseEntity, WorkoutPlanDayEntity>(
-    _entities[21].properties[20],
-  );
+        _entities[21].properties[20],
+      );
 }
 
 /// [WorkoutSessionEntity] entity fields to define ObjectBox queries.
@@ -8619,8 +8640,8 @@ class WorkoutSessionEntity_ {
   /// See [WorkoutSessionEntity.routineNameSnapshot].
   static final routineNameSnapshot =
       obx.QueryStringProperty<WorkoutSessionEntity>(
-    _entities[22].properties[5],
-  );
+        _entities[22].properties[5],
+      );
 
   /// See [WorkoutSessionEntity.workoutPlanUuid].
   static final workoutPlanUuid = obx.QueryStringProperty<WorkoutSessionEntity>(
@@ -8630,8 +8651,8 @@ class WorkoutSessionEntity_ {
   /// See [WorkoutSessionEntity.workoutPlanDayUuid].
   static final workoutPlanDayUuid =
       obx.QueryStringProperty<WorkoutSessionEntity>(
-    _entities[22].properties[7],
-  );
+        _entities[22].properties[7],
+      );
 
   /// See [WorkoutSessionEntity.statusCode].
   static final statusCode = obx.QueryStringProperty<WorkoutSessionEntity>(
@@ -8646,14 +8667,14 @@ class WorkoutSessionEntity_ {
   /// See [WorkoutSessionEntity.averageHeartRateBpm].
   static final averageHeartRateBpm =
       obx.QueryIntegerProperty<WorkoutSessionEntity>(
-    _entities[22].properties[10],
-  );
+        _entities[22].properties[10],
+      );
 
   /// See [WorkoutSessionEntity.estimatedKcalBurned].
   static final estimatedKcalBurned =
       obx.QueryDoubleProperty<WorkoutSessionEntity>(
-    _entities[22].properties[11],
-  );
+        _entities[22].properties[11],
+      );
 
   /// See [WorkoutSessionEntity.notes].
   static final notes = obx.QueryStringProperty<WorkoutSessionEntity>(
@@ -8663,18 +8684,18 @@ class WorkoutSessionEntity_ {
   /// See [WorkoutSessionEntity.createdAtEpochMs].
   static final createdAtEpochMs =
       obx.QueryIntegerProperty<WorkoutSessionEntity>(
-    _entities[22].properties[13],
-  );
+        _entities[22].properties[13],
+      );
 
   /// See [WorkoutSessionEntity.updatedAtEpochMs].
   static final updatedAtEpochMs =
       obx.QueryIntegerProperty<WorkoutSessionEntity>(
-    _entities[22].properties[14],
-  );
+        _entities[22].properties[14],
+      );
 
   /// See [WorkoutSessionEntity.deletedAtEpochMs].
   static final deletedAtEpochMs =
       obx.QueryIntegerProperty<WorkoutSessionEntity>(
-    _entities[22].properties[15],
-  );
+        _entities[22].properties[15],
+      );
 }

@@ -10,6 +10,7 @@ import '../../../shared/widgets/tt_primary_button.dart';
 import '../../../shared/widgets/tt_section_header.dart';
 import '../data/entities/nutrition_tracking_entities.dart';
 import '../data/services/food_planning_service.dart';
+import '../domain/weight_measurement_anomaly.dart';
 
 final FutureProvider<MeasurementHubData> measurementHubProvider =
     FutureProvider<MeasurementHubData>((Ref ref) async {
@@ -41,6 +42,22 @@ class MeasurementHubData {
 
   TapeMeasurementEntity? get latestTape {
     return tapeMeasurements.isEmpty ? null : tapeMeasurements.first;
+  }
+
+  WeightAnomalyEvaluation weightAnomalyFor(ScaleMeasurementEntity item) {
+    return evaluateWeightAnomaly(
+      currentIdentity: _scaleIdentity(item),
+      currentDateKey: item.dateKey,
+      currentWeightKg: item.weightKg,
+      measurements: <WeightMeasurementSample>[
+        for (final ScaleMeasurementEntity measurement in scaleMeasurements)
+          WeightMeasurementSample(
+            identity: _scaleIdentity(measurement),
+            dateKey: measurement.dateKey,
+            weightKg: measurement.weightKg,
+          ),
+      ],
+    );
   }
 
   List<TtChartPoint> get weightTrend {
@@ -290,18 +307,17 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
                   child: Text('Nessuna misurazione per i filtri selezionati.'),
                 )
               else ...<Widget>[
-                for (final ScaleMeasurementEntity item
-                    in filteredScale.take(6))
+                for (final ScaleMeasurementEntity item in filteredScale.take(6))
                   Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: _ScaleTile(
+                    child: _buildScaleTile(
+                      context: context,
+                      ref: ref,
+                      data: data,
                       item: item,
-                      onTap: () =>
-                          _showScaleDialog(context, ref, existing: item),
                     ),
                   ),
-                for (final TapeMeasurementEntity item
-                    in filteredTape.take(6))
+                for (final TapeMeasurementEntity item in filteredTape.take(6))
                   Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                     child: _TapeTile(
@@ -607,9 +623,11 @@ class ScaleMeasurementsScreen extends ConsumerWidget {
             separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.md),
             itemBuilder: (BuildContext context, int index) {
               final ScaleMeasurementEntity item = data.scaleMeasurements[index];
-              return _ScaleTile(
+              return _buildScaleTile(
+                context: context,
+                ref: ref,
+                data: data,
                 item: item,
-                onTap: () => _showScaleDialog(context, ref, existing: item),
               );
             },
           );
@@ -678,23 +696,100 @@ class TapeMeasurementsScreen extends ConsumerWidget {
   }
 }
 
+Widget _buildScaleTile({
+  required BuildContext context,
+  required WidgetRef ref,
+  required MeasurementHubData data,
+  required ScaleMeasurementEntity item,
+}) {
+  final WeightAnomalyEvaluation evaluation = data.weightAnomalyFor(item);
+  final String? pendingConfirmationKey = evaluation.isAnomalous &&
+          evaluation.confirmationKey != item.weightAnomalyConfirmationKey
+      ? evaluation.confirmationKey
+      : null;
+  return _ScaleTile(
+    item: item,
+    anomalyConfirmationKey: pendingConfirmationKey,
+    onTap: () => _showScaleDialog(context, ref, existing: item),
+    onConfirmAnomaly: pendingConfirmationKey == null
+        ? null
+        : () => _confirmWeightAnomaly(
+              ref,
+              item,
+              pendingConfirmationKey,
+            ),
+  );
+}
+
+void _confirmWeightAnomaly(
+  WidgetRef ref,
+  ScaleMeasurementEntity item,
+  String confirmationKey,
+) {
+  item.weightAnomalyConfirmationKey = confirmationKey;
+  ref.read(measurementRepositoryProvider).saveScale(item);
+  ref.invalidate(measurementHubProvider);
+}
+
 class _ScaleTile extends StatelessWidget {
   const _ScaleTile({
     required this.item,
+    required this.anomalyConfirmationKey,
     required this.onTap,
+    required this.onConfirmAnomaly,
   });
 
   final ScaleMeasurementEntity item;
+  final String? anomalyConfirmationKey;
   final VoidCallback onTap;
+  final VoidCallback? onConfirmAnomaly;
 
   @override
   Widget build(BuildContext context) {
+    final bool hasPendingAnomaly = anomalyConfirmationKey != null;
+    final bool hasLowReliability = item.reliabilityCode == 'low';
+    final Color indicatorColor = hasPendingAnomaly
+        ? Colors.red.shade600
+        : hasLowReliability
+            ? Colors.orange.shade700
+            : Colors.green.shade600;
+    final String indicatorLabel = hasPendingAnomaly
+        ? 'Variazione anomala non confermata'
+        : hasLowReliability
+            ? 'Affidabilità bassa'
+            : 'Affidabilità normale';
+
     return TtAppCard(
       onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(item.title, style: Theme.of(context).textTheme.titleLarge),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  item.title,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Tooltip(
+                message: indicatorLabel,
+                child: Semantics(
+                  label: indicatorLabel,
+                  child: Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: indicatorColor,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: AppSpacing.md),
           _MetricGrid(
             metrics: <_Metric>[
@@ -707,6 +802,44 @@ class _ScaleTile extends StatelessWidget {
           if (item.notes.isNotEmpty) ...<Widget>[
             const SizedBox(height: AppSpacing.sm),
             Text(item.notes),
+          ],
+          if (hasPendingAnomaly) ...<Widget>[
+            const SizedBox(height: AppSpacing.md),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                AppSpacing.sm,
+                AppSpacing.sm,
+                AppSpacing.sm,
+              ),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      'Variazione anomala del peso, sei sicuro sia corretta?',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onErrorContainer,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: onConfirmAnomaly,
+                    style: TextButton.styleFrom(
+                      foregroundColor:
+                          Theme.of(context).colorScheme.onErrorContainer,
+                    ),
+                    child: const Text('Sì'),
+                  ),
+                ],
+              ),
+            ),
           ],
           const SizedBox(height: AppSpacing.sm),
           Text(
@@ -1007,8 +1140,8 @@ Future<void> _showScaleDialog(
       TextEditingController(text: existing?.measurementTime ?? '');
   final TextEditingController device =
       TextEditingController(text: existing?.device ?? '');
-  final TextEditingController reliability =
-      TextEditingController(text: existing?.reliabilityCode ?? 'normal');
+  String reliabilityCode =
+      _normalizeScaleReliability(existing?.reliabilityCode);
   final TextEditingController notes =
       TextEditingController(text: existing?.notes ?? '');
   final GlobalKey<FormState> formKey = GlobalKey<FormState>();
@@ -1098,8 +1231,7 @@ Future<void> _showScaleDialog(
                             time,
                             'Ora misurazione',
                             readOnly: true,
-                            suffixIcon:
-                                const Icon(Icons.access_time_rounded),
+                            suffixIcon: const Icon(Icons.access_time_rounded),
                             onTap: () async {
                               final TimeOfDay? picked = await showTimePicker(
                                 context: sheetContext,
@@ -1143,7 +1275,31 @@ Future<void> _showScaleDialog(
                               keyboardType: TextInputType.number),
                           _field(physique, 'Physique rating'),
                           _field(device, 'Dispositivo'),
-                          _field(reliability, 'Affidabilita'),
+                          Padding(
+                            padding:
+                                const EdgeInsets.only(bottom: AppSpacing.md),
+                            child: DropdownButtonFormField<String>(
+                              initialValue: reliabilityCode,
+                              decoration: const InputDecoration(
+                                labelText: 'Affidabilità',
+                              ),
+                              items: const <DropdownMenuItem<String>>[
+                                DropdownMenuItem<String>(
+                                  value: 'normal',
+                                  child: Text('Normale'),
+                                ),
+                                DropdownMenuItem<String>(
+                                  value: 'low',
+                                  child: Text('Bassa'),
+                                ),
+                              ],
+                              onChanged: (String? value) {
+                                if (value != null) {
+                                  reliabilityCode = value;
+                                }
+                              },
+                            ),
+                          ),
                         ],
                       ),
                       _MeasurementSheetSection(
@@ -1202,8 +1358,11 @@ Future<void> _showScaleDialog(
   final String dateKey = date.text.trim();
   ref.read(foodPlanningServiceProvider).ensureDay(dateKey);
   final repository = ref.read(measurementRepositoryProvider);
-  final ScaleMeasurementEntity measurement = existing ??
-      repository.findScaleByDate(dateKey) ??
+  final ScaleMeasurementEntity? storedMeasurement =
+      existing ?? repository.findScaleByDate(dateKey);
+  final String previousDateKey = storedMeasurement?.dateKey ?? '';
+  final double? previousWeightKg = storedMeasurement?.weightKg;
+  final ScaleMeasurementEntity measurement = storedMeasurement ??
       ScaleMeasurementEntity(
         uuid: '',
         dateKey: dateKey,
@@ -1214,6 +1373,11 @@ Future<void> _showScaleDialog(
   measurement.dateKey = dateKey;
   measurement.title = 'Bilancia - $dateKey';
   measurement.weightKg = _toDouble(weight.text);
+  if (storedMeasurement != null &&
+      (previousDateKey != measurement.dateKey ||
+          previousWeightKg != measurement.weightKg)) {
+    measurement.weightAnomalyConfirmationKey = '';
+  }
   measurement.bodyFatPercent = _toDouble(bodyFat.text);
   measurement.muscleMassKg = _toDouble(muscle.text);
   measurement.waterPercent = _toDouble(water.text);
@@ -1226,8 +1390,7 @@ Future<void> _showScaleDialog(
   measurement.physiqueRating = physique.text.trim();
   measurement.measurementTime = time.text.trim();
   measurement.device = device.text.trim();
-  measurement.reliabilityCode =
-      reliability.text.trim().isEmpty ? 'normal' : reliability.text.trim();
+  measurement.reliabilityCode = reliabilityCode;
   measurement.notes = notes.text.trim();
   repository.saveScale(measurement);
   ref.invalidate(measurementHubProvider);
@@ -1523,6 +1686,16 @@ EdgeInsets get _screenPadding {
     AppSpacing.screenHorizontal,
     AppSpacing.xxxl,
   );
+}
+
+String _scaleIdentity(ScaleMeasurementEntity item) {
+  final String uuid = item.uuid.trim();
+  return uuid.isNotEmpty ? uuid : 'id:${item.id}';
+}
+
+String _normalizeScaleReliability(String? value) {
+  final String normalized = value?.trim().toLowerCase() ?? '';
+  return normalized == 'low' || normalized == 'bassa' ? 'low' : 'normal';
 }
 
 String _dateKey(DateTime date) {
