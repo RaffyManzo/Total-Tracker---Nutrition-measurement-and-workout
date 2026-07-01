@@ -525,9 +525,8 @@ class _DashboardDailySummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final int mealsWithFood = meals
-        .where((MealWithItems meal) => meal.items.isNotEmpty)
-        .length;
+    final int mealsWithFood =
+        meals.where((MealWithItems meal) => meal.items.isNotEmpty).length;
     final double calorieTarget = targetKcal <= 0 ? 1 : targetKcal;
     final double calorieProgress =
         (totals.kcal / calorieTarget).clamp(0, 1).toDouble();
@@ -719,8 +718,7 @@ class _WalkingProgressBar extends StatelessWidget {
         LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
             final double clamped = value.clamp(0, 1).toDouble();
-            final double markerX =
-                (constraints.maxWidth - 24) * clamped;
+            final double markerX = (constraints.maxWidth - 24) * clamped;
             return SizedBox(
               height: 28,
               child: Stack(
@@ -860,8 +858,8 @@ class FoodWeekScreen extends ConsumerWidget {
             for (final DailyRecordEntity day in weekDays)
               TtChartPoint(
                 label: _shortWeekdayLabel(DateTime.parse(day.dateKey)),
-                value: (day.stepGoal ?? profile?.defaultStepGoal ?? 0)
-                    .toDouble(),
+                value:
+                    (day.stepGoal ?? profile?.defaultStepGoal ?? 0).toDouble(),
               ),
           ];
           return ListView(
@@ -1870,9 +1868,8 @@ class _SummaryDivider extends StatelessWidget {
     return Divider(
       height: 1,
       thickness: 1,
-      color: isDark
-          ? Colors.white.withValues(alpha: 0.12)
-          : Colors.grey.shade300,
+      color:
+          isDark ? Colors.white.withValues(alpha: 0.12) : Colors.grey.shade300,
     );
   }
 }
@@ -2178,9 +2175,8 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
                         children: <Widget>[
                           Text(
                             'Dettagli pasto',
-                            style: Theme.of(sheetContext)
-                                .textTheme
-                                .headlineSmall,
+                            style:
+                                Theme.of(sheetContext).textTheme.headlineSmall,
                           ),
                           Text(
                             'Campi persistenti salvati in ObjectBox',
@@ -2241,7 +2237,8 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
                         ),
                         _detailRow('Free label', meal.freeMealLabel),
                         _detailRow('Free notes', meal.freeMealNotes),
-                        _detailRow('Voci collegate', _details.items.length.toString()),
+                        _detailRow(
+                            'Voci collegate', _details.items.length.toString()),
                         _detailRow(
                           'Nutrizione parziale',
                           _details.isNutritionPartial ? 'si' : 'no',
@@ -2252,7 +2249,8 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
                       emoji: '🕒',
                       title: 'Audit',
                       children: <Widget>[
-                        _detailRow('Creato epoch ms', meal.createdAtEpochMs.toString()),
+                        _detailRow('Creato epoch ms',
+                            meal.createdAtEpochMs.toString()),
                         _detailRow(
                           'Aggiornato epoch ms',
                           meal.updatedAtEpochMs.toString(),
@@ -2355,7 +2353,8 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
               _MealAddActionCard(
                 icon: Icons.edit_note_rounded,
                 title: 'Stima manuale',
-                subtitle: 'Inserisci calorie e macro quando non hai dati precisi.',
+                subtitle:
+                    'Inserisci calorie e macro quando non hai dati precisi.',
                 onTap: _showManualEstimateDialog,
               ),
             ],
@@ -3653,6 +3652,7 @@ class _PersistentIngredientListScreenState
     final TextEditingController name = TextEditingController();
     final TextEditingController brand = TextEditingController();
     final TextEditingController barcode = TextEditingController();
+    final TextEditingController image = TextEditingController();
     final TextEditingController kcal = TextEditingController();
     final TextEditingController protein = TextEditingController();
     final TextEditingController carbs = TextEditingController();
@@ -3675,6 +3675,16 @@ class _PersistentIngredientListScreenState
                   _field(name, 'Nome', isRequired: true),
                   _field(brand, 'Brand'),
                   _field(barcode, 'Barcode'),
+                  _ImageSourcePickerField(
+                    controller: image,
+                    title: 'Immagine ingrediente',
+                    fallbackIcon: Icons.inventory_2_outlined,
+                    onPick: () => _pickAndStoreImage(
+                      controller: image,
+                      folderName: 'ingredient_images',
+                      fallbackBaseName: 'ingredient',
+                    ),
+                  ),
                   _field(kcal, 'Kcal per 100 g',
                       keyboardType: TextInputType.number),
                   _field(protein, 'Proteine per 100 g',
@@ -3713,6 +3723,7 @@ class _PersistentIngredientListScreenState
             name: name.text.trim(),
             brand: brand.text.trim(),
             barcode: barcode.text.trim(),
+            imageUrl: image.text.trim(),
             kcalPerReference: _toDouble(kcal.text) ?? 0,
             proteinPerReference: _toDouble(protein.text) ?? 0,
             carbsPerReference: _toDouble(carbs.text) ?? 0,
@@ -3756,6 +3767,8 @@ class IngredientDetailScreen extends ConsumerStatefulWidget {
 class _IngredientDetailScreenState
     extends ConsumerState<IngredientDetailScreen> {
   bool _isWorking = false;
+  DateTime? _usageFrom;
+  DateTime? _usageTo;
 
   @override
   Widget build(BuildContext context) {
@@ -3771,6 +3784,20 @@ class _IngredientDetailScreenState
         body: const _EmptyInline(message: 'Ingrediente non trovato.'),
       );
     }
+    final List<IngredientMealUsage> ingredientUsage =
+        ref.read(mealRepositoryProvider).getIngredientUsage(
+              ingredient.uuid,
+              fromDateKey: _usageFrom == null ? null : _dateKey(_usageFrom!),
+              toDateKey: _usageTo == null ? null : _dateKey(_usageTo!),
+            );
+    final _IngredientUsageStats usageStats = _IngredientUsageStats.fromUsage(
+      ingredientUsage,
+      from: _usageFrom,
+      to: _usageTo,
+    );
+    final List<IngredientMealUsage> recentUsage =
+        ingredientUsage.take(10).toList();
+
     return Scaffold(
       appBar: AppBar(
         title: Text(ingredient.name),
@@ -3868,10 +3895,132 @@ class _IngredientDetailScreenState
                       'Carboidrati', '${_fmt(ingredient.carbsPerReference)} g'),
                   _Metric('Grassi', '${_fmt(ingredient.fatPerReference)} g'),
                   _Metric('Fibre', '${_fmt(ingredient.fiberPerReference)} g'),
-                  _Metric('Zuccheri', '${_fmt(ingredient.sugarPerReference)} g'),
+                  _Metric(
+                      'Zuccheri', '${_fmt(ingredient.sugarPerReference)} g'),
                   _Metric('Sale', '${_fmt(ingredient.saltPerReference)} g'),
                 ],
               ),
+              const SizedBox(height: AppSpacing.sectionGap),
+              const TtSectionHeader(title: 'Quando l’ho mangiato'),
+              const SizedBox(height: AppSpacing.md),
+              TtAppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Wrap(
+                      spacing: AppSpacing.sm,
+                      runSpacing: AppSpacing.sm,
+                      children: <Widget>[
+                        OutlinedButton.icon(
+                          onPressed: () => _pickUsageDate(isStart: true),
+                          icon: const Icon(Icons.date_range_outlined),
+                          label: Text(
+                            _usageFrom == null
+                                ? 'Data iniziale'
+                                : _dateKey(_usageFrom!),
+                          ),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () => _pickUsageDate(isStart: false),
+                          icon: const Icon(Icons.event_outlined),
+                          label: Text(
+                            _usageTo == null
+                                ? 'Data finale'
+                                : _dateKey(_usageTo!),
+                          ),
+                        ),
+                        if (_usageFrom != null || _usageTo != null)
+                          TextButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _usageFrom = null;
+                                _usageTo = null;
+                              });
+                            },
+                            icon: const Icon(Icons.clear_rounded),
+                            label: const Text('Azzera'),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    _MetricGrid(
+                      metrics: <_Metric>[
+                        _Metric(
+                          'Grammi totali',
+                          '${_fmt(usageStats.totalGrams)} g',
+                        ),
+                        _Metric(
+                          'Registrazioni',
+                          usageStats.registrationCount.toString(),
+                        ),
+                        _Metric(
+                          'Media settimanale',
+                          '${_fmt(usageStats.registrationsPerWeek)} / sett.',
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              if (recentUsage.isEmpty)
+                const _EmptyInline(
+                  message: 'Nessun pasto trovato nell’intervallo selezionato.',
+                )
+              else
+                for (final IngredientMealUsage usage in recentUsage)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    child: TtAppCard(
+                      onTap: () => context.push('/food/meals/${usage.meal.id}'),
+                      child: Row(
+                        children: <Widget>[
+                          CircleAvatar(
+                            child: Text(
+                              usage.meal.dateKey.length >= 10
+                                  ? usage.meal.dateKey.substring(8, 10)
+                                  : '•',
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Text(
+                                  usage.meal.title,
+                                  style:
+                                      Theme.of(context).textTheme.titleMedium,
+                                ),
+                                Text(
+                                  '${usage.meal.dateKey} · '
+                                  '${_slotLabel(usage.meal.mealTypeCode)}',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: <Widget>[
+                              Text(
+                                '${_fmt(usage.grams)} g',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              if (usage.registrationCount > 1)
+                                Text(
+                                  '${usage.registrationCount} voci',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                            ],
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                          const Icon(Icons.chevron_right_rounded),
+                        ],
+                      ),
+                    ),
+                  ),
               const SizedBox(height: AppSpacing.sectionGap),
               const TtSectionHeader(title: 'Dettagli'),
               const SizedBox(height: AppSpacing.md),
@@ -3897,10 +4046,8 @@ class _IngredientDetailScreenState
           if (_isWorking)
             Positioned.fill(
               child: ColoredBox(
-                color: Theme.of(context)
-                    .colorScheme
-                    .scrim
-                    .withValues(alpha: 0.42),
+                color:
+                    Theme.of(context).colorScheme.scrim.withValues(alpha: 0.42),
                 child: Center(
                   child: TtAppCard(
                     child: Column(
@@ -3921,6 +4068,34 @@ class _IngredientDetailScreenState
         ],
       ),
     );
+  }
+
+  Future<void> _pickUsageDate({required bool isStart}) async {
+    final DateTime initialDate = isStart
+        ? (_usageFrom ?? _usageTo ?? DateTime.now())
+        : (_usageTo ?? _usageFrom ?? DateTime.now());
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() {
+      if (isStart) {
+        _usageFrom = picked;
+        if (_usageTo != null && picked.isAfter(_usageTo!)) {
+          _usageTo = picked;
+        }
+      } else {
+        _usageTo = picked;
+        if (_usageFrom != null && picked.isBefore(_usageFrom!)) {
+          _usageFrom = picked;
+        }
+      }
+    });
   }
 
   Future<void> _confirmDeleteIngredient(IngredientEntity ingredient) async {
@@ -3992,6 +4167,56 @@ class _IngredientDetailScreenState
       }
     }
   }
+}
+
+class _IngredientUsageStats {
+  const _IngredientUsageStats({
+    required this.totalGrams,
+    required this.registrationCount,
+    required this.registrationsPerWeek,
+  });
+
+  factory _IngredientUsageStats.fromUsage(
+    List<IngredientMealUsage> usage, {
+    DateTime? from,
+    DateTime? to,
+  }) {
+    final double totalGrams = usage.fold<double>(
+      0,
+      (double sum, IngredientMealUsage item) => sum + item.grams,
+    );
+    final int registrationCount = usage.fold<int>(
+      0,
+      (int sum, IngredientMealUsage item) => sum + item.registrationCount,
+    );
+    if (usage.isEmpty) {
+      return const _IngredientUsageStats(
+        totalGrams: 0,
+        registrationCount: 0,
+        registrationsPerWeek: 0,
+      );
+    }
+
+    final List<DateTime> usageDates = usage
+        .map((IngredientMealUsage item) => DateTime.parse(item.meal.dateKey))
+        .toList()
+      ..sort();
+    final DateTime rangeStart = from ?? usageDates.first;
+    final DateTime rangeEnd = to ?? usageDates.last;
+    final int inclusiveDays = rangeEnd.difference(rangeStart).inDays + 1;
+    final double weeks = inclusiveDays < 7 ? 1.0 : inclusiveDays / 7;
+
+    return _IngredientUsageStats(
+      totalGrams: totalGrams,
+      registrationCount: registrationCount,
+      registrationsPerWeek:
+          weeks <= 0 ? registrationCount.toDouble() : registrationCount / weeks,
+    );
+  }
+
+  final double totalGrams;
+  final int registrationCount;
+  final double registrationsPerWeek;
 }
 
 class _IngredientSourceSnapshot {
@@ -4116,21 +4341,14 @@ Future<bool> _showIngredientEditSheet(
                           icon: const Icon(Icons.qr_code_scanner_rounded),
                         ),
                       ),
-                      _field(
-                        image,
-                        'URL o percorso immagine',
-                        suffixIcon: IconButton(
-                          tooltip: 'Scegli file',
-                          onPressed: () {
-                            ScaffoldMessenger.of(parentContext).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Inserisci qui il percorso del file immagine o un URL.',
-                                ),
-                              ),
-                            );
-                          },
-                          icon: const Icon(Icons.folder_open_rounded),
+                      _ImageSourcePickerField(
+                        controller: image,
+                        title: 'Immagine ingrediente',
+                        fallbackIcon: Icons.inventory_2_outlined,
+                        onPick: () => _pickAndStoreImage(
+                          controller: image,
+                          folderName: 'ingredient_images',
+                          fallbackBaseName: 'ingredient',
                         ),
                       ),
                       _field(
@@ -4174,7 +4392,8 @@ Future<bool> _showIngredientEditSheet(
                     children: <Widget>[
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: () => Navigator.of(sheetContext).pop(false),
+                          onPressed: () =>
+                              Navigator.of(sheetContext).pop(false),
                           child: const Text('Annulla'),
                         ),
                       ),
@@ -4928,6 +5147,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                   padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                   child: _RecipeIngredientSnapshotCard(
                     line: entry.value.trim(),
+                    imageUrl: _recipeIngredientImage(entry.value.trim()),
                     onTap: () => _showRecipeIngredientActions(
                       entry.key,
                       entry.value.trim(),
@@ -5076,34 +5296,11 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   }
 
   Future<void> _pickRecipeImage(TextEditingController image) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      allowMultiple: false,
-      withData: false,
+    await _pickAndStoreImage(
+      controller: image,
+      folderName: 'recipe_images',
+      fallbackBaseName: 'recipe',
     );
-    final String? selectedPath = result?.files.single.path;
-    if (selectedPath == null || selectedPath.trim().isEmpty) {
-      return;
-    }
-    final Directory documents = await getApplicationDocumentsDirectory();
-    final Directory imageDir =
-        Directory(path.join(documents.path, 'recipe_images'));
-    if (!imageDir.existsSync()) {
-      imageDir.createSync(recursive: true);
-    }
-    final File source = File(selectedPath);
-    if (!source.existsSync()) {
-      return;
-    }
-    final String safeName = path
-        .basenameWithoutExtension(selectedPath)
-        .replaceAll(RegExp(r'[^a-zA-Z0-9_-]+'), '_');
-    final String extension = path.extension(selectedPath);
-    final String fileName =
-        '${DateTime.now().millisecondsSinceEpoch}_${safeName.isEmpty ? 'recipe' : safeName}$extension';
-    final File target = File(path.join(imageDir.path, fileName));
-    await source.copy(target.path);
-    image.text = target.path;
   }
 
   Widget _buildRecipeMetaSheet({
@@ -5141,8 +5338,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                       children: <Widget>[
                         Text(
                           'Dati ricetta',
-                          style:
-                              Theme.of(sheetContext).textTheme.headlineSmall,
+                          style: Theme.of(sheetContext).textTheme.headlineSmall,
                         ),
                         Text(
                           'Modifica titolo, resa e immagine.',
@@ -5176,8 +5372,10 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                       children: <Widget>[
                         _field(title, 'Titolo', isRequired: true),
                         _field(summary, 'Descrizione', maxLines: 3),
-                        _RecipeImagePickerField(
+                        _ImageSourcePickerField(
                           controller: image,
+                          title: 'Immagine ricetta',
+                          fallbackIcon: Icons.menu_book_rounded,
                           onPick: () => _pickRecipeImage(image),
                         ),
                       ],
@@ -5250,8 +5448,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                   children: <Widget>[
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: () =>
-                            Navigator.of(sheetContext).pop(false),
+                        onPressed: () => Navigator.of(sheetContext).pop(false),
                         child: const Text('Annulla'),
                       ),
                     ),
@@ -5563,6 +5760,18 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
           current.isEmpty ? lines.join('\n') : '$current\n${lines.join('\n')}';
     });
     _saveRecipe();
+  }
+
+  String _recipeIngredientImage(String line) {
+    final RecipeIngredientEntity item = _recipeIngredientFromLine(line);
+    if (item.ingredientUuid.trim().isEmpty) {
+      return '';
+    }
+    return ref
+            .read(ingredientRepositoryProvider)
+            .findByUuid(item.ingredientUuid)
+            ?.imageUrl ??
+        '';
   }
 
   Future<void> _showRecipeIngredientActions(int index, String line) async {
@@ -6062,8 +6271,7 @@ class _MonthCalendarCardState extends State<_MonthCalendarCard> {
                       (MealWithItems meal) => meal.items.isNotEmpty,
                     );
                     final bool hasFreeMeal = meals.any(
-                      (MealWithItems meal) =>
-                          meal.meal.mealModeCode == 'free',
+                      (MealWithItems meal) => meal.meal.mealModeCode == 'free',
                     );
                     final bool hasCompleteMeals = _hasAllMealSlotsLogged(meals);
                     return _CalendarDayCell(
@@ -6185,8 +6393,9 @@ class _WeekDaySummaryCard extends StatelessWidget {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final String dateKey = _dateKey(date);
     final double progress = (loggedMeals / 4).clamp(0, 1).toDouble();
-    final String weekday =
-        day?.weekdayLabel.isNotEmpty == true ? day!.weekdayLabel : _weekdayFromDate(date);
+    final String weekday = day?.weekdayLabel.isNotEmpty == true
+        ? day!.weekdayLabel
+        : _weekdayFromDate(date);
     return TtAppCard(
       onTap: () => context.push('/food/days/$dateKey'),
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -6315,17 +6524,17 @@ class _CalendarDayCell extends StatelessWidget {
     final Color fillColor = hasFreeMeal
         ? colors.errorContainer.withValues(alpha: 0.88)
         : canColorByNutrition && hasCompleteMeals
-                ? colors.primaryContainer.withValues(alpha: 0.88)
-                : canColorByNutrition
-                    ? Colors.amber.withValues(alpha: 0.34)
-                    : colors.surfaceContainerHighest.withValues(alpha: 0.72);
+            ? colors.primaryContainer.withValues(alpha: 0.88)
+            : canColorByNutrition
+                ? Colors.amber.withValues(alpha: 0.34)
+                : colors.surfaceContainerHighest.withValues(alpha: 0.72);
     final Color borderColor = hasFreeMeal
         ? colors.error
         : canColorByNutrition && hasCompleteMeals
-                ? colors.primary
-                : canColorByNutrition
-                    ? Colors.amber.shade700
-                    : colors.outlineVariant;
+            ? colors.primary
+            : canColorByNutrition
+                ? Colors.amber.shade700
+                : colors.outlineVariant;
     final Color textColor = hasFreeMeal
         ? colors.onErrorContainer
         : canColorByNutrition && hasCompleteMeals
@@ -6663,9 +6872,8 @@ class _MealNutritionRecap extends StatelessWidget {
                     CircularProgressIndicator(
                       value: totals.kcal <= 0 ? 0 : 1,
                       strokeWidth: 8,
-                      backgroundColor: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest,
+                      backgroundColor:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
@@ -6715,8 +6923,7 @@ class _MealNutritionRecap extends StatelessWidget {
                             label: meal.freeMealTrackingCode.isEmpty
                                 ? 'Tracking n/d'
                                 : meal.freeMealTrackingCode,
-                            isWarning:
-                                meal.freeMealTrackingCode == 'untracked',
+                            isWarning: meal.freeMealTrackingCode == 'untracked',
                           ),
                       ],
                     ),
@@ -6743,7 +6950,8 @@ class _MealNutritionRecap extends StatelessWidget {
                             .headlineSmall
                             ?.copyWith(fontWeight: FontWeight.w800),
                       ),
-                      Text('kcal', style: Theme.of(context).textTheme.labelSmall),
+                      Text('kcal',
+                          style: Theme.of(context).textTheme.labelSmall),
                     ],
                   ),
                 ),
@@ -7062,8 +7270,9 @@ class _RecipeMealPickerSheetState extends State<_RecipeMealPickerSheet> {
                                           : nextModes.isEmpty
                                               ? 'portions'
                                               : nextModes.first;
-                                  _quantity.text =
-                                      _quantityModeCode == 'grams' ? '100' : '1';
+                                  _quantity.text = _quantityModeCode == 'grams'
+                                      ? '100'
+                                      : '1';
                                 });
                               },
                               child: Row(
@@ -7131,10 +7340,12 @@ class _RecipeMealPickerSheetState extends State<_RecipeMealPickerSheet> {
 class _RecipeIngredientSnapshotCard extends StatelessWidget {
   const _RecipeIngredientSnapshotCard({
     required this.line,
+    required this.imageUrl,
     required this.onTap,
   });
 
   final String line;
+  final String imageUrl;
   final VoidCallback onTap;
 
   @override
@@ -7144,8 +7355,8 @@ class _RecipeIngredientSnapshotCard extends StatelessWidget {
       onTap: onTap,
       child: Row(
         children: <Widget>[
-          const _FoodThumb(
-            imageUrl: '',
+          _FoodThumb(
+            imageUrl: imageUrl,
             fallbackIcon: Icons.inventory_2_outlined,
           ),
           const SizedBox(width: AppSpacing.md),
@@ -7208,13 +7419,54 @@ class _ActionSheetCard extends StatelessWidget {
   }
 }
 
-class _RecipeImagePickerField extends StatelessWidget {
-  const _RecipeImagePickerField({
+Future<void> _pickAndStoreImage({
+  required TextEditingController controller,
+  required String folderName,
+  required String fallbackBaseName,
+}) async {
+  final FilePickerResult? result = await FilePicker.platform.pickFiles(
+    type: FileType.image,
+    allowMultiple: false,
+    withData: false,
+  );
+  final String? selectedPath = result?.files.single.path;
+  if (selectedPath == null || selectedPath.trim().isEmpty) {
+    return;
+  }
+
+  final File source = File(selectedPath);
+  if (!source.existsSync()) {
+    return;
+  }
+
+  final Directory documents = await getApplicationDocumentsDirectory();
+  final Directory imageDir = Directory(path.join(documents.path, folderName));
+  if (!imageDir.existsSync()) {
+    imageDir.createSync(recursive: true);
+  }
+
+  final String safeName = path
+      .basenameWithoutExtension(selectedPath)
+      .replaceAll(RegExp(r'[^a-zA-Z0-9_-]+'), '_');
+  final String extension = path.extension(selectedPath);
+  final String fileName = '${DateTime.now().millisecondsSinceEpoch}_'
+      '${safeName.isEmpty ? fallbackBaseName : safeName}$extension';
+  final File target = File(path.join(imageDir.path, fileName));
+  await source.copy(target.path);
+  controller.text = target.path;
+}
+
+class _ImageSourcePickerField extends StatelessWidget {
+  const _ImageSourcePickerField({
     required this.controller,
+    required this.title,
+    required this.fallbackIcon,
     required this.onPick,
   });
 
   final TextEditingController controller;
+  final String title;
+  final IconData fallbackIcon;
   final Future<void> Function() onPick;
 
   @override
@@ -7222,45 +7474,59 @@ class _RecipeImagePickerField extends StatelessWidget {
     return ValueListenableBuilder<TextEditingValue>(
       valueListenable: controller,
       builder: (BuildContext context, TextEditingValue value, _) {
-        final String imagePath = value.text.trim();
+        final String imageSource = value.text.trim();
+        final Color errorColor = Theme.of(context).colorScheme.error;
         return TtAppCard(
           padding: const EdgeInsets.all(AppSpacing.md),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              _FoodThumb(
-                imageUrl: imagePath,
-                fallbackIcon: Icons.image_outlined,
-                size: 64,
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'Immagine ricetta',
+              Row(
+                children: <Widget>[
+                  _FoodThumb(
+                    imageUrl: imageSource,
+                    fallbackIcon: fallbackIcon,
+                    size: 64,
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Text(
+                      title,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      imagePath.isEmpty
-                          ? 'Nessuna immagine selezionata'
-                          : imagePath,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: FilledButton.icon(
-                        onPressed: onPick,
-                        icon: const Icon(Icons.folder_open_rounded),
-                        label: const Text('Scegli file'),
-                      ),
-                    ),
-                  ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              TextFormField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  labelText: 'URL immagine o percorso locale',
+                  prefixIcon: Icon(Icons.link_rounded),
                 ),
+                keyboardType: TextInputType.url,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                children: <Widget>[
+                  FilledButton.tonalIcon(
+                    onPressed: onPick,
+                    icon: const Icon(Icons.folder_open_rounded),
+                    label: const Text('Scegli file'),
+                  ),
+                  if (imageSource.isNotEmpty)
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: errorColor,
+                        side: BorderSide(color: errorColor),
+                      ),
+                      onPressed: controller.clear,
+                      icon: const Icon(Icons.delete_outline_rounded),
+                      label: const Text('Rimuovi immagine'),
+                    ),
+                ],
               ),
             ],
           ),
@@ -7376,7 +7642,12 @@ class _RecipeStepsSheetState extends State<_RecipeStepsSheet> {
                   const SizedBox(height: AppSpacing.md),
                   if (_steps.isEmpty)
                     const _EmptyInline(message: 'Nessuno step inserito.')
-                  else
+                  else ...<Widget>[
+                    Text(
+                      'Doppio tap su uno step per modificarlo o eliminarlo.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
                     ReorderableListView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
@@ -7386,8 +7657,7 @@ class _RecipeStepsSheetState extends State<_RecipeStepsSheet> {
                       itemBuilder: (BuildContext context, int index) {
                         return Padding(
                           key: ValueKey<int>(_steps[index].id),
-                          padding:
-                              const EdgeInsets.only(bottom: AppSpacing.sm),
+                          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                           child: _RecipeStepRecord(
                             index: index,
                             text: _steps[index].text,
@@ -7395,6 +7665,7 @@ class _RecipeStepsSheetState extends State<_RecipeStepsSheet> {
                             editController: _editStep,
                             onDoubleTap: () => _startEditing(index),
                             onConfirmEdit: () => _confirmEdit(index),
+                            onDelete: () => _deleteStep(index),
                             dragHandle: ReorderableDragStartListener(
                               index: index,
                               child: const Icon(Icons.drag_handle_rounded),
@@ -7403,6 +7674,7 @@ class _RecipeStepsSheetState extends State<_RecipeStepsSheet> {
                         );
                       },
                     ),
+                  ],
                 ],
               ),
             ),
@@ -7484,6 +7756,17 @@ class _RecipeStepsSheetState extends State<_RecipeStepsSheet> {
       _editStep.clear();
     });
   }
+
+  void _deleteStep(int index) {
+    if (index < 0 || index >= _steps.length) {
+      return;
+    }
+    setState(() {
+      _steps.removeAt(index);
+      _editingIndex = null;
+      _editStep.clear();
+    });
+  }
 }
 
 class _EditableRecipeStep {
@@ -7501,6 +7784,7 @@ class _RecipeStepRecord extends StatelessWidget {
     required this.editController,
     required this.onDoubleTap,
     required this.onConfirmEdit,
+    required this.onDelete,
     required this.dragHandle,
   });
 
@@ -7510,6 +7794,7 @@ class _RecipeStepRecord extends StatelessWidget {
   final TextEditingController editController;
   final VoidCallback onDoubleTap;
   final VoidCallback onConfirmEdit;
+  final VoidCallback onDelete;
   final Widget dragHandle;
 
   @override
@@ -7534,7 +7819,9 @@ class _RecipeStepRecord extends StatelessWidget {
                   child: Text(
                     text,
                     maxLines: isEditing ? null : 2,
-                    overflow: isEditing ? TextOverflow.visible : TextOverflow.ellipsis,
+                    overflow: isEditing
+                        ? TextOverflow.visible
+                        : TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
@@ -7554,13 +7841,28 @@ class _RecipeStepRecord extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton.icon(
-                  onPressed: onConfirmEdit,
-                  icon: const Icon(Icons.check_rounded),
-                  label: const Text('Conferma'),
-                ),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: colors.error,
+                        side: BorderSide(color: colors.error),
+                      ),
+                      onPressed: onDelete,
+                      icon: const Icon(Icons.delete_outline_rounded),
+                      label: const Text('Elimina'),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: onConfirmEdit,
+                      icon: const Icon(Icons.check_rounded),
+                      label: const Text('Conferma'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ],
@@ -7982,16 +8284,6 @@ void _showInsights(BuildContext context, FoodHubV01Data data) {
       ],
     ),
   ];
-  final List<TtChartPoint> mealsPerDay = <TtChartPoint>[
-    for (final DailyRecordEntity day in recentDays)
-      TtChartPoint(
-        label: day.dateKey.substring(5),
-        value: data.allMeals
-            .where((MealWithItems meal) => meal.meal.dateKey == day.dateKey)
-            .length
-            .toDouble(),
-      ),
-  ];
   showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
@@ -8018,7 +8310,6 @@ void _showInsights(BuildContext context, FoodHubV01Data data) {
                   _Metric('Ingredienti', data.ingredients.length.toString()),
                   _Metric('Ricette', data.recipes.length.toString()),
                   _Metric('Giorni registrati', data.days.length.toString()),
-                  _Metric('Pasti registrati', data.allMeals.length.toString()),
                 ],
               ),
               const SizedBox(height: AppSpacing.sectionGap),
@@ -8042,12 +8333,6 @@ void _showInsights(BuildContext context, FoodHubV01Data data) {
                   valueSuffix: 'g',
                   height: 190,
                 ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _ChartCard(
-                title: 'Pasti registrati',
-                subtitle: 'Numero pasti per giorno',
-                child: TtMiniBarChart(points: mealsPerDay),
               ),
               const SizedBox(height: AppSpacing.md),
               _ChartCard(
@@ -8177,8 +8462,8 @@ void _showAdaptiveDetails(BuildContext context, WeekAdaptiveSummary summary) {
               rows: <_Metric>[
                 _Metric('TDEE osservato',
                     _fmtNullableKcal(summary.tdeeObservedKcal)),
-                _Metric('Media kcal ref',
-                    _fmtNullableKcal(summary.avgCalories)),
+                _Metric(
+                    'Media kcal ref', _fmtNullableKcal(summary.avgCalories)),
                 _Metric(
                   'Delta peso',
                   summary.deltaWeightKg == null
@@ -8198,8 +8483,7 @@ void _showAdaptiveDetails(BuildContext context, WeekAdaptiveSummary summary) {
               rows: <_Metric>[
                 _Metric('Introiti validi', summary.validIntakeDays.toString()),
                 _Metric('Pesi validi', summary.validWeightDays.toString()),
-                _Metric('Fattore introiti',
-                    '${(intakeFactor * 100).round()}%'),
+                _Metric('Fattore introiti', '${(intakeFactor * 100).round()}%'),
                 _Metric('Fattore pesi', '${(weightFactor * 100).round()}%'),
               ],
             ),
@@ -8213,8 +8497,8 @@ void _showAdaptiveDetails(BuildContext context, WeekAdaptiveSummary summary) {
               rows: <_Metric>[
                 _Metric('Attivita settimana',
                     _fmtKcal(summary.currentWeekActiveKcal)),
-                _Metric('Delta attivita',
-                    _signedKcal(summary.activityDeltaKcal)),
+                _Metric(
+                    'Delta attivita', _signedKcal(summary.activityDeltaKcal)),
                 _Metric('Target finale', _fmtKcal(summary.targetKcal)),
                 _Metric('Stato', summary.targetStatusCode),
               ],
@@ -8297,8 +8581,8 @@ void _legacyAdaptiveDetailsDialog(
                       : '${_fmt(summary.deltaWeightKg!)} kg'),
               _detailRow(
                   'Media kcal ref', _fmtNullableKcal(summary.avgCalories)),
-              _detailRow('Coefficiente peso',
-                  '${summary.kcalPerKg.round()} kcal/kg'),
+              _detailRow(
+                  'Coefficiente peso', '${summary.kcalPerKg.round()} kcal/kg'),
               _detailRow(
                 'Formula osservata',
                 'kcal medie - variazione peso * kcal/kg / giorni',

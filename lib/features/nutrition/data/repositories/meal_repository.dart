@@ -60,6 +60,18 @@ class MealWithItems {
   }
 }
 
+class IngredientMealUsage {
+  const IngredientMealUsage({
+    required this.meal,
+    required this.grams,
+    required this.registrationCount,
+  });
+
+  final MealEntity meal;
+  final double grams;
+  final int registrationCount;
+}
+
 class MealRepository {
   MealRepository(
     Store store, {
@@ -191,6 +203,68 @@ class MealRepository {
     return getAllActive().map((MealEntity meal) {
       return MealWithItems(meal: meal, items: getItemsForMeal(meal.id));
     }).toList();
+  }
+
+  List<IngredientMealUsage> getIngredientUsage(
+    String ingredientUuid, {
+    String? fromDateKey,
+    String? toDateKey,
+    int? limit,
+  }) {
+    final String cleanUuid = ingredientUuid.trim();
+    if (cleanUuid.isEmpty) {
+      return const <IngredientMealUsage>[];
+    }
+
+    final List<IngredientMealUsage> usage = <IngredientMealUsage>[];
+    for (final MealEntity meal in getAllActive()) {
+      if (fromDateKey != null &&
+          fromDateKey.isNotEmpty &&
+          meal.dateKey.compareTo(fromDateKey) < 0) {
+        continue;
+      }
+      if (toDateKey != null &&
+          toDateKey.isNotEmpty &&
+          meal.dateKey.compareTo(toDateKey) > 0) {
+        continue;
+      }
+
+      final List<MealItemEntity> matchingItems = getItemsForMeal(meal.id)
+          .where(
+            (MealItemEntity item) =>
+                item.kindCode == 'ingredient' &&
+                item.sourceUuid == cleanUuid &&
+                item.deletedAtEpochMs == null,
+          )
+          .toList();
+      if (matchingItems.isEmpty) {
+        continue;
+      }
+
+      usage.add(
+        IngredientMealUsage(
+          meal: meal,
+          grams: matchingItems.fold<double>(
+            0,
+            (double sum, MealItemEntity item) => sum + (item.grams ?? 0),
+          ),
+          registrationCount: matchingItems.length,
+        ),
+      );
+    }
+
+    usage.sort((IngredientMealUsage a, IngredientMealUsage b) {
+      final int dateCompare = b.meal.dateKey.compareTo(a.meal.dateKey);
+      if (dateCompare != 0) {
+        return dateCompare;
+      }
+      return b.meal.updatedAtEpochMs.compareTo(a.meal.updatedAtEpochMs);
+    });
+
+    if (limit == null || limit < 0 || usage.length <= limit) {
+      return usage;
+    }
+    return usage.take(limit).toList();
   }
 
   List<MealEntity> getMealsForDate(String dateKey) {

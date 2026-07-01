@@ -1145,7 +1145,7 @@ Future<void> _showScaleDialog(
   final TextEditingController notes =
       TextEditingController(text: existing?.notes ?? '');
   final GlobalKey<FormState> formKey = GlobalKey<FormState>();
-  final bool? saved = await showModalBottomSheet<bool>(
+  final String? action = await showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
@@ -1178,7 +1178,7 @@ Future<void> _showScaleDialog(
                     ),
                     IconButton(
                       tooltip: 'Chiudi',
-                      onPressed: () => Navigator.of(sheetContext).pop(false),
+                      onPressed: () => Navigator.of(sheetContext).pop('cancel'),
                       icon: const Icon(Icons.close_rounded),
                     ),
                   ],
@@ -1322,25 +1322,88 @@ Future<void> _showScaleDialog(
                     AppSpacing.lg,
                     AppSpacing.lg,
                   ),
-                  child: Row(
+                  child: Column(
                     children: <Widget>[
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () =>
-                              Navigator.of(sheetContext).pop(false),
-                          child: const Text('Annulla'),
+                      if (existing != null) ...<Widget>[
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor:
+                                  Theme.of(sheetContext).colorScheme.error,
+                              side: BorderSide(
+                                color: Theme.of(sheetContext).colorScheme.error,
+                              ),
+                            ),
+                            onPressed: () async {
+                              final bool? confirmed = await showDialog<bool>(
+                                context: sheetContext,
+                                builder: (BuildContext dialogContext) {
+                                  return AlertDialog(
+                                    title: const Text('Elimina misurazione'),
+                                    content: const Text(
+                                      'La misurazione verrà rimossa. '
+                                      'Questa operazione non modifica le altre '
+                                      'misurazioni salvate.',
+                                    ),
+                                    actions: <Widget>[
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(dialogContext)
+                                                .pop(false),
+                                        child: const Text('Annulla'),
+                                      ),
+                                      FilledButton(
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor:
+                                              Theme.of(dialogContext)
+                                                  .colorScheme
+                                                  .error,
+                                          foregroundColor:
+                                              Theme.of(dialogContext)
+                                                  .colorScheme
+                                                  .onError,
+                                        ),
+                                        onPressed: () =>
+                                            Navigator.of(dialogContext)
+                                                .pop(true),
+                                        child: const Text('Elimina'),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              );
+                              if (confirmed == true && sheetContext.mounted) {
+                                Navigator.of(sheetContext).pop('delete');
+                              }
+                            },
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            label: const Text('Elimina misurazione'),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: () {
-                            if (formKey.currentState?.validate() ?? false) {
-                              Navigator.of(sheetContext).pop(true);
-                            }
-                          },
-                          child: const Text('Salva'),
-                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                      ],
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () =>
+                                  Navigator.of(sheetContext).pop('cancel'),
+                              child: const Text('Annulla'),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () {
+                                if (formKey.currentState?.validate() ?? false) {
+                                  Navigator.of(sheetContext).pop('save');
+                                }
+                              },
+                              child: const Text('Salva'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1352,7 +1415,12 @@ Future<void> _showScaleDialog(
       );
     },
   );
-  if (saved != true) {
+  if (action == 'delete' && existing != null) {
+    ref.read(measurementRepositoryProvider).softDeleteScale(existing);
+    ref.invalidate(measurementHubProvider);
+    return;
+  }
+  if (action != 'save') {
     return;
   }
   final String dateKey = date.text.trim();

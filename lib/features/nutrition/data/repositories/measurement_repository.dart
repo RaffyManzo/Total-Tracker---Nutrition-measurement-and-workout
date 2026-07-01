@@ -124,6 +124,23 @@ class MeasurementRepository {
     return measurement;
   }
 
+  ScaleMeasurementEntity softDeleteScale(
+    ScaleMeasurementEntity measurement,
+  ) {
+    if (measurement.id == 0 || _scaleBox.get(measurement.id) == null) {
+      throw ArgumentError.value(
+        measurement.id,
+        'id',
+        'Scale measurement not found.',
+      );
+    }
+    final int now = _clock.nowEpochMs();
+    measurement.deletedAtEpochMs ??= now;
+    measurement.updatedAtEpochMs = now;
+    measurement.id = _scaleBox.put(measurement);
+    return measurement;
+  }
+
   TapeMeasurementEntity saveTapeWithEntries(
     TapeMeasurementEntity measurement,
     List<TapeMeasurementEntryEntity> entries,
