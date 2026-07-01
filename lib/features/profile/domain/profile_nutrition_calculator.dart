@@ -47,7 +47,7 @@ class ProfileNutritionCalculator {
         : sedentary + workoutDaily;
     final double carbsGrams = profile.carbsGramsPerKg * weightKg;
     final double sugarPercent = profile.sugarCarbsPercent <= 0
-        ? 25
+        ? 15
         : profile.sugarCarbsPercent.clamp(0, 100).toDouble();
     return ProfileNutritionTargets(
       sedentaryKcal: sedentary,
