@@ -1066,14 +1066,51 @@ Future<void> _showScaleDialog(
                         icon: Icons.monitor_weight_outlined,
                         title: 'Dati principali',
                         children: <Widget>[
-                          _field(date, 'Data', isRequired: true),
+                          _field(
+                            date,
+                            'Data',
+                            isRequired: true,
+                            readOnly: true,
+                            suffixIcon:
+                                const Icon(Icons.calendar_today_outlined),
+                            onTap: () async {
+                              final DateTime initialDate =
+                                  DateTime.tryParse(date.text.trim()) ??
+                                      DateTime.now();
+                              final DateTime? picked = await showDatePicker(
+                                context: sheetContext,
+                                initialDate: initialDate,
+                                firstDate: DateTime(1900),
+                                lastDate: DateTime(2100),
+                              );
+                              if (picked != null) {
+                                date.text = _dateKey(picked);
+                              }
+                            },
+                          ),
                           _field(
                             weight,
                             'Peso kg',
                             isRequired: true,
                             keyboardType: TextInputType.number,
                           ),
-                          _field(time, 'Ora misurazione'),
+                          _field(
+                            time,
+                            'Ora misurazione',
+                            readOnly: true,
+                            suffixIcon:
+                                const Icon(Icons.access_time_rounded),
+                            onTap: () async {
+                              final TimeOfDay? picked = await showTimePicker(
+                                context: sheetContext,
+                                initialTime: _parseTimeOfDay(time.text) ??
+                                    TimeOfDay.now(),
+                              );
+                              if (picked != null) {
+                                time.text = _timeKey(picked);
+                              }
+                            },
+                          ),
                         ],
                       ),
                       _MeasurementSheetSection(
@@ -1417,6 +1454,9 @@ Widget _field(
   bool isRequired = false,
   TextInputType? keyboardType,
   int maxLines = 1,
+  bool readOnly = false,
+  VoidCallback? onTap,
+  Widget? suffixIcon,
 }) {
   return Padding(
     padding: const EdgeInsets.only(bottom: AppSpacing.md),
@@ -1424,12 +1464,17 @@ Widget _field(
       controller: controller,
       keyboardType: keyboardType,
       maxLines: maxLines,
+      readOnly: readOnly,
+      onTap: onTap,
       validator: isRequired
           ? (String? value) => value == null || value.trim().isEmpty
               ? 'Campo obbligatorio'
               : null
           : null,
-      decoration: InputDecoration(labelText: label),
+      decoration: InputDecoration(
+        labelText: isRequired ? '$label *' : label,
+        suffixIcon: suffixIcon,
+      ),
     ),
   );
 }
@@ -1484,6 +1529,29 @@ String _dateKey(DateTime date) {
   return '${date.year.toString().padLeft(4, '0')}-'
       '${date.month.toString().padLeft(2, '0')}-'
       '${date.day.toString().padLeft(2, '0')}';
+}
+
+TimeOfDay? _parseTimeOfDay(String value) {
+  final List<String> parts = value.trim().split(':');
+  if (parts.length != 2) {
+    return null;
+  }
+  final int? hour = int.tryParse(parts[0]);
+  final int? minute = int.tryParse(parts[1]);
+  if (hour == null ||
+      minute == null ||
+      hour < 0 ||
+      hour > 23 ||
+      minute < 0 ||
+      minute > 59) {
+    return null;
+  }
+  return TimeOfDay(hour: hour, minute: minute);
+}
+
+String _timeKey(TimeOfDay time) {
+  return '${time.hour.toString().padLeft(2, '0')}:'
+      '${time.minute.toString().padLeft(2, '0')}';
 }
 
 String _fmtNullable(double? value, String suffix) {

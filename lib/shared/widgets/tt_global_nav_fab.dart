@@ -206,7 +206,7 @@ class _TtFoodBottomNavBarState extends State<TtFoodBottomNavBar> {
                 child: IgnorePointer(
                   child: CustomPaint(
                     painter: _QuickHintArrowPainter(
-                      color: Theme.of(context).colorScheme.primary,
+                      color: Theme.of(context).colorScheme.onInverseSurface,
                     ),
                     child: Center(
                       child: _QuickHintCard(
