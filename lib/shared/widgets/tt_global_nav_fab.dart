@@ -202,18 +202,26 @@ class _TtFoodBottomNavBarState extends State<TtFoodBottomNavBar> {
             ),
             if (_showQuickHint)
               Positioned.fill(
-                bottom: 112,
                 child: IgnorePointer(
-                  child: CustomPaint(
-                    painter: _QuickHintArrowPainter(
-                      color: Theme.of(context).colorScheme.onInverseSurface,
-                    ),
-                    child: Center(
-                      child: _QuickHintCard(
-                        text:
-                            'Perché non provi a premere questo pulsante?',
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: <Widget>[
+                      CustomPaint(
+                        painter: _QuickHintArrowPainter(
+                          color: Theme.of(overlayContext).brightness == Brightness.dark
+                              ? Colors.white
+                              : Colors.black,
+                        ),
                       ),
-                    ),
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 112),
+                        child: Center(
+                          child: _QuickHintCard(
+                            text: 'Perché non provi a premere questo pulsante?',
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -290,31 +298,86 @@ class _QuickHintCard extends StatelessWidget {
 }
 
 class _QuickHintArrowPainter extends CustomPainter {
-  const _QuickHintArrowPainter({required this.color});
+  const _QuickHintArrowPainter({
+    required this.color,
+  });
 
   final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final Offset start = Offset(size.width * 0.63, size.height * 0.54);
-    final Offset control = Offset(size.width * 0.84, size.height * 0.66);
-    final Offset end = Offset(size.width - 58, size.height - 10);
-    final Paint paint = Paint()
-      ..color = color
-      ..strokeWidth = 4
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-    final Path path = Path()
-      ..moveTo(start.dx, start.dy)
-      ..quadraticBezierTo(control.dx, control.dy, end.dx, end.dy);
-    canvas.drawPath(path, paint);
+    // Parte dalla zona inferiore destra del messaggio.
+    final Offset start = Offset(
+      size.width * 0.62,
+      size.height * 0.50,
+    );
 
-    final Path head = Path()
-      ..moveTo(end.dx, end.dy)
-      ..lineTo(end.dx - 18, end.dy - 4)
-      ..moveTo(end.dx, end.dy)
-      ..lineTo(end.dx - 7, end.dy - 17);
-    canvas.drawPath(head, paint);
+    // Termina poco sopra e a sinistra del pulsante X.
+    final Offset end = Offset(
+      size.width - 78,
+      size.height - 96,
+    );
+
+    // Il primo controllo mantiene l'uscita iniziale quasi verticale.
+    final Offset firstControl = Offset(
+      start.dx,
+      start.dy + size.height * 0.13,
+    );
+
+    // Il secondo controllo accompagna la curva verso destra e verso la X.
+    final Offset secondControl = Offset(
+      end.dx - size.width * 0.11,
+      end.dy - size.height * 0.10,
+    );
+
+    final Paint arrowPaint = Paint()
+      ..color = color
+      ..strokeWidth = 4.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true;
+
+    final Path curve = Path()
+      ..moveTo(start.dx, start.dy)
+      ..cubicTo(
+        firstControl.dx,
+        firstControl.dy,
+        secondControl.dx,
+        secondControl.dy,
+        end.dx,
+        end.dy,
+      );
+
+    canvas.drawPath(curve, arrowPaint);
+
+    // La punta viene orientata usando la tangente finale della curva.
+    final Offset tangent = end - secondControl;
+    final double tangentLength = tangent.distance;
+
+    if (tangentLength == 0) {
+      return;
+    }
+
+    final Offset direction = tangent / tangentLength;
+    final Offset perpendicular = Offset(
+      -direction.dy,
+      direction.dx,
+    );
+
+    const double headLength = 22;
+    const double headWidth = 9;
+
+    final Offset headBase = end - direction * headLength;
+    final Offset headLeft = headBase + perpendicular * headWidth;
+    final Offset headRight = headBase - perpendicular * headWidth;
+
+    final Path arrowHead = Path()
+      ..moveTo(headLeft.dx, headLeft.dy)
+      ..lineTo(end.dx, end.dy)
+      ..lineTo(headRight.dx, headRight.dy);
+
+    canvas.drawPath(arrowHead, arrowPaint);
   }
 
   @override
