@@ -13,10 +13,23 @@ enum TtFoodNavItem {
 class TtFoodBottomNavBar extends StatefulWidget {
   const TtFoodBottomNavBar({
     this.activeItem = TtFoodNavItem.dashboard,
+    this.homeRoute = '/',
+    this.alternateHubLabel = 'Allenamento',
+    this.alternateHubRoute = '/workout',
+    this.alternateHubIcon = Icons.fitness_center_rounded,
+    this.alternateHubEnabled = false,
+    this.alternateHubDisabledMessage =
+        'Allenamento disabilitato in questa versione.',
     super.key,
   });
 
   final TtFoodNavItem activeItem;
+  final String homeRoute;
+  final String alternateHubLabel;
+  final String alternateHubRoute;
+  final IconData alternateHubIcon;
+  final bool alternateHubEnabled;
+  final String alternateHubDisabledMessage;
 
   @override
   State<TtFoodBottomNavBar> createState() => _TtFoodBottomNavBarState();
@@ -24,6 +37,8 @@ class TtFoodBottomNavBar extends StatefulWidget {
 
 class _TtFoodBottomNavBarState extends State<TtFoodBottomNavBar> {
   OverlayEntry? _quickOverlay;
+  int _quickBackgroundTaps = 0;
+  bool _showQuickHint = false;
 
   bool get _quickOpen => _quickOverlay != null;
 
@@ -97,7 +112,7 @@ class _TtFoodBottomNavBarState extends State<TtFoodBottomNavBar> {
                 bottom: widget.activeItem == TtFoodNavItem.dashboard ? 18 : 8,
                 child: _DashboardButton(
                   isActive: widget.activeItem == TtFoodNavItem.dashboard,
-                  onPressed: () => _go(context, '/'),
+                  onPressed: () => _go(context, widget.homeRoute),
                 ),
               ),
             ],
@@ -123,17 +138,17 @@ class _TtFoodBottomNavBarState extends State<TtFoodBottomNavBar> {
           children: <Widget>[
             Positioned.fill(
               bottom: 112,
-              child: ClipRect(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                  child: ColoredBox(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .scrim
-                        .withValues(alpha: 0.18),
-                    child: const ModalBarrier(
-                      dismissible: false,
-                      color: Colors.transparent,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _handleQuickBackgroundTap,
+                child: ClipRect(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                    child: ColoredBox(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .scrim
+                          .withValues(alpha: 0.18),
                     ),
                   ),
                 ),
@@ -167,22 +182,41 @@ class _TtFoodBottomNavBarState extends State<TtFoodBottomNavBar> {
                     onPressed: () => _go(context, '/food/ingredients'),
                   ),
                   _QuickMenuDot(
-                    label: 'Allenamento',
-                    icon: Icons.fitness_center_rounded,
+                    label: widget.alternateHubLabel,
+                    icon: widget.alternateHubIcon,
                     onPressed: () {
-                      _removeQuickOverlay();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Allenamento disabilitato in questa versione.',
+                      if (widget.alternateHubEnabled) {
+                        _go(context, widget.alternateHubRoute);
+                      } else {
+                        _removeQuickOverlay();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(widget.alternateHubDisabledMessage),
                           ),
-                        ),
-                      );
+                        );
+                      }
                     },
                   ),
                 ],
               ),
             ),
+            if (_showQuickHint)
+              Positioned.fill(
+                bottom: 112,
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _QuickHintArrowPainter(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    child: Center(
+                      child: _QuickHintCard(
+                        text:
+                            'Perché non provi a premere questo pulsante?',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         );
       },
@@ -191,9 +225,19 @@ class _TtFoodBottomNavBarState extends State<TtFoodBottomNavBar> {
     setState(() {});
   }
 
+  void _handleQuickBackgroundTap() {
+    _quickBackgroundTaps += 1;
+    if (_quickBackgroundTaps >= 5) {
+      _showQuickHint = true;
+    }
+    _quickOverlay?.markNeedsBuild();
+  }
+
   void _removeQuickOverlay() {
     _quickOverlay?.remove();
     _quickOverlay = null;
+    _quickBackgroundTaps = 0;
+    _showQuickHint = false;
     if (mounted) {
       setState(() {});
     }
@@ -204,6 +248,78 @@ class _TtFoodBottomNavBarState extends State<TtFoodBottomNavBar> {
     return '${now.year.toString().padLeft(4, '0')}-'
         '${now.month.toString().padLeft(2, '0')}-'
         '${now.day.toString().padLeft(2, '0')}';
+  }
+}
+
+class _QuickHintCard extends StatelessWidget {
+  const _QuickHintCard({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surface,
+      elevation: 14,
+      shadowColor: colors.shadow.withValues(alpha: 0.28),
+      borderRadius: BorderRadius.circular(22),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 290),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Text('🙂', style: TextStyle(fontSize: 28)),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  text,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickHintArrowPainter extends CustomPainter {
+  const _QuickHintArrowPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Offset start = Offset(size.width * 0.63, size.height * 0.54);
+    final Offset control = Offset(size.width * 0.84, size.height * 0.66);
+    final Offset end = Offset(size.width - 58, size.height - 10);
+    final Paint paint = Paint()
+      ..color = color
+      ..strokeWidth = 4
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final Path path = Path()
+      ..moveTo(start.dx, start.dy)
+      ..quadraticBezierTo(control.dx, control.dy, end.dx, end.dy);
+    canvas.drawPath(path, paint);
+
+    final Path head = Path()
+      ..moveTo(end.dx, end.dy)
+      ..lineTo(end.dx - 18, end.dy - 4)
+      ..moveTo(end.dx, end.dy)
+      ..lineTo(end.dx - 7, end.dy - 17);
+    canvas.drawPath(head, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _QuickHintArrowPainter oldDelegate) {
+    return oldDelegate.color != color;
   }
 }
 

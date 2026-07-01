@@ -9,6 +9,7 @@ import '../../../shared/widgets/tt_mini_charts.dart';
 import '../../../shared/widgets/tt_primary_button.dart';
 import '../../../shared/widgets/tt_section_header.dart';
 import '../data/entities/nutrition_tracking_entities.dart';
+import '../data/services/food_planning_service.dart';
 
 final FutureProvider<MeasurementHubData> measurementHubProvider =
     FutureProvider<MeasurementHubData>((Ref ref) async {
@@ -122,11 +123,21 @@ class MeasurementHubData {
   }
 }
 
-class MeasurementsHubScreen extends ConsumerWidget {
+class MeasurementsHubScreen extends ConsumerStatefulWidget {
   const MeasurementsHubScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MeasurementsHubScreen> createState() =>
+      _MeasurementsHubScreenState();
+}
+
+class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
+  DateTime? _filterFrom;
+  DateTime? _filterTo;
+  String _filterType = 'all';
+
+  @override
+  Widget build(BuildContext context) {
     final AsyncValue<MeasurementHubData> data =
         ref.watch(measurementHubProvider);
     return Scaffold(
@@ -154,6 +165,10 @@ class MeasurementsHubScreen extends ConsumerWidget {
           onRetry: () => ref.invalidate(measurementHubProvider),
         ),
         data: (MeasurementHubData data) {
+          final List<ScaleMeasurementEntity> filteredScale =
+              _filteredScale(data.scaleMeasurements);
+          final List<TapeMeasurementEntity> filteredTape =
+              _filteredTape(data.tapeMeasurements);
           return ListView(
             padding: _screenPadding,
             children: <Widget>[
@@ -258,12 +273,25 @@ class MeasurementsHubScreen extends ConsumerWidget {
               const SizedBox(height: AppSpacing.sectionGap),
               const TtSectionHeader(title: 'Ultime misurazioni'),
               const SizedBox(height: AppSpacing.md),
-              if (data.scaleMeasurements.isEmpty &&
-                  data.tapeMeasurements.isEmpty)
-                const TtAppCard(child: Text('Nessuna misurazione salvata.'))
+              _MeasurementFilterCard(
+                from: _filterFrom,
+                to: _filterTo,
+                type: _filterType,
+                onPickFrom: () => _pickFilterDate(isFrom: true),
+                onPickTo: () => _pickFilterDate(isFrom: false),
+                onClear: _clearFilters,
+                onTypeChanged: (String value) {
+                  setState(() => _filterType = value);
+                },
+              ),
+              const SizedBox(height: AppSpacing.md),
+              if (filteredScale.isEmpty && filteredTape.isEmpty)
+                const TtAppCard(
+                  child: Text('Nessuna misurazione per i filtri selezionati.'),
+                )
               else ...<Widget>[
                 for (final ScaleMeasurementEntity item
-                    in data.scaleMeasurements.take(4))
+                    in filteredScale.take(6))
                   Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                     child: _ScaleTile(
@@ -273,7 +301,7 @@ class MeasurementsHubScreen extends ConsumerWidget {
                     ),
                   ),
                 for (final TapeMeasurementEntity item
-                    in data.tapeMeasurements.take(4))
+                    in filteredTape.take(6))
                   Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                     child: _TapeTile(
@@ -293,6 +321,161 @@ class MeasurementsHubScreen extends ConsumerWidget {
             ],
           );
         },
+      ),
+    );
+  }
+
+  List<ScaleMeasurementEntity> _filteredScale(
+    List<ScaleMeasurementEntity> measurements,
+  ) {
+    if (_filterType == 'tape') {
+      return const <ScaleMeasurementEntity>[];
+    }
+    return measurements
+        .where((ScaleMeasurementEntity item) => _dateMatches(item.dateKey))
+        .toList();
+  }
+
+  List<TapeMeasurementEntity> _filteredTape(
+    List<TapeMeasurementEntity> measurements,
+  ) {
+    if (_filterType == 'scale') {
+      return const <TapeMeasurementEntity>[];
+    }
+    return measurements
+        .where((TapeMeasurementEntity item) => _dateMatches(item.dateKey))
+        .toList();
+  }
+
+  bool _dateMatches(String dateKey) {
+    if (_filterFrom == null && _filterTo == null) {
+      return true;
+    }
+    final DateTime date = DateTime.parse(dateKey);
+    if (_filterFrom != null && _filterTo == null) {
+      return _dateKey(date) == _dateKey(_filterFrom!);
+    }
+    if (_filterFrom != null && date.isBefore(_filterFrom!)) {
+      return false;
+    }
+    if (_filterTo != null && date.isAfter(_filterTo!)) {
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _pickFilterDate({required bool isFrom}) async {
+    final DateTime initial = isFrom
+        ? (_filterFrom ?? DateTime.now())
+        : (_filterTo ?? _filterFrom ?? DateTime.now());
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null) {
+      return;
+    }
+    setState(() {
+      if (isFrom) {
+        _filterFrom = picked;
+        if (_filterTo != null && _filterTo!.isBefore(picked)) {
+          _filterTo = null;
+        }
+      } else {
+        _filterTo = picked;
+      }
+    });
+  }
+
+  void _clearFilters() {
+    setState(() {
+      _filterFrom = null;
+      _filterTo = null;
+      _filterType = 'all';
+    });
+  }
+}
+
+class _MeasurementFilterCard extends StatelessWidget {
+  const _MeasurementFilterCard({
+    required this.from,
+    required this.to,
+    required this.type,
+    required this.onPickFrom,
+    required this.onPickTo,
+    required this.onClear,
+    required this.onTypeChanged,
+  });
+
+  final DateTime? from;
+  final DateTime? to;
+  final String type;
+  final VoidCallback onPickFrom;
+  final VoidCallback onPickTo;
+  final VoidCallback onClear;
+  final ValueChanged<String> onTypeChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return TtAppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text('Filtri', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.md),
+          DropdownButtonFormField<String>(
+            initialValue: type,
+            decoration: const InputDecoration(labelText: 'Tipo misurazione'),
+            items: const <DropdownMenuItem<String>>[
+              DropdownMenuItem<String>(value: 'all', child: Text('Tutte')),
+              DropdownMenuItem<String>(value: 'scale', child: Text('Bilancia')),
+              DropdownMenuItem<String>(value: 'tape', child: Text('Metro')),
+            ],
+            onChanged: (String? value) {
+              if (value != null) {
+                onTypeChanged(value);
+              }
+            },
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onPickFrom,
+                  icon: const Icon(Icons.event_rounded),
+                  label: Text(from == null ? 'Da' : _dateKey(from!)),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onPickTo,
+                  icon: const Icon(Icons.event_available_rounded),
+                  label: Text(to == null ? 'A' : _dateKey(to!)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            from != null && to == null
+                ? 'Con solo la data iniziale viene cercata la data esatta.'
+                : 'Con due date il filtro usa un intervallo inclusivo.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: onClear,
+              icon: const Icon(Icons.close_rounded),
+              label: const Text('Pulisci'),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -678,6 +861,50 @@ class _ChartCard extends StatelessWidget {
   }
 }
 
+class _MeasurementSheetSection extends StatelessWidget {
+  const _MeasurementSheetSection({
+    required this.icon,
+    required this.title,
+    required this.children,
+  });
+
+  final IconData icon;
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: TtAppCard(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Icon(icon, color: colors.primary),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ErrorView extends StatelessWidget {
   const _ErrorView({
     required this.error,
@@ -785,60 +1012,150 @@ Future<void> _showScaleDialog(
   final TextEditingController notes =
       TextEditingController(text: existing?.notes ?? '');
   final GlobalKey<FormState> formKey = GlobalKey<FormState>();
-  final bool? saved = await showDialog<bool>(
+  final bool? saved = await showModalBottomSheet<bool>(
     context: context,
-    builder: (BuildContext context) {
-      return AlertDialog(
-        title: Text(existing == null
-            ? 'Nuova misurazione bilancia'
-            : 'Modifica misurazione bilancia'),
-        content: Form(
-          key: formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                _field(date, 'Data', isRequired: true),
-                _field(weight, 'Peso kg',
-                    isRequired: true, keyboardType: TextInputType.number),
-                _field(bodyFat, 'Grasso %', keyboardType: TextInputType.number),
-                _field(muscle, 'Massa muscolare kg',
-                    keyboardType: TextInputType.number),
-                _field(water, 'Acqua %', keyboardType: TextInputType.number),
-                _field(bone, 'Massa ossea kg',
-                    keyboardType: TextInputType.number),
-                _field(visceral, 'Grasso viscerale',
-                    keyboardType: TextInputType.number),
-                _field(subcutaneous, 'Grasso sottocutaneo %',
-                    keyboardType: TextInputType.number),
-                _field(bmr, 'Metabolismo basale kcal',
-                    keyboardType: TextInputType.number),
-                _field(bmi, 'BMI', keyboardType: TextInputType.number),
-                _field(metabolicAge, 'Eta metabolica',
-                    keyboardType: TextInputType.number),
-                _field(physique, 'Physique rating'),
-                _field(time, 'Ora misurazione'),
-                _field(device, 'Dispositivo'),
-                _field(reliability, 'Affidabilita'),
-                _field(notes, 'Note', maxLines: 3),
-              ],
-            ),
+    showDragHandle: true,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (BuildContext sheetContext) {
+      return FractionallySizedBox(
+        heightFactor: 0.92,
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+          ),
+          child: Column(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  0,
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        existing == null
+                            ? 'Nuova bilancia'
+                            : 'Modifica bilancia',
+                        style: Theme.of(sheetContext).textTheme.headlineSmall,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Chiudi',
+                      onPressed: () => Navigator.of(sheetContext).pop(false),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Form(
+                  key: formKey,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      0,
+                      AppSpacing.lg,
+                      AppSpacing.md,
+                    ),
+                    children: <Widget>[
+                      _MeasurementSheetSection(
+                        icon: Icons.monitor_weight_outlined,
+                        title: 'Dati principali',
+                        children: <Widget>[
+                          _field(date, 'Data', isRequired: true),
+                          _field(
+                            weight,
+                            'Peso kg',
+                            isRequired: true,
+                            keyboardType: TextInputType.number,
+                          ),
+                          _field(time, 'Ora misurazione'),
+                        ],
+                      ),
+                      _MeasurementSheetSection(
+                        icon: Icons.pie_chart_outline_rounded,
+                        title: 'Composizione corporea',
+                        children: <Widget>[
+                          _field(bodyFat, 'Grasso %',
+                              keyboardType: TextInputType.number),
+                          _field(muscle, 'Massa muscolare kg',
+                              keyboardType: TextInputType.number),
+                          _field(water, 'Acqua %',
+                              keyboardType: TextInputType.number),
+                          _field(bone, 'Massa ossea kg',
+                              keyboardType: TextInputType.number),
+                          _field(visceral, 'Grasso viscerale',
+                              keyboardType: TextInputType.number),
+                          _field(subcutaneous, 'Grasso sottocutaneo %',
+                              keyboardType: TextInputType.number),
+                        ],
+                      ),
+                      _MeasurementSheetSection(
+                        icon: Icons.device_thermostat_rounded,
+                        title: 'Metabolismo e sorgente',
+                        children: <Widget>[
+                          _field(bmr, 'Metabolismo basale kcal',
+                              keyboardType: TextInputType.number),
+                          _field(bmi, 'BMI',
+                              keyboardType: TextInputType.number),
+                          _field(metabolicAge, 'Eta metabolica',
+                              keyboardType: TextInputType.number),
+                          _field(physique, 'Physique rating'),
+                          _field(device, 'Dispositivo'),
+                          _field(reliability, 'Affidabilita'),
+                        ],
+                      ),
+                      _MeasurementSheetSection(
+                        icon: Icons.notes_rounded,
+                        title: 'Note',
+                        children: <Widget>[
+                          _field(notes, 'Note', maxLines: 3),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.sm,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () =>
+                              Navigator.of(sheetContext).pop(false),
+                          child: const Text('Annulla'),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () {
+                            if (formKey.currentState?.validate() ?? false) {
+                              Navigator.of(sheetContext).pop(true);
+                            }
+                          },
+                          child: const Text('Salva'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Annulla'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState?.validate() ?? false) {
-                Navigator.of(context).pop(true);
-              }
-            },
-            child: const Text('Salva'),
-          ),
-        ],
       );
     },
   );
@@ -904,45 +1221,161 @@ Future<void> _showTapeDialog(
       ),
   };
   final GlobalKey<FormState> formKey = GlobalKey<FormState>();
-  final bool? saved = await showDialog<bool>(
+  final bool? saved = await showModalBottomSheet<bool>(
     context: context,
-    builder: (BuildContext context) {
-      return AlertDialog(
-        title: Text(existing == null
-            ? 'Nuova misurazione metro'
-            : 'Modifica misurazione metro'),
-        content: Form(
-          key: formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                _field(date, 'Data', isRequired: true),
-                for (final String code in tapeMeasurementCodes)
-                  _field(
-                    controllers[code]!,
-                    _tapeLabel(code),
-                    keyboardType: TextInputType.number,
+    showDragHandle: true,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (BuildContext sheetContext) {
+      return FractionallySizedBox(
+        heightFactor: 0.92,
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+          ),
+          child: Column(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  0,
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        existing == null ? 'Nuova metro' : 'Modifica metro',
+                        style: Theme.of(sheetContext).textTheme.headlineSmall,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Chiudi',
+                      onPressed: () => Navigator.of(sheetContext).pop(false),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Form(
+                  key: formKey,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      0,
+                      AppSpacing.lg,
+                      AppSpacing.md,
+                    ),
+                    children: <Widget>[
+                      _MeasurementSheetSection(
+                        icon: Icons.event_rounded,
+                        title: 'Misurazione',
+                        children: <Widget>[
+                          _field(date, 'Data', isRequired: true),
+                        ],
+                      ),
+                      _MeasurementSheetSection(
+                        icon: Icons.accessibility_new_rounded,
+                        title: 'Tronco',
+                        children: <Widget>[
+                          for (final String code in const <String>[
+                            'neck_cm',
+                            'shoulders_cm',
+                            'chest_cm',
+                            'waist_cm',
+                            'abdomen_cm',
+                            'hips_cm',
+                          ])
+                            _field(
+                              controllers[code]!,
+                              _tapeLabel(code),
+                              keyboardType: TextInputType.number,
+                            ),
+                        ],
+                      ),
+                      _MeasurementSheetSection(
+                        icon: Icons.fitness_center_rounded,
+                        title: 'Braccia',
+                        children: <Widget>[
+                          for (final String code in const <String>[
+                            'left_arm_cm',
+                            'right_arm_cm',
+                            'left_forearm_cm',
+                            'right_forearm_cm',
+                          ])
+                            _field(
+                              controllers[code]!,
+                              _tapeLabel(code),
+                              keyboardType: TextInputType.number,
+                            ),
+                        ],
+                      ),
+                      _MeasurementSheetSection(
+                        icon: Icons.directions_walk_rounded,
+                        title: 'Gambe',
+                        children: <Widget>[
+                          for (final String code in const <String>[
+                            'left_thigh_cm',
+                            'right_thigh_cm',
+                            'left_calf_cm',
+                            'right_calf_cm',
+                          ])
+                            _field(
+                              controllers[code]!,
+                              _tapeLabel(code),
+                              keyboardType: TextInputType.number,
+                            ),
+                        ],
+                      ),
+                      _MeasurementSheetSection(
+                        icon: Icons.notes_rounded,
+                        title: 'Note',
+                        children: <Widget>[
+                          _field(notes, 'Note', maxLines: 3),
+                        ],
+                      ),
+                    ],
                   ),
-                _field(notes, 'Note', maxLines: 3),
-              ],
-            ),
+                ),
+              ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.sm,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () =>
+                              Navigator.of(sheetContext).pop(false),
+                          child: const Text('Annulla'),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () {
+                            if (formKey.currentState?.validate() ?? false) {
+                              Navigator.of(sheetContext).pop(true);
+                            }
+                          },
+                          child: const Text('Salva'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Annulla'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState?.validate() ?? false) {
-                Navigator.of(context).pop(true);
-              }
-            },
-            child: const Text('Salva'),
-          ),
-        ],
       );
     },
   );

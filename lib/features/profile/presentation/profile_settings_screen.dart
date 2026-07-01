@@ -31,6 +31,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
   final TextEditingController _height = TextEditingController();
   final TextEditingController _stepGoal = TextEditingController();
   final TextEditingController _targetKcal = TextEditingController();
+  final TextEditingController _adaptiveReferenceDays = TextEditingController();
   final TextEditingController _sedentaryBase = TextEditingController();
   final TextEditingController _stepCoeff = TextEditingController();
   final TextEditingController _workoutsPerWeek = TextEditingController();
@@ -58,6 +59,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     _height.dispose();
     _stepGoal.dispose();
     _targetKcal.dispose();
+    _adaptiveReferenceDays.dispose();
     _sedentaryBase.dispose();
     _stepCoeff.dispose();
     _workoutsPerWeek.dispose();
@@ -78,7 +80,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     _load(profile);
     final ScaleMeasurementEntity? latestScale =
         ref.watch(measurementRepositoryProvider).latestScale();
-    final double? currentWeight = latestScale?.weightKg;
+    final double? currentWeight = latestScale?.weightKg ?? profile.initialWeightKg;
     final ProfileNutritionTargets estimate =
         const ProfileNutritionCalculator().calculateFixedTargets(
       profile,
@@ -104,6 +106,12 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
           _SummaryCard(
             title: 'Target app',
             icon: Icons.local_fire_department_outlined,
+            onTap: () => _showTargetExplanationSheet(
+              profile: profile,
+              estimate: estimate,
+              currentWeight: currentWeight,
+              hasScaleMeasurement: latestScale != null,
+            ),
             rows: <_SettingRowData>[
               _SettingRowData(
                   'RMR', '${estimate.rmrKcal.round()} kcal'),
@@ -172,6 +180,10 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
                   _workoutLabel(profile.workoutActivityTypeCode)),
               _SettingRowData('Risposta peso',
                   _weightLossResponseLabel(_weightLossResponse)),
+              _SettingRowData(
+                'Finestra adattiva',
+                '${profile.adaptiveReferenceDays} giorni',
+              ),
             ],
           ),
           const SizedBox(height: AppSpacing.md),
@@ -201,6 +213,10 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               _SettingRowData('Tema', _themeLabel(profile.themeModeCode)),
               _SettingRowData('Lingua',
                   profile.languageCode == 'en' ? 'English' : 'Italiano'),
+              const _SettingRowData(
+                'Dashboard iniziale',
+                'Food Plan',
+              ),
             ],
           ),
           const SizedBox(height: AppSpacing.md),
@@ -301,6 +317,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     _height.text = _num(profile.heightCm);
     _stepGoal.text = profile.defaultStepGoal.toString();
     _targetKcal.text = profile.defaultTargetKcal.toString();
+    _adaptiveReferenceDays.text = profile.adaptiveReferenceDays.toString();
     _sedentaryBase.text =
         profile.sedentaryBaseKcal == 0 ? '' : _num(profile.sedentaryBaseKcal);
     _stepCoeff.text = _num(profile.stepKcalCoefficient);
@@ -339,6 +356,128 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     _language =
         _safeCode(profile.languageCode, const <String>{'it', 'en'}, 'it');
     _weightLossResponse = _weightLossResponseFromKcalPerKg(profile.kcalPerKg);
+  }
+
+  Future<void> _showTargetExplanationSheet({
+    required UserProfileEntity profile,
+    required ProfileNutritionTargets estimate,
+    required double? currentWeight,
+    required bool hasScaleMeasurement,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) {
+        return FractionallySizedBox(
+          heightFactor: 0.86,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              0,
+              AppSpacing.lg,
+              AppSpacing.xxl,
+            ),
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      'Come viene calcolato il target',
+                      style: Theme.of(sheetContext).textTheme.headlineSmall,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Chiudi',
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _ProfileExplanationCard(
+                title: 'Peso usato',
+                body: hasScaleMeasurement
+                    ? 'Il peso arriva dall’ultima misurazione di bilancia.'
+                    : 'Non ci sono misurazioni di bilancia: viene usato il '
+                        'peso iniziale del profilo.',
+                rows: <_SettingRowData>[
+                  _SettingRowData(
+                    'Peso',
+                    currentWeight == null
+                        ? 'n/d'
+                        : '${_num(currentWeight)} kg',
+                  ),
+                  _SettingRowData(
+                    'Finestra adattiva',
+                    '${profile.adaptiveReferenceDays} giorni',
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _ProfileExplanationCard(
+                title: 'Base sedentaria',
+                body: 'L’app stima il metabolismo basale con la formula '
+                    'Harris-Benedict usando sesso, eta, altezza e peso. Il '
+                    'risultato viene moltiplicato per il moltiplicatore '
+                    'sedentario configurato.',
+                rows: <_SettingRowData>[
+                  _SettingRowData('RMR', '${estimate.rmrKcal.round()} kcal'),
+                  _SettingRowData('Moltiplicatore',
+                      'x${estimate.sedentaryMultiplier.toStringAsFixed(2)}'),
+                  _SettingRowData('Base sedentaria',
+                      '${estimate.sedentaryKcal.round()} kcal'),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _ProfileExplanationCard(
+                title: 'Attivita stimata',
+                body: 'Finche la parte allenamenti resta disabilitata, il '
+                    'profilo usa allenamenti medi a settimana, durata media e '
+                    'tipologia per stimare una quota giornaliera.',
+                rows: <_SettingRowData>[
+                  _SettingRowData(
+                    'Allenamenti',
+                    '${profile.averageWorkoutsPerWeek}/settimana',
+                  ),
+                  _SettingRowData(
+                    'Durata',
+                    '${profile.averageWorkoutDurationMinutes} min',
+                  ),
+                  _SettingRowData('Quota media',
+                      '${estimate.workoutDailyKcal.round()} kcal/giorno'),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _ProfileExplanationCard(
+                title: 'Modalita target',
+                body: profile.targetModeCode == TargetModeCodes.fixedUser
+                    ? 'Usa sempre il target fisso impostato dall’utente.'
+                    : profile.targetModeCode ==
+                            TargetModeCodes.appCalculatedFixed
+                        ? 'Usa il target calcolato dal profilo e lo mantiene '
+                            'stabile nei giorni.'
+                        : 'Ogni settimana usa una finestra storica per '
+                            'stimare il TDEE osservato e adattare il target.',
+                rows: <_SettingRowData>[
+                  _SettingRowData(
+                    'Modalita',
+                    _targetModeLabel(profile.targetModeCode),
+                  ),
+                  _SettingRowData('Target calcolato',
+                      '${estimate.targetKcal.round()} kcal'),
+                  _SettingRowData(
+                    'Risposta peso',
+                    _weightLossResponseLabel(_weightLossResponse),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _showProfileSheet(
@@ -436,6 +575,19 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
           const SizedBox(height: AppSpacing.md),
           _field(_targetKcal, 'Target fisso kcal',
               keyboardType: TextInputType.number),
+          if (_targetMode == TargetModeCodes.adaptiveWeekly) ...<Widget>[
+            _field(
+              _adaptiveReferenceDays,
+              'Finestra adattiva giorni',
+              keyboardType: TextInputType.number,
+            ),
+            Text(
+              'Default 28 giorni. I giorni con dati parziali o non affidabili '
+              'non vengono conteggiati nel TDEE osservato.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
           TextFormField(
             initialValue: '${estimate.rmrKcal.round()} kcal',
             enabled: false,
@@ -608,6 +760,27 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
                 setSheetState(() => _language = value);
               }
             },
+          ),
+          const SizedBox(height: AppSpacing.md),
+          DropdownButtonFormField<String>(
+            initialValue: 'food',
+            decoration: const InputDecoration(
+              labelText: 'Dashboard iniziale',
+              helperText:
+                  'La dashboard allenamenti sara disponibile nella prossima fase.',
+            ),
+            items: const <DropdownMenuItem<String>>[
+              DropdownMenuItem<String>(
+                value: 'food',
+                child: Text('Food Plan'),
+              ),
+              DropdownMenuItem<String>(
+                value: 'workout',
+                enabled: false,
+                child: Text('Allenamenti - prossimamente'),
+              ),
+            ],
+            onChanged: null,
           ),
         ];
       },
@@ -968,6 +1141,8 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       profile.defaultStepGoal = _toInt(_stepGoal.text) ?? 8000;
       profile.defaultTargetKcal = _toInt(_targetKcal.text) ?? 1980;
       profile.targetModeCode = _targetMode;
+      profile.adaptiveReferenceDays =
+          (_toInt(_adaptiveReferenceDays.text) ?? 28).clamp(7, 180);
       profile.sedentaryBaseKcal = 0;
       profile.rmrActivityFactor = 1.10;
       profile.stepKcalCoefficient = _toDouble(_stepCoeff.text) ?? 0.020;
@@ -1083,17 +1258,20 @@ class _SummaryCard extends StatelessWidget {
     required this.icon,
     required this.rows,
     this.onEdit,
+    this.onTap,
   });
 
   final String title;
   final IconData icon;
   final List<_SettingRowData> rows;
   final VoidCallback? onEdit;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     return TtAppCard(
+      onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -1149,6 +1327,40 @@ class _SettingsMetricRow extends StatelessWidget {
               style: Theme.of(context).textTheme.titleSmall,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileExplanationCard extends StatelessWidget {
+  const _ProfileExplanationCard({
+    required this.title,
+    required this.body,
+    required this.rows,
+  });
+
+  final String title;
+  final String body;
+  final List<_SettingRowData> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return TtAppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(body),
+          const SizedBox(height: AppSpacing.md),
+          for (final _SettingRowData row in rows)
+            _SettingsMetricRow(row: row),
         ],
       ),
     );

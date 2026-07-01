@@ -1,8 +1,13 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:objectbox/objectbox.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 import '../../../app/theme/app_spacing.dart';
 import '../../../core/database/objectbox_providers.dart';
@@ -826,21 +831,39 @@ class FoodWeekScreen extends ConsumerWidget {
               if (byDate[_dateKey(monday.add(Duration(days: index)))] != null)
                 byDate[_dateKey(monday.add(Duration(days: index)))]!,
           ];
-          final double avgCalories = weekDays.isEmpty
-              ? 0
-              : weekDays.fold<double>(
-                    0,
-                    (double sum, DailyRecordEntity day) =>
-                        sum + analytics.caloriesForDate(day.dateKey),
-                  ) /
-                  weekDays.length;
-          final double avgSteps = weekDays.isEmpty
-              ? 0
-              : weekDays.fold<double>(
-                    0,
-                    (double sum, DailyRecordEntity day) => sum + day.steps,
-                  ) /
-                  weekDays.length;
+          final List<TtChartPoint> caloriePoints = <TtChartPoint>[
+            for (final DailyRecordEntity day in weekDays)
+              TtChartPoint(
+                label: _shortWeekdayLabel(DateTime.parse(day.dateKey)),
+                value: analytics.caloriesForDate(day.dateKey),
+              ),
+          ];
+          final List<TtChartPoint> calorieTargetPoints = <TtChartPoint>[
+            for (final DailyRecordEntity day in weekDays)
+              TtChartPoint(
+                label: _shortWeekdayLabel(DateTime.parse(day.dateKey)),
+                value: analytics.targetForDay(
+                  day: day,
+                  allDays: refreshed,
+                  profile: profile,
+                ),
+              ),
+          ];
+          final List<TtChartPoint> stepPoints = <TtChartPoint>[
+            for (final DailyRecordEntity day in weekDays)
+              TtChartPoint(
+                label: _shortWeekdayLabel(DateTime.parse(day.dateKey)),
+                value: day.steps.toDouble(),
+              ),
+          ];
+          final List<TtChartPoint> stepTargetPoints = <TtChartPoint>[
+            for (final DailyRecordEntity day in weekDays)
+              TtChartPoint(
+                label: _shortWeekdayLabel(DateTime.parse(day.dateKey)),
+                value: (day.stepGoal ?? profile?.defaultStepGoal ?? 0)
+                    .toDouble(),
+              ),
+          ];
           return ListView(
             padding: _screenPadding,
             children: <Widget>[
@@ -881,14 +904,22 @@ class FoodWeekScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
-              _MetricGrid(
-                metrics: <_Metric>[
-                  _Metric('Media calorie', _fmtKcal(avgCalories)),
-                  _Metric('Media passi', avgSteps.round().toString()),
-                  _Metric('Giorni', '${weekDays.length}/7'),
-                  _Metric(
-                      'Delta attività', _fmtKcal(adaptive.activityDeltaKcal)),
-                ],
+              _ChartCard(
+                title: 'Calorie',
+                subtitle: 'Istogramma della settimana con target tratteggiato',
+                child: TtMiniBarChart(
+                  points: caloriePoints,
+                  targetPoints: calorieTargetPoints,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _ChartCard(
+                title: 'Passi',
+                subtitle: 'Passi giornalieri e obiettivo',
+                child: TtMiniBarChart(
+                  points: stepPoints,
+                  targetPoints: stepTargetPoints,
+                ),
               ),
               const SizedBox(height: AppSpacing.sectionGap),
               _WeekCalendarStrip(
@@ -4817,6 +4848,12 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
             onPressed: _showRecipeNotesDialog,
             icon: const Icon(Icons.note_alt_outlined),
           ),
+          if (_recipe != null)
+            IconButton(
+              tooltip: 'Elimina ricetta',
+              onPressed: _confirmDeleteRecipe,
+              icon: const Icon(Icons.delete_outline_rounded),
+            ),
         ],
       ),
       bottomNavigationBar:
@@ -4951,46 +4988,6 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
           yieldController: yieldController,
           image: image,
         );
-/*
-        return AlertDialog(
-          title: const Text('Dati ricetta'),
-          content: Form(
-            key: formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  _field(title, 'Titolo', isRequired: true),
-                  _field(summary, 'Descrizione', maxLines: 3),
-                  _field(servings, 'Porzioni',
-                      keyboardType: TextInputType.number),
-                  _field(prep, 'Preparazione min',
-                      keyboardType: TextInputType.number),
-                  _field(cook, 'Cottura min',
-                      keyboardType: TextInputType.number),
-                  _field(difficulty, 'Difficoltà'),
-                  _field(yieldController, 'Peso finale prodotto g',
-                      keyboardType: TextInputType.number),
-                  _field(image, 'URL o percorso immagine'),
-                ],
-              ),
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Annulla'),
-            ),
-            FilledButton(
-              onPressed: () {
-                if (formKey.currentState?.validate() ?? false) {
-                  Navigator.of(context).pop(true);
-                }
-              },
-              child: const Text('Applica'),
-            ),
-          ],
-        );*/
       },
     );
     if (saved != true) {
@@ -5007,6 +5004,106 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       _image.text = image.text.trim();
     });
     _saveRecipe();
+  }
+
+  Future<void> _confirmDeleteRecipe() async {
+    final RecipeEntity? recipe = _recipe;
+    if (recipe == null) {
+      return;
+    }
+    final bool? confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.sm,
+              AppSpacing.lg,
+              AppSpacing.lg,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Elimina ricetta',
+                  style: Theme.of(sheetContext).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'La ricetta sparira dall archivio. I pasti dove era gia '
+                  'stata inserita manterranno gli snapshot di calorie, macro '
+                  'e nome, ma non avranno piu un collegamento apribile.',
+                  style: Theme.of(sheetContext).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(false),
+                        child: const Text('Annulla'),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.of(sheetContext).pop(true),
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        label: const Text('Elimina'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    ref.read(recipeRepositoryProvider).softDeleteAndDetachMealItems(recipe);
+    ref.invalidate(recipeArchiveProvider);
+    _invalidateFood(ref);
+    if (mounted) {
+      context.go('/food/recipes');
+    }
+  }
+
+  Future<void> _pickRecipeImage(TextEditingController image) async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+      withData: false,
+    );
+    final String? selectedPath = result?.files.single.path;
+    if (selectedPath == null || selectedPath.trim().isEmpty) {
+      return;
+    }
+    final Directory documents = await getApplicationDocumentsDirectory();
+    final Directory imageDir =
+        Directory(path.join(documents.path, 'recipe_images'));
+    if (!imageDir.existsSync()) {
+      imageDir.createSync(recursive: true);
+    }
+    final File source = File(selectedPath);
+    if (!source.existsSync()) {
+      return;
+    }
+    final String safeName = path
+        .basenameWithoutExtension(selectedPath)
+        .replaceAll(RegExp(r'[^a-zA-Z0-9_-]+'), '_');
+    final String extension = path.extension(selectedPath);
+    final String fileName =
+        '${DateTime.now().millisecondsSinceEpoch}_${safeName.isEmpty ? 'recipe' : safeName}$extension';
+    final File target = File(path.join(imageDir.path, fileName));
+    await source.copy(target.path);
+    image.text = target.path;
   }
 
   Widget _buildRecipeMetaSheet({
@@ -5079,7 +5176,10 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                       children: <Widget>[
                         _field(title, 'Titolo', isRequired: true),
                         _field(summary, 'Descrizione', maxLines: 3),
-                        _field(image, 'URL o percorso immagine'),
+                        _RecipeImagePickerField(
+                          controller: image,
+                          onPick: () => _pickRecipeImage(image),
+                        ),
                       ],
                     ),
                     _TrackingSheetSection(
@@ -5639,100 +5739,23 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   }
 
   Future<void> _showRecipeNotesDialog() async {
-    final TextEditingController steps =
-        TextEditingController(text: _steps.text);
-    final bool? saved = await showModalBottomSheet<bool>(
+    final List<String>? savedSteps = await showModalBottomSheet<List<String>>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
       useSafeArea: true,
       builder: (BuildContext sheetContext) {
-        return FractionallySizedBox(
-          heightFactor: 0.72,
-          child: Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
-            ),
-            child: Column(
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    0,
-                    AppSpacing.lg,
-                    AppSpacing.md,
-                  ),
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          'Note e passaggi',
-                          style: Theme.of(sheetContext).textTheme.titleLarge,
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Chiudi',
-                        onPressed: () => Navigator.of(sheetContext).pop(false),
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg,
-                      0,
-                      AppSpacing.lg,
-                      AppSpacing.md,
-                    ),
-                    children: <Widget>[
-                      _field(
-                        steps,
-                        'Passaggi, uno per riga',
-                        maxLines: 10,
-                      ),
-                    ],
-                  ),
-                ),
-                SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg,
-                      AppSpacing.sm,
-                      AppSpacing.lg,
-                      AppSpacing.lg,
-                    ),
-                    child: Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () =>
-                                Navigator.of(sheetContext).pop(false),
-                            child: const Text('Annulla'),
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: FilledButton(
-                            onPressed: () =>
-                                Navigator.of(sheetContext).pop(true),
-                            child: const Text('Applica'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+        return _RecipeStepsSheet(
+          initialSteps: _steps.text
+              .split('\n')
+              .map((String line) => line.trim())
+              .where((String line) => line.isNotEmpty)
+              .toList(),
         );
       },
     );
-    if (saved == true) {
-      setState(() => _steps.text = steps.text);
+    if (savedSteps != null) {
+      setState(() => _steps.text = savedSteps.join('\n'));
       _saveRecipe();
     }
   }
@@ -5933,7 +5956,7 @@ class _MonthCalendarCardState extends State<_MonthCalendarCard> {
             children: <Widget>[
               Expanded(
                 child: Text(
-                  '📅 Calendario',
+                  '🗓️ Calendario',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
@@ -6098,85 +6121,162 @@ class _WeekCalendarStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TtAppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            'Calendario settimanale',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: AppSpacing.md),
-          LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final double cellWidth =
-                  (constraints.maxWidth - AppSpacing.sm) / 2;
-              Widget buildCell(int index) {
-                final DateTime date = monday.add(Duration(days: index));
-                final String dateKey = _dateKey(date);
-                final DailyRecordEntity? day = daysByDate[dateKey];
-                final List<MealWithItems> meals =
-                    mealRepository.getMealsWithItemsForDate(dateKey);
-                final double kcal = meals.fold<double>(
-                  0,
-                  (double sum, MealWithItems meal) => sum + meal.totals.kcal,
-                );
-                final bool hasFood = meals.any(
-                  (MealWithItems meal) => meal.items.isNotEmpty,
-                );
-                final bool hasFreeMeal = meals.any(
-                  (MealWithItems meal) =>
-                      meal.meal.mealModeCode == 'free',
-                );
-                final bool hasCompleteMeals = _hasAllMealSlotsLogged(meals);
-                return SizedBox(
-                  width: cellWidth,
-                  height: 146,
-                  child: _CalendarDayCell(
-                    date: date,
-                    day: day,
-                    mealsCount: meals
-                        .where((MealWithItems meal) => meal.items.isNotEmpty)
-                        .length,
-                    kcal: kcal,
-                    targetKcal: day == null
-                        ? null
-                        : analytics.targetForDay(
-                            day: day,
-                            allDays: daysByDate.values.toList(),
-                            profile: profile,
-                          ),
-                    compact: false,
-                    hasFood: hasFood,
-                    hasCompleteMeals: hasCompleteMeals,
-                    hasFreeMeal: hasFreeMeal,
-                    weight: day == null ? null : analytics.weightForDay(day),
-                  ),
-                );
-              }
+    Widget buildCard(int index) {
+      final DateTime date = monday.add(Duration(days: index));
+      final String dateKey = _dateKey(date);
+      final DailyRecordEntity? day = daysByDate[dateKey];
+      final List<MealWithItems> meals =
+          mealRepository.getMealsWithItemsForDate(dateKey);
+      final int loggedMeals = meals
+          .where((MealWithItems meal) => meal.items.isNotEmpty)
+          .length
+          .clamp(0, 4)
+          .toInt();
+      final double kcal = meals.fold<double>(
+        0,
+        (double sum, MealWithItems meal) => sum + meal.totals.kcal,
+      );
+      return _WeekDaySummaryCard(
+        date: date,
+        day: day,
+        loggedMeals: loggedMeals,
+        kcal: kcal,
+        steps: day?.steps ?? 0,
+        weight: day == null ? null : analytics.weightForDay(day),
+      );
+    }
 
-              return Column(
-                children: <Widget>[
-                  for (int row = 0; row < 3; row += 1) ...<Widget>[
-                    Row(
-                      children: <Widget>[
-                        buildCell(row * 2),
-                        const SizedBox(width: AppSpacing.sm),
-                        buildCell(row * 2 + 1),
-                      ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          'Giorni della settimana',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        for (int index = 0; index < 7; index += 1) ...<Widget>[
+          buildCard(index),
+          if (index != 6) const SizedBox(height: AppSpacing.sm),
+        ],
+      ],
+    );
+  }
+}
+
+class _WeekDaySummaryCard extends StatelessWidget {
+  const _WeekDaySummaryCard({
+    required this.date,
+    required this.day,
+    required this.loggedMeals,
+    required this.kcal,
+    required this.steps,
+    required this.weight,
+  });
+
+  final DateTime date;
+  final DailyRecordEntity? day;
+  final int loggedMeals;
+  final double kcal;
+  final int steps;
+  final double? weight;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final String dateKey = _dateKey(date);
+    final double progress = (loggedMeals / 4).clamp(0, 1).toDouble();
+    final String weekday =
+        day?.weekdayLabel.isNotEmpty == true ? day!.weekdayLabel : _weekdayFromDate(date);
+    return TtAppCard(
+      onTap: () => context.push('/food/days/$dateKey'),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Row(
+        children: <Widget>[
+          SizedBox.square(
+            dimension: 64,
+            child: Stack(
+              alignment: Alignment.center,
+              children: <Widget>[
+                CircularProgressIndicator(
+                  value: progress,
+                  strokeWidth: 7,
+                  backgroundColor: colors.surfaceContainerHighest,
+                ),
+                Text(
+                  '$loggedMeals/4',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  '$weekday ${date.day}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Wrap(
+                  spacing: AppSpacing.md,
+                  runSpacing: AppSpacing.xs,
+                  children: <Widget>[
+                    _InlineInfo(
+                      icon: '⚖',
+                      label: _fmtNullable(weight, 'kg'),
                     ),
-                    const SizedBox(height: AppSpacing.sm),
+                    _InlineInfo(
+                      icon: '🔥',
+                      label: _fmtKcal(kcal),
+                    ),
+                    _InlineInfo(
+                      icon: '🚶',
+                      label: '$steps passi',
+                    ),
                   ],
-                  Align(
-                    alignment: Alignment.center,
-                    child: buildCell(6),
-                  ),
-                ],
-              );
-            },
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: colors.onSurfaceVariant,
           ),
         ],
       ),
+    );
+  }
+}
+
+class _InlineInfo extends StatelessWidget {
+  const _InlineInfo({
+    required this.icon,
+    required this.label,
+  });
+
+  final String icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(icon),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
     );
   }
 }
@@ -7108,6 +7208,368 @@ class _ActionSheetCard extends StatelessWidget {
   }
 }
 
+class _RecipeImagePickerField extends StatelessWidget {
+  const _RecipeImagePickerField({
+    required this.controller,
+    required this.onPick,
+  });
+
+  final TextEditingController controller;
+  final Future<void> Function() onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (BuildContext context, TextEditingValue value, _) {
+        final String imagePath = value.text.trim();
+        return TtAppCard(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            children: <Widget>[
+              _FoodThumb(
+                imageUrl: imagePath,
+                fallbackIcon: Icons.image_outlined,
+                size: 64,
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Immagine ricetta',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      imagePath.isEmpty
+                          ? 'Nessuna immagine selezionata'
+                          : imagePath,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: FilledButton.icon(
+                        onPressed: onPick,
+                        icon: const Icon(Icons.folder_open_rounded),
+                        label: const Text('Scegli file'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _RecipeStepsSheet extends StatefulWidget {
+  const _RecipeStepsSheet({required this.initialSteps});
+
+  final List<String> initialSteps;
+
+  @override
+  State<_RecipeStepsSheet> createState() => _RecipeStepsSheetState();
+}
+
+class _RecipeStepsSheetState extends State<_RecipeStepsSheet> {
+  final TextEditingController _newStep = TextEditingController();
+  final TextEditingController _editStep = TextEditingController();
+  late List<_EditableRecipeStep> _steps;
+  int? _editingIndex;
+  int _nextStepId = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _steps = widget.initialSteps
+        .map((String text) => _EditableRecipeStep(_nextStepId++, text))
+        .toList();
+  }
+
+  @override
+  void dispose() {
+    _newStep.dispose();
+    _editStep.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FractionallySizedBox(
+      heightFactor: 0.92,
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: Column(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                0,
+                AppSpacing.sm,
+                AppSpacing.md,
+              ),
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      'Step ricetta',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Chiudi',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  0,
+                  AppSpacing.lg,
+                  AppSpacing.md,
+                ),
+                children: <Widget>[
+                  TtAppCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'Nuovo step',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        TextField(
+                          controller: _newStep,
+                          minLines: 2,
+                          maxLines: 5,
+                          decoration: const InputDecoration(
+                            labelText: 'Descrizione step',
+                            alignLabelWithHint: true,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: FilledButton.icon(
+                            onPressed: _insertStep,
+                            icon: const Icon(Icons.add_rounded),
+                            label: const Text('Inserisci step'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  if (_steps.isEmpty)
+                    const _EmptyInline(message: 'Nessuno step inserito.')
+                  else
+                    ReorderableListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      buildDefaultDragHandles: false,
+                      itemCount: _steps.length,
+                      onReorder: _reorder,
+                      itemBuilder: (BuildContext context, int index) {
+                        return Padding(
+                          key: ValueKey<int>(_steps[index].id),
+                          padding:
+                              const EdgeInsets.only(bottom: AppSpacing.sm),
+                          child: _RecipeStepRecord(
+                            index: index,
+                            text: _steps[index].text,
+                            isEditing: _editingIndex == index,
+                            editController: _editStep,
+                            onDoubleTap: () => _startEditing(index),
+                            onConfirmEdit: () => _confirmEdit(index),
+                            dragHandle: ReorderableDragStartListener(
+                              index: index,
+                              child: const Icon(Icons.drag_handle_rounded),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                ],
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Annulla'),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () => Navigator.of(context).pop(
+                          _steps
+                              .map((_EditableRecipeStep step) => step.text)
+                              .toList(),
+                        ),
+                        child: const Text('Applica'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _insertStep() {
+    final String text = _newStep.text.trim();
+    if (text.isEmpty) {
+      return;
+    }
+    setState(() {
+      _steps.add(_EditableRecipeStep(_nextStepId++, text));
+      _newStep.clear();
+    });
+  }
+
+  void _reorder(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) {
+        newIndex -= 1;
+      }
+      final _EditableRecipeStep item = _steps.removeAt(oldIndex);
+      _steps.insert(newIndex, item);
+      _editingIndex = null;
+    });
+  }
+
+  void _startEditing(int index) {
+    setState(() {
+      _editingIndex = index;
+      _editStep.text = _steps[index].text;
+    });
+  }
+
+  void _confirmEdit(int index) {
+    final String text = _editStep.text.trim();
+    if (text.isEmpty) {
+      return;
+    }
+    setState(() {
+      _steps[index].text = text;
+      _editingIndex = null;
+      _editStep.clear();
+    });
+  }
+}
+
+class _EditableRecipeStep {
+  _EditableRecipeStep(this.id, this.text);
+
+  final int id;
+  String text;
+}
+
+class _RecipeStepRecord extends StatelessWidget {
+  const _RecipeStepRecord({
+    required this.index,
+    required this.text,
+    required this.isEditing,
+    required this.editController,
+    required this.onDoubleTap,
+    required this.onConfirmEdit,
+    required this.dragHandle,
+  });
+
+  final int index;
+  final String text;
+  final bool isEditing;
+  final TextEditingController editController;
+  final VoidCallback onDoubleTap;
+  final VoidCallback onConfirmEdit;
+  final Widget dragHandle;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onDoubleTap: onDoubleTap,
+      child: TtAppCard(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: colors.primaryContainer,
+                  foregroundColor: colors.onPrimaryContainer,
+                  child: Text('${index + 1}'),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    text,
+                    maxLines: isEditing ? null : 2,
+                    overflow: isEditing ? TextOverflow.visible : TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                dragHandle,
+              ],
+            ),
+            if (isEditing) ...<Widget>[
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: editController,
+                minLines: 2,
+                maxLines: 6,
+                decoration: const InputDecoration(
+                  labelText: 'Modifica step',
+                  alignLabelWithHint: true,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.icon(
+                  onPressed: onConfirmEdit,
+                  icon: const Icon(Icons.check_rounded),
+                  label: const Text('Conferma'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _IngredientCard extends StatelessWidget {
   const _IngredientCard({required this.ingredient});
 
@@ -7215,21 +7677,36 @@ class _FoodThumb extends StatelessWidget {
                   color: Theme.of(context).colorScheme.primary,
                 ),
               )
-            : Image.network(
-                imageUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) {
-                  return ColoredBox(
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    child: Icon(
-                      fallbackIcon,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  );
-                },
-              ),
+            : _imageProviderWidget(context),
       ),
     );
+  }
+
+  Widget _imageProviderWidget(BuildContext context) {
+    final String source = imageUrl.trim();
+    final Widget fallback = ColoredBox(
+      color: Theme.of(context).colorScheme.primaryContainer,
+      child: Icon(
+        fallbackIcon,
+        color: Theme.of(context).colorScheme.primary,
+      ),
+    );
+    if (source.startsWith('http://') || source.startsWith('https://')) {
+      return Image.network(
+        source,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => fallback,
+      );
+    }
+    final File file = File(source);
+    if (file.existsSync()) {
+      return Image.file(
+        file,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => fallback,
+      );
+    }
+    return fallback;
   }
 }
 
@@ -7629,6 +8106,162 @@ void _showInsights(BuildContext context, FoodHubV01Data data) {
 }
 
 void _showAdaptiveDetails(BuildContext context, WeekAdaptiveSummary summary) {
+  final double intakeFactor =
+      ((summary.validIntakeDays - 4) / 10).clamp(0, 1).toDouble();
+  final double weightFactor =
+      ((summary.validWeightDays - 3) / 8).clamp(0, 1).toDouble();
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (BuildContext sheetContext) {
+      return FractionallySizedBox(
+        heightFactor: 0.92,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.sm,
+            AppSpacing.lg,
+            AppSpacing.xxl,
+          ),
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    'Dettaglio target adattivo',
+                    style: Theme.of(sheetContext).textTheme.headlineSmall,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Chiudi',
+                  onPressed: () => Navigator.of(sheetContext).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            TtAppCard(
+              child: _MetricGrid(
+                metrics: <_Metric>[
+                  _Metric('Target settimana', _fmtKcal(summary.targetKcal)),
+                  _Metric('TDEE ref', _fmtKcal(summary.tdeeRefKcal)),
+                  _Metric('Confidenza',
+                      '${(summary.observedConfidence * 100).round()}%'),
+                  _Metric('Giorni ref', summary.referenceDaysCount.toString()),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _AdaptiveExplanationBlock(
+              title: '1. TDEE teorico',
+              body: 'Parte dal metabolismo basale stimato dal profilo e dal '
+                  'peso di riferimento. Il metabolismo viene moltiplicato per '
+                  'il fattore sedentario e poi si aggiunge l’attivita media '
+                  'dei giorni di riferimento.',
+              rows: <_Metric>[
+                _Metric('RMR', _fmtNullableKcal(summary.rmrKcal)),
+                _Metric('Peso ref', _fmtNullable(summary.weightRefKg, 'kg')),
+                _Metric('Attivita ref', _fmtKcal(summary.activeRefKcal)),
+                _Metric('TDEE teorico', _fmtKcal(summary.tdeeTheoreticalKcal)),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _AdaptiveExplanationBlock(
+              title: '2. TDEE osservato',
+              body: 'Quando ci sono abbastanza giorni alimentari e pesi '
+                  'validi, l’app stima il consumo osservato dalla media delle '
+                  'calorie assunte e dalla variazione di peso. I pasti liberi '
+                  'non tracciati vengono esclusi, quelli stimati pesano meno.',
+              rows: <_Metric>[
+                _Metric('TDEE osservato',
+                    _fmtNullableKcal(summary.tdeeObservedKcal)),
+                _Metric('Media kcal ref',
+                    _fmtNullableKcal(summary.avgCalories)),
+                _Metric(
+                  'Delta peso',
+                  summary.deltaWeightKg == null
+                      ? 'n/d'
+                      : '${_fmt(summary.deltaWeightKg!)} kg',
+                ),
+                _Metric('Coefficiente peso',
+                    '${summary.kcalPerKg.round()} kcal/kg'),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _AdaptiveExplanationBlock(
+              title: '3. Confidenza osservata',
+              body: 'La confidenza non arriva mai al 100%: il massimo e 80%. '
+                  'Nel calcolo pesano i giorni con introito valido, i punti '
+                  'peso disponibili e l’affidabilita nutrizionale dei pasti.',
+              rows: <_Metric>[
+                _Metric('Introiti validi', summary.validIntakeDays.toString()),
+                _Metric('Pesi validi', summary.validWeightDays.toString()),
+                _Metric('Fattore introiti',
+                    '${(intakeFactor * 100).round()}%'),
+                _Metric('Fattore pesi', '${(weightFactor * 100).round()}%'),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _AdaptiveExplanationBlock(
+              title: '4. Target finale',
+              body: 'Il TDEE teorico e quello osservato vengono miscelati '
+                  'usando la confidenza. Poi viene aggiunto il delta tra '
+                  'attivita media della settimana corrente e attivita media '
+                  'di riferimento.',
+              rows: <_Metric>[
+                _Metric('Attivita settimana',
+                    _fmtKcal(summary.currentWeekActiveKcal)),
+                _Metric('Delta attivita',
+                    _signedKcal(summary.activityDeltaKcal)),
+                _Metric('Target finale', _fmtKcal(summary.targetKcal)),
+                _Metric('Stato', summary.targetStatusCode),
+              ],
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+class _AdaptiveExplanationBlock extends StatelessWidget {
+  const _AdaptiveExplanationBlock({
+    required this.title,
+    required this.body,
+    required this.rows,
+  });
+
+  final String title;
+  final String body;
+  final List<_Metric> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return TtAppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(body),
+          const SizedBox(height: AppSpacing.md),
+          _MetricGrid(metrics: rows),
+        ],
+      ),
+    );
+  }
+}
+
+// ignore: unused_element
+void _legacyAdaptiveDetailsDialog(
+    BuildContext context, WeekAdaptiveSummary summary) {
   showDialog<void>(
     context: context,
     builder: (BuildContext context) {
@@ -7799,6 +8432,19 @@ String _dateKey(DateTime date) {
   return '${date.year.toString().padLeft(4, '0')}-'
       '${date.month.toString().padLeft(2, '0')}-'
       '${date.day.toString().padLeft(2, '0')}';
+}
+
+String _shortWeekdayLabel(DateTime date) {
+  const List<String> labels = <String>[
+    'Lun',
+    'Mar',
+    'Mer',
+    'Gio',
+    'Ven',
+    'Sab',
+    'Dom',
+  ];
+  return labels[date.weekday - 1];
 }
 
 String _weekdayFromDate(DateTime date) {

@@ -115,6 +115,39 @@ class RecipeRepository {
       });
   }
 
+  void softDeleteAndDetachMealItems(RecipeEntity recipe) {
+    _store.runInTransaction(TxMode.write, () {
+      final int now = _clock.nowEpochMs();
+      final RecipeEntity? current = _recipeBox.get(recipe.id);
+      if (current == null || current.deletedAtEpochMs != null) {
+        return;
+      }
+      final Box<MealItemEntity> mealItemBox = _store.box<MealItemEntity>();
+      final List<MealItemEntity> linkedItems = mealItemBox
+          .getAll()
+          .where(
+            (MealItemEntity item) =>
+                item.deletedAtEpochMs == null &&
+                item.kindCode == 'recipe' &&
+                item.sourceUuid == current.uuid,
+          )
+          .toList();
+      for (final MealItemEntity item in linkedItems) {
+        item.sourceUuid = '';
+        item.notes = item.notes.trim().isEmpty
+            ? 'Ricetta rimossa dall archivio; dati mantenuti come snapshot.'
+            : item.notes;
+        item.updatedAtEpochMs = now;
+      }
+      if (linkedItems.isNotEmpty) {
+        mealItemBox.putMany(linkedItems);
+      }
+      current.deletedAtEpochMs = now;
+      current.updatedAtEpochMs = now;
+      _recipeBox.put(current);
+    });
+  }
+
   List<RecipeIngredientEntity> getIngredients(int recipeId) {
     return _ingredientBox
         .getAll()
