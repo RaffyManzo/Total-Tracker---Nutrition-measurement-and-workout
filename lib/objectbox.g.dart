@@ -431,7 +431,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(5, 8645411654677832403),
     name: 'UserProfileEntity',
-    lastPropertyId: const obx_int.IdUid(20, 7558321544276648307),
+    lastPropertyId: const obx_int.IdUid(33, 1473179430350576053),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -553,6 +553,84 @@ final _entities = <obx_int.ModelEntity>[
         id: const obx_int.IdUid(20, 7558321544276648307),
         name: 'deletedAtEpochMs',
         type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(21, 9170237336588657258),
+        name: 'initialWeightKg',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(22, 1741558005734798475),
+        name: 'targetModeCode',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(23, 6702308637279339882),
+        name: 'sedentaryBaseKcal',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(24, 6767737091703212743),
+        name: 'averageWorkoutsPerWeek',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(25, 7511260302708420180),
+        name: 'averageWorkoutDurationMinutes',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(26, 4398930564724218450),
+        name: 'workoutActivityTypeCode',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(27, 4482280076228219),
+        name: 'macroModeCode',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(28, 7836868972280292683),
+        name: 'proteinGramsPerKg',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(29, 1967684329145277456),
+        name: 'fatGramsPerKg',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(30, 7048752585847005388),
+        name: 'fiberGramsPerKg',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(31, 292242023562058754),
+        name: 'carbsGramsPerKg',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(32, 2710302272522947113),
+        name: 'themeModeCode',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(33, 1473179430350576053),
+        name: 'languageCode',
+        type: 9,
         flags: 0,
       ),
     ],
@@ -3399,7 +3477,14 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final biologicalSexCodeOffset = fbb.writeString(
           object.biologicalSexCode,
         );
-        fbb.startTable(21);
+        final targetModeCodeOffset = fbb.writeString(object.targetModeCode);
+        final workoutActivityTypeCodeOffset = fbb.writeString(
+          object.workoutActivityTypeCode,
+        );
+        final macroModeCodeOffset = fbb.writeString(object.macroModeCode);
+        final themeModeCodeOffset = fbb.writeString(object.themeModeCode);
+        final languageCodeOffset = fbb.writeString(object.languageCode);
+        fbb.startTable(34);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, uuidOffset);
         fbb.addOffset(2, displayNameOffset);
@@ -3420,6 +3505,19 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addInt64(17, object.createdAtEpochMs);
         fbb.addInt64(18, object.updatedAtEpochMs);
         fbb.addInt64(19, object.deletedAtEpochMs);
+        fbb.addFloat64(20, object.initialWeightKg);
+        fbb.addOffset(21, targetModeCodeOffset);
+        fbb.addFloat64(22, object.sedentaryBaseKcal);
+        fbb.addInt64(23, object.averageWorkoutsPerWeek);
+        fbb.addInt64(24, object.averageWorkoutDurationMinutes);
+        fbb.addOffset(25, workoutActivityTypeCodeOffset);
+        fbb.addOffset(26, macroModeCodeOffset);
+        fbb.addFloat64(27, object.proteinGramsPerKg);
+        fbb.addFloat64(28, object.fatGramsPerKg);
+        fbb.addFloat64(29, object.fiberGramsPerKg);
+        fbb.addFloat64(30, object.carbsGramsPerKg);
+        fbb.addOffset(31, themeModeCodeOffset);
+        fbb.addOffset(32, languageCodeOffset);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -3451,6 +3549,11 @@ obx_int.ModelDefinition getObjectBoxModel() {
           rootOffset,
           14,
         );
+        final initialWeightKgParam = const fb.Float64Reader().vTableGetNullable(
+          buffer,
+          rootOffset,
+          44,
+        );
         final defaultStepGoalParam = const fb.Int64Reader().vTableGet(
           buffer,
           rootOffset,
@@ -3461,6 +3564,53 @@ obx_int.ModelDefinition getObjectBoxModel() {
           buffer,
           rootOffset,
           18,
+          0,
+        );
+        final targetModeCodeParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 46, '');
+        final sedentaryBaseKcalParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          48,
+          0,
+        );
+        final averageWorkoutsPerWeekParam = const fb.Int64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          50,
+          0,
+        );
+        final averageWorkoutDurationMinutesParam =
+            const fb.Int64Reader().vTableGet(buffer, rootOffset, 52, 0);
+        final workoutActivityTypeCodeParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 54, '');
+        final macroModeCodeParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 56, '');
+        final proteinGramsPerKgParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          58,
+          0,
+        );
+        final fatGramsPerKgParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          60,
+          0,
+        );
+        final fiberGramsPerKgParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          62,
+          0,
+        );
+        final carbsGramsPerKgParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          64,
           0,
         );
         final waterGlassLitersParam = const fb.Float64Reader().vTableGet(
@@ -3507,6 +3657,12 @@ obx_int.ModelDefinition getObjectBoxModel() {
           34,
           0,
         );
+        final themeModeCodeParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 66, '');
+        final languageCodeParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 68, '');
         final isActiveParam = const fb.BoolReader().vTableGet(
           buffer,
           rootOffset,
@@ -3537,8 +3693,19 @@ obx_int.ModelDefinition getObjectBoxModel() {
           birthDateEpochDay: birthDateEpochDayParam,
           biologicalSexCode: biologicalSexCodeParam,
           heightCm: heightCmParam,
+          initialWeightKg: initialWeightKgParam,
           defaultStepGoal: defaultStepGoalParam,
           defaultTargetKcal: defaultTargetKcalParam,
+          targetModeCode: targetModeCodeParam,
+          sedentaryBaseKcal: sedentaryBaseKcalParam,
+          averageWorkoutsPerWeek: averageWorkoutsPerWeekParam,
+          averageWorkoutDurationMinutes: averageWorkoutDurationMinutesParam,
+          workoutActivityTypeCode: workoutActivityTypeCodeParam,
+          macroModeCode: macroModeCodeParam,
+          proteinGramsPerKg: proteinGramsPerKgParam,
+          fatGramsPerKg: fatGramsPerKgParam,
+          fiberGramsPerKg: fiberGramsPerKgParam,
+          carbsGramsPerKg: carbsGramsPerKgParam,
           waterGlassLiters: waterGlassLitersParam,
           stepKcalCoefficient: stepKcalCoefficientParam,
           adaptiveReferenceDays: adaptiveReferenceDaysParam,
@@ -3547,6 +3714,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
           kcalPerKg: kcalPerKgParam,
           minimumReasonableTdee: minimumReasonableTdeeParam,
           maximumReasonableTdee: maximumReasonableTdeeParam,
+          themeModeCode: themeModeCodeParam,
+          languageCode: languageCodeParam,
           isActive: isActiveParam,
           createdAtEpochMs: createdAtEpochMsParam,
           updatedAtEpochMs: updatedAtEpochMsParam,
@@ -6603,6 +6772,68 @@ class UserProfileEntity_ {
   /// See [UserProfileEntity.deletedAtEpochMs].
   static final deletedAtEpochMs = obx.QueryIntegerProperty<UserProfileEntity>(
     _entities[4].properties[19],
+  );
+
+  /// See [UserProfileEntity.initialWeightKg].
+  static final initialWeightKg = obx.QueryDoubleProperty<UserProfileEntity>(
+    _entities[4].properties[20],
+  );
+
+  /// See [UserProfileEntity.targetModeCode].
+  static final targetModeCode = obx.QueryStringProperty<UserProfileEntity>(
+    _entities[4].properties[21],
+  );
+
+  /// See [UserProfileEntity.sedentaryBaseKcal].
+  static final sedentaryBaseKcal = obx.QueryDoubleProperty<UserProfileEntity>(
+    _entities[4].properties[22],
+  );
+
+  /// See [UserProfileEntity.averageWorkoutsPerWeek].
+  static final averageWorkoutsPerWeek =
+      obx.QueryIntegerProperty<UserProfileEntity>(_entities[4].properties[23]);
+
+  /// See [UserProfileEntity.averageWorkoutDurationMinutes].
+  static final averageWorkoutDurationMinutes =
+      obx.QueryIntegerProperty<UserProfileEntity>(_entities[4].properties[24]);
+
+  /// See [UserProfileEntity.workoutActivityTypeCode].
+  static final workoutActivityTypeCode =
+      obx.QueryStringProperty<UserProfileEntity>(_entities[4].properties[25]);
+
+  /// See [UserProfileEntity.macroModeCode].
+  static final macroModeCode = obx.QueryStringProperty<UserProfileEntity>(
+    _entities[4].properties[26],
+  );
+
+  /// See [UserProfileEntity.proteinGramsPerKg].
+  static final proteinGramsPerKg = obx.QueryDoubleProperty<UserProfileEntity>(
+    _entities[4].properties[27],
+  );
+
+  /// See [UserProfileEntity.fatGramsPerKg].
+  static final fatGramsPerKg = obx.QueryDoubleProperty<UserProfileEntity>(
+    _entities[4].properties[28],
+  );
+
+  /// See [UserProfileEntity.fiberGramsPerKg].
+  static final fiberGramsPerKg = obx.QueryDoubleProperty<UserProfileEntity>(
+    _entities[4].properties[29],
+  );
+
+  /// See [UserProfileEntity.carbsGramsPerKg].
+  static final carbsGramsPerKg = obx.QueryDoubleProperty<UserProfileEntity>(
+    _entities[4].properties[30],
+  );
+
+  /// See [UserProfileEntity.themeModeCode].
+  static final themeModeCode = obx.QueryStringProperty<UserProfileEntity>(
+    _entities[4].properties[31],
+  );
+
+  /// See [UserProfileEntity.languageCode].
+  static final languageCode = obx.QueryStringProperty<UserProfileEntity>(
+    _entities[4].properties[32],
   );
 }
 

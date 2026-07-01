@@ -355,7 +355,7 @@
     },
     {
       "id": "5:8645411654677832403",
-      "lastPropertyId": "20:7558321544276648307",
+      "lastPropertyId": "33:1473179430350576053",
       "name": "UserProfileEntity",
       "properties": [
         {
@@ -460,6 +460,71 @@
           "id": "20:7558321544276648307",
           "name": "deletedAtEpochMs",
           "type": 6
+        },
+        {
+          "id": "21:9170237336588657258",
+          "name": "initialWeightKg",
+          "type": 8
+        },
+        {
+          "id": "22:1741558005734798475",
+          "name": "targetModeCode",
+          "type": 9
+        },
+        {
+          "id": "23:6702308637279339882",
+          "name": "sedentaryBaseKcal",
+          "type": 8
+        },
+        {
+          "id": "24:6767737091703212743",
+          "name": "averageWorkoutsPerWeek",
+          "type": 6
+        },
+        {
+          "id": "25:7511260302708420180",
+          "name": "averageWorkoutDurationMinutes",
+          "type": 6
+        },
+        {
+          "id": "26:4398930564724218450",
+          "name": "workoutActivityTypeCode",
+          "type": 9
+        },
+        {
+          "id": "27:4482280076228219",
+          "name": "macroModeCode",
+          "type": 9
+        },
+        {
+          "id": "28:7836868972280292683",
+          "name": "proteinGramsPerKg",
+          "type": 8
+        },
+        {
+          "id": "29:1967684329145277456",
+          "name": "fatGramsPerKg",
+          "type": 8
+        },
+        {
+          "id": "30:7048752585847005388",
+          "name": "fiberGramsPerKg",
+          "type": 8
+        },
+        {
+          "id": "31:292242023562058754",
+          "name": "carbsGramsPerKg",
+          "type": 8
+        },
+        {
+          "id": "32:2710302272522947113",
+          "name": "themeModeCode",
+          "type": 9
+        },
+        {
+          "id": "33:1473179430350576053",
+          "name": "languageCode",
+          "type": 9
         }
       ],
       "relations": []

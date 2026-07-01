@@ -13,3 +13,57 @@ class BiologicalSexCodes {
     other,
   };
 }
+
+class TargetModeCodes {
+  const TargetModeCodes._();
+
+  static const String fixedUser = 'fixed_user';
+  static const String appCalculatedFixed = 'app_calculated_fixed';
+  static const String adaptiveWeekly = 'adaptive_weekly';
+
+  static const Set<String> values = <String>{
+    fixedUser,
+    appCalculatedFixed,
+    adaptiveWeekly,
+  };
+}
+
+class MacroModeCodes {
+  const MacroModeCodes._();
+
+  static const String defaultByWeight = 'default_by_weight';
+  static const String custom = 'custom';
+
+  static const Set<String> values = <String>{
+    defaultByWeight,
+    custom,
+  };
+}
+
+class WorkoutActivityTypeCodes {
+  const WorkoutActivityTypeCodes._();
+
+  static const String weights = 'weights';
+  static const String mixed = 'mixed';
+  static const String cardio = 'cardio';
+
+  static const Set<String> values = <String>{
+    weights,
+    mixed,
+    cardio,
+  };
+}
+
+class ThemePreferenceCodes {
+  const ThemePreferenceCodes._();
+
+  static const String system = 'system';
+  static const String light = 'light';
+  static const String dark = 'dark';
+
+  static const Set<String> values = <String>{
+    system,
+    light,
+    dark,
+  };
+}

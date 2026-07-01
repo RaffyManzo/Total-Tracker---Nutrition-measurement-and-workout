@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../features/home/presentation/home_screen.dart';
 import '../../features/nutrition/mock/presentation/ingredient_list_screen.dart'
     as mock_nutrition;
 import '../../features/nutrition/presentation/food_v01_screens.dart';
 import '../../features/nutrition/presentation/measurement_screens.dart';
+import '../../features/profile/presentation/profile_settings_screen.dart';
 import '../../features/tracking/mock/presentation/tracking_hub_screen.dart'
     as mock_tracking;
 import '../../features/ui_preview/presentation/ui_foundation_preview_screen.dart';
@@ -19,7 +19,7 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/',
       builder: (BuildContext context, GoRouterState state) {
-        return const HomeScreen();
+        return const FoodHubScreen();
       },
     ),
     GoRoute(
@@ -75,6 +75,12 @@ final GoRouter appRouter = GoRouter(
       },
     ),
     GoRoute(
+      path: '/food/ingredients/:id',
+      builder: (BuildContext context, GoRouterState state) {
+        return IngredientDetailScreen(id: state.pathParameters['id']!);
+      },
+    ),
+    GoRoute(
       path: '/food/recipes',
       builder: (BuildContext context, GoRouterState state) {
         return const RecipesScreen();
@@ -84,6 +90,12 @@ final GoRouter appRouter = GoRouter(
       path: '/food/recipes/:id',
       builder: (BuildContext context, GoRouterState state) {
         return RecipeDetailScreen(id: state.pathParameters['id']!);
+      },
+    ),
+    GoRoute(
+      path: '/settings',
+      builder: (BuildContext context, GoRouterState state) {
+        return const ProfileSettingsScreen();
       },
     ),
     GoRoute(

@@ -60,7 +60,8 @@ class WorkoutDisabledScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Allenamento')),
-      floatingActionButton: const TtGlobalNavFab(),
+      bottomNavigationBar:
+          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
       body: ListView(
         padding: _screenPadding,
         children: <Widget>[

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:objectbox/objectbox.dart';
 
 import '../../../app/theme/app_spacing.dart';
 import '../../../core/database/objectbox_providers.dart';
@@ -11,6 +12,7 @@ import '../../../shared/widgets/tt_mini_charts.dart';
 import '../../../shared/widgets/tt_primary_button.dart';
 import '../../../shared/widgets/tt_section_header.dart';
 import '../../profile/data/entities/user_profile_entity.dart';
+import '../../profile/domain/profile_nutrition_calculator.dart';
 import '../data/entities/ingredient_entity.dart';
 import '../data/entities/nutrition_tracking_entities.dart';
 import '../data/import/obsidian_food_seed.dart';
@@ -33,21 +35,24 @@ final FutureProvider<FoodHubV01Data> foodHubV01Provider =
   final UserProfileEntity? profile =
       ref.watch(userProfileRepositoryProvider).getActiveProfile();
 
-  planning.ensureDay(_dateKey(DateTime.now()));
+  final String todayKey = _dateKey(DateTime.now());
+  final FoodDayBundle todayBundle = planning.ensureDay(todayKey);
 
   final List<DailyRecordEntity> days = dailyRepository.getAllActive();
-  final DailyRecordEntity? latest = days.isEmpty ? null : days.first;
-  final List<MealWithItems> latestMeals = latest == null
-      ? const <MealWithItems>[]
-      : mealRepository.getMealsWithItemsForDate(latest.dateKey);
-  final DateTime reference =
-      latest == null ? DateTime.now() : DateTime.parse(latest.dateKey);
+  final DailyRecordEntity latest = days
+          .where((DailyRecordEntity day) => day.dateKey == todayKey)
+          .firstOrNull ??
+      todayBundle.day;
+  final List<MealWithItems> latestMeals =
+      mealRepository.getMealsWithItemsForDate(latest.dateKey);
+  final DateTime reference = DateTime.parse(latest.dateKey);
   final DateTime monday =
       reference.subtract(Duration(days: reference.weekday - 1));
 
   return FoodHubV01Data(
     latest: latest,
     latestMeals: latestMeals,
+    allMeals: mealRepository.getAllWithItems(),
     days: days,
     ingredients: ingredientRepository.getAllActive(),
     recipes: recipeRepository.getAllActive(),
@@ -59,6 +64,7 @@ final FutureProvider<FoodHubV01Data> foodHubV01Provider =
       allDays: days,
       profile: profile,
     ),
+    profile: profile,
   );
 });
 
@@ -86,6 +92,7 @@ class FoodHubV01Data {
   const FoodHubV01Data({
     required this.latest,
     required this.latestMeals,
+    required this.allMeals,
     required this.days,
     required this.ingredients,
     required this.recipes,
@@ -93,10 +100,12 @@ class FoodHubV01Data {
     required this.tapeMeasurements,
     required this.analytics,
     required this.adaptiveSummary,
+    required this.profile,
   });
 
   final DailyRecordEntity? latest;
   final List<MealWithItems> latestMeals;
+  final List<MealWithItems> allMeals;
   final List<DailyRecordEntity> days;
   final List<IngredientEntity> ingredients;
   final List<RecipeEntity> recipes;
@@ -104,6 +113,7 @@ class FoodHubV01Data {
   final List<TapeMeasurementEntity> tapeMeasurements;
   final FoodAnalyticsService analytics;
   final WeekAdaptiveSummary adaptiveSummary;
+  final UserProfileEntity? profile;
 
   MealNutritionTotals get latestTotals => _totalsForMeals(latestMeals);
 
@@ -123,6 +133,18 @@ class FoodHubV01Data {
     ];
   }
 
+  List<TtChartPoint> get recentCalorieTargets {
+    final List<DailyRecordEntity> recent =
+        days.take(7).toList().reversed.toList();
+    return <TtChartPoint>[
+      for (final DailyRecordEntity day in recent)
+        TtChartPoint(
+          label: day.dateKey.substring(5),
+          value: day.targetKcal ?? adaptiveSummary.targetKcal,
+        ),
+    ];
+  }
+
   List<TtChartPoint> get recentSteps {
     final List<DailyRecordEntity> recent =
         days.take(7).toList().reversed.toList();
@@ -130,6 +152,18 @@ class FoodHubV01Data {
       for (final DailyRecordEntity day in recent)
         TtChartPoint(
             label: day.dateKey.substring(5), value: day.steps.toDouble()),
+    ];
+  }
+
+  List<TtChartPoint> get recentStepTargets {
+    final List<DailyRecordEntity> recent =
+        days.take(7).toList().reversed.toList();
+    return <TtChartPoint>[
+      for (final DailyRecordEntity day in recent)
+        TtChartPoint(
+          label: day.dateKey.substring(5),
+          value: day.stepGoal.toDouble(),
+        ),
     ];
   }
 }
@@ -141,8 +175,7 @@ class FoodHubScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final AsyncValue<FoodHubV01Data> data = ref.watch(foodHubV01Provider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Alimentazione')),
-      floatingActionButton: const TtGlobalNavFab(),
+      bottomNavigationBar: const TtFoodBottomNavBar(),
       body: data.when(
         loading: () => const _LoadingState(),
         error: (Object error, StackTrace stackTrace) => _ErrorState(
@@ -155,69 +188,96 @@ class FoodHubScreen extends ConsumerWidget {
   }
 }
 
-class _FoodHubV01Body extends StatelessWidget {
+class _FoodHubV01Body extends StatefulWidget {
   const _FoodHubV01Body({required this.data});
 
   final FoodHubV01Data data;
 
   @override
+  State<_FoodHubV01Body> createState() => _FoodHubV01BodyState();
+}
+
+class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
+  final TextEditingController _chartFrom = TextEditingController();
+  final TextEditingController _chartTo = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _setDefaultRange();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FoodHubV01Body oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_chartFrom.text.isEmpty || _chartTo.text.isEmpty) {
+      _setDefaultRange();
+    }
+  }
+
+  @override
+  void dispose() {
+    _chartFrom.dispose();
+    _chartTo.dispose();
+    super.dispose();
+  }
+
+  void _setDefaultRange() {
+    final DateTime end = DateTime.now();
+    final DateTime start = end.subtract(const Duration(days: 6));
+    _chartFrom.text = _dateKey(start);
+    _chartTo.text = _dateKey(end);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final FoodHubV01Data data = widget.data;
     final DailyRecordEntity? latest = data.latest;
     final MealNutritionTotals totals = data.latestTotals;
-    final ScaleMeasurementEntity? latestScale =
-        data.scaleMeasurements.isEmpty ? null : data.scaleMeasurements.first;
+    final double latestTarget = latest == null
+        ? data.adaptiveSummary.targetKcal
+        : data.analytics.targetForDay(
+            day: latest,
+            allDays: data.days,
+            profile: data.profile,
+          );
+    final ProfileNutritionTargets macroTargets = latest == null
+        ? const ProfileNutritionCalculator().calculateFixedTargets(
+            data.profile ??
+                UserProfileEntity(
+                  uuid: 'fallback',
+                  createdAtEpochMs: 0,
+                  updatedAtEpochMs: 0,
+                ),
+          )
+        : data.analytics.macroTargetsForDay(
+            day: latest,
+            profile: data.profile,
+          );
+    final List<DailyRecordEntity> chartDays =
+        _daysForChartRange(data.days, _chartFrom.text, _chartTo.text);
+    final List<TtChartPoint> caloriePoints = _caloriePoints(chartDays, data);
+    final List<TtChartPoint> calorieTargetPoints =
+        _calorieTargetPoints(chartDays, data);
+    final List<TtChartPoint> stepPoints = _stepPoints(chartDays);
+    final List<TtChartPoint> stepTargetPoints = _stepTargetPoints(chartDays);
     return ListView(
       padding: _screenPadding,
       children: <Widget>[
-        Text('Food Plan', style: Theme.of(context).textTheme.headlineMedium),
-        const SizedBox(height: AppSpacing.xs),
         Text(
-          latest == null
-              ? 'Diario pronto. Apri oggi dal pulsante rapido per iniziare.'
-              : 'Ultimo giorno: ${latest.weekdayLabel} ${latest.dateKey}',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+          'Dashboard',
+          style: Theme.of(context).textTheme.headlineLarge,
         ),
         const SizedBox(height: AppSpacing.sectionGap),
-        TtAppCard(
+        _DashboardDailySummary(
+          day: latest,
+          meals: data.latestMeals,
+          totals: totals,
+          targetKcal: latestTarget,
+          macroTargets: macroTargets,
           onTap: latest == null
               ? null
               : () => context.push('/food/days/${latest.dateKey}'),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      'Riepilogo recente',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ),
-                  _StatusPill(
-                    label: data.hasPartialNutrition ? 'Parziale' : 'Completo',
-                    isWarning: data.hasPartialNutrition,
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _MetricGrid(
-                metrics: <_Metric>[
-                  _Metric('Calorie', _fmtKcal(totals.kcal)),
-                  _Metric('Target adattivo',
-                      _fmtKcal(data.adaptiveSummary.targetKcal)),
-                  _Metric('Passi', latest?.steps.toString() ?? 'n/d'),
-                  _Metric('Peso', _fmtNullable(latestScale?.weightKg, 'kg')),
-                  _Metric('Acqua', _fmtNullable(latest?.waterLiters, 'l')),
-                  _Metric('Sonno', latest == null ? 'n/d' : _sleepText(latest)),
-                  _Metric('Pasti', data.latestMeals.length.toString()),
-                  _Metric('Misure',
-                      '${data.scaleMeasurements.length} + ${data.tapeMeasurements.length}'),
-                ],
-              ),
-            ],
-          ),
         ),
         if (data.hasPartialNutrition) ...<Widget>[
           const SizedBox(height: AppSpacing.md),
@@ -228,13 +288,95 @@ class _FoodHubV01Body extends StatelessWidget {
           ),
         ],
         const SizedBox(height: AppSpacing.sectionGap),
+        _MonthCalendarCard(
+          reference:
+              latest == null ? DateTime.now() : DateTime.parse(latest.dateKey),
+          days: data.days,
+          meals: data.allMeals,
+          analytics: data.analytics,
+          profile: data.profile,
+          adaptiveSummary: data.adaptiveSummary,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        TtAppCard(
+          onTap: () => context.push('/food/ingredients'),
+          child: Row(
+            children: <Widget>[
+              Icon(
+                Icons.search_rounded,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Ricerca alimenti',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(
+                      'Archivio locale e importazione da Open Food Facts.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sectionGap),
+        TtAppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                'Filtro grafici',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: TextField(
+                      controller: _chartFrom,
+                      readOnly: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Data inizio',
+                        suffixIcon: Icon(Icons.calendar_today_rounded),
+                      ),
+                      onTap: () => _pickChartDate(_chartFrom),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: TextField(
+                      controller: _chartTo,
+                      readOnly: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Data fine',
+                        suffixIcon: Icon(Icons.calendar_today_rounded),
+                      ),
+                      onTap: () => _pickChartDate(_chartTo),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
         Row(
           children: <Widget>[
             Expanded(
               child: _ChartCard(
                 title: 'Calorie',
-                subtitle: 'Ultimi giorni',
-                child: TtMiniBarChart(points: data.recentCalories),
+                subtitle: '${_chartFrom.text} - ${_chartTo.text}',
+                child: TtMiniBarChart(
+                  points: caloriePoints,
+                  targetPoints: calorieTargetPoints,
+                ),
               ),
             ),
           ],
@@ -242,8 +384,11 @@ class _FoodHubV01Body extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         _ChartCard(
           title: 'Passi',
-          subtitle: 'Trend recente',
-          child: TtMiniLineChart(points: data.recentSteps),
+          subtitle: '${_chartFrom.text} - ${_chartTo.text}',
+          child: TtMiniBarChart(
+            points: stepPoints,
+            targetPoints: stepTargetPoints,
+          ),
         ),
         const SizedBox(height: AppSpacing.md),
         TtAppCard(
@@ -268,54 +413,339 @@ class _FoodHubV01Body extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: AppSpacing.sectionGap),
-        const TtSectionHeader(title: 'Sezioni'),
-        const SizedBox(height: AppSpacing.md),
-        _SectionLink(
-          title: 'Settimana corrente',
-          subtitle:
-              '${_dateKey(data.adaptiveSummary.monday)} - ${_dateKey(data.adaptiveSummary.sunday)}',
-          icon: Icons.calendar_view_week_rounded,
-          route: '/food/week',
+      ],
+    );
+  }
+
+  Future<void> _pickChartDate(TextEditingController controller) async {
+    final DateTime initial =
+        DateTime.tryParse(controller.text) ?? DateTime.now();
+    final DateTime? selected = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2035),
+    );
+    if (selected == null) {
+      return;
+    }
+    setState(() => controller.text = _dateKey(selected));
+  }
+
+  List<DailyRecordEntity> _daysForChartRange(
+    List<DailyRecordEntity> days,
+    String from,
+    String to,
+  ) {
+    return days
+        .where(
+          (DailyRecordEntity day) =>
+              day.dateKey.compareTo(from) >= 0 &&
+              day.dateKey.compareTo(to) <= 0,
+        )
+        .toList()
+      ..sort((DailyRecordEntity a, DailyRecordEntity b) {
+        return a.dateKey.compareTo(b.dateKey);
+      });
+  }
+
+  List<TtChartPoint> _caloriePoints(
+    List<DailyRecordEntity> days,
+    FoodHubV01Data data,
+  ) {
+    return <TtChartPoint>[
+      for (final DailyRecordEntity day in days)
+        TtChartPoint(
+          label: day.dateKey.substring(5),
+          value: data.analytics.caloriesForDate(day.dateKey),
         ),
-        const SizedBox(height: AppSpacing.md),
-        _SectionLink(
-          title: 'Giorni',
-          subtitle: '${data.days.length} giorni',
-          icon: Icons.calendar_today_rounded,
-          route: '/food/days',
+    ];
+  }
+
+  List<TtChartPoint> _calorieTargetPoints(
+    List<DailyRecordEntity> days,
+    FoodHubV01Data data,
+  ) {
+    return <TtChartPoint>[
+      for (final DailyRecordEntity day in days)
+        TtChartPoint(
+          label: day.dateKey.substring(5),
+          value: data.analytics.targetForDay(
+            day: day,
+            allDays: data.days,
+            profile: data.profile,
+          ),
         ),
-        const SizedBox(height: AppSpacing.md),
-        _SectionLink(
-          title: 'Pasti',
-          subtitle: 'Slot automatici colazione, spuntino, pranzo, cena',
-          icon: Icons.lunch_dining_rounded,
-          route: '/food/meals',
+    ];
+  }
+
+  List<TtChartPoint> _stepPoints(List<DailyRecordEntity> days) {
+    return <TtChartPoint>[
+      for (final DailyRecordEntity day in days)
+        TtChartPoint(
+          label: day.dateKey.substring(5),
+          value: day.steps.toDouble(),
         ),
-        const SizedBox(height: AppSpacing.md),
-        _SectionLink(
-          title: 'Ingredienti',
-          subtitle: '${data.ingredients.length} salvati',
-          icon: Icons.inventory_2_outlined,
-          route: '/food/ingredients',
+    ];
+  }
+
+  List<TtChartPoint> _stepTargetPoints(List<DailyRecordEntity> days) {
+    return <TtChartPoint>[
+      for (final DailyRecordEntity day in days)
+        TtChartPoint(
+          label: day.dateKey.substring(5),
+          value: day.stepGoal.toDouble(),
         ),
-        const SizedBox(height: AppSpacing.md),
-        _SectionLink(
-          title: 'Ricette',
-          subtitle: '${data.recipes.length} ricette',
-          icon: Icons.menu_book_rounded,
-          route: '/food/recipes',
-        ),
-        const SizedBox(height: AppSpacing.md),
-        const _SectionLink(
-          title: 'Misurazioni',
-          subtitle: 'Bilancia e metro',
-          icon: Icons.monitor_weight_outlined,
-          route: '/measurements',
+    ];
+  }
+}
+
+class _DashboardDailySummary extends StatelessWidget {
+  const _DashboardDailySummary({
+    required this.day,
+    required this.meals,
+    required this.totals,
+    required this.targetKcal,
+    required this.macroTargets,
+    required this.onTap,
+  });
+
+  final DailyRecordEntity? day;
+  final List<MealWithItems> meals;
+  final MealNutritionTotals totals;
+  final double targetKcal;
+  final ProfileNutritionTargets macroTargets;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final int mealsWithFood = meals
+        .where((MealWithItems meal) => meal.items.isNotEmpty)
+        .length;
+    final double calorieTarget = targetKcal <= 0 ? 1 : targetKcal;
+    final double calorieProgress =
+        (totals.kcal / calorieTarget).clamp(0, 1).toDouble();
+    final int steps = day?.steps ?? 0;
+    final int rawStepGoal = day?.stepGoal ?? 8000;
+    final int stepGoal = rawStepGoal <= 0 ? 8000 : rawStepGoal;
+    final double stepProgress = (steps / stepGoal).clamp(0, 1).toDouble();
+    final int glasses = day?.waterLiters == null
+        ? (day?.waterGlasses ?? 0)
+        : (day!.waterLiters! / 0.2).round();
+    final double sleepHours =
+        (day?.sleepDeepHours ?? 0) + (day?.sleepLightHours ?? 0);
+    final Map<String, MealWithItems> mealsBySlot = <String, MealWithItems>{
+      for (final MealWithItems meal in meals) meal.meal.mealTypeCode: meal,
+    };
+    return TtAppCard(
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      '📅 Riepilogo giornaliero',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    Text(
+                      day == null
+                          ? 'Oggi'
+                          : '${day!.weekdayLabel} ${day!.dateKey}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              _StatusPill(
+                label: '$mealsWithFood/4 pasti',
+                isWarning: mealsWithFood == 0,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Row(
+            children: <Widget>[
+              SizedBox.square(
+                dimension: 118,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: <Widget>[
+                    SizedBox.square(
+                      dimension: 104,
+                      child: CircularProgressIndicator(
+                        value: calorieProgress,
+                        strokeWidth: 10,
+                        backgroundColor: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
+                      ),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        const Text('🔥'),
+                        Text(
+                          totals.kcal.round().toString(),
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        Text(
+                          '/ ${targetKcal.round()} kcal',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.lg),
+              Expanded(
+                child: Column(
+                  children: <Widget>[
+                    _MacroProgressLine(
+                      label: '🥩 Proteine',
+                      value: totals.proteinGrams,
+                      target: macroTargets.proteinGrams,
+                    ),
+                    _MacroProgressLine(
+                      label: '🍚 Carbo',
+                      value: totals.carbsGrams,
+                      target: macroTargets.carbsGrams,
+                    ),
+                    _MacroProgressLine(
+                      label: '🥑 Grassi',
+                      value: totals.fatGrams,
+                      target: macroTargets.fatGrams,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _WalkingProgressBar(
+            value: stepProgress,
+            label: '🚶 $steps / $stepGoal passi',
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  '💧 ${_waterGlassesText(glasses)}',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  '😴 ${sleepHours <= 0 ? 'n/d' : '${_fmt(sleepHours)} h'}',
+                  textAlign: TextAlign.end,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: <Widget>[
+              for (final String slot in ObsidianFoodSeedConstants.mealSlots)
+                Expanded(
+                  child: _MealCompletionCell(
+                    emoji: _slotEmoji(slot),
+                    selected: mealsBySlot[slot]?.items.isNotEmpty ?? false,
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WalkingProgressBar extends StatelessWidget {
+  const _WalkingProgressBar({
+    required this.value,
+    required this.label,
+  });
+
+  final double value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(label, style: Theme.of(context).textTheme.bodyMedium),
+        const SizedBox(height: 8),
+        LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final double clamped = value.clamp(0, 1).toDouble();
+            final double markerX =
+                (constraints.maxWidth - 24) * clamped;
+            return SizedBox(
+              height: 28,
+              child: Stack(
+                alignment: Alignment.centerLeft,
+                children: <Widget>[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: clamped,
+                      minHeight: 10,
+                    ),
+                  ),
+                  Positioned(
+                    left: markerX,
+                    child: const Text('🚶', style: TextStyle(fontSize: 22)),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ],
     );
   }
+}
+
+class _MealCompletionCell extends StatelessWidget {
+  const _MealCompletionCell({
+    required this.emoji,
+    required this.selected,
+  });
+
+  final String emoji;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(emoji, style: const TextStyle(fontSize: 24)),
+        Icon(
+          selected ? Icons.radio_button_checked : Icons.radio_button_off,
+          color: selected
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.outline,
+        ),
+      ],
+    );
+  }
+}
+
+String _waterGlassesText(int glasses) {
+  if (glasses <= 0) {
+    return 'n/d';
+  }
+  final int capped = glasses.clamp(0, 8);
+  return '${List<String>.filled(capped, '🥛').join()} ${(glasses * 0.2).toStringAsFixed(1)} L';
 }
 
 class FoodWeekScreen extends ConsumerWidget {
@@ -327,7 +757,8 @@ class FoodWeekScreen extends ConsumerWidget {
         ref.watch(foodDaysV01Provider);
     return Scaffold(
       appBar: AppBar(title: const Text('Settimana')),
-      floatingActionButton: const TtGlobalNavFab(),
+      bottomNavigationBar:
+          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
       body: daysValue.when(
         loading: () => const _LoadingState(),
         error: (Object error, StackTrace stackTrace) => _ErrorState(
@@ -432,21 +863,13 @@ class FoodWeekScreen extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: AppSpacing.sectionGap),
-              for (int index = 0; index < 7; index += 1) ...<Widget>[
-                Builder(
-                  builder: (BuildContext context) {
-                    final DateTime date = monday.add(Duration(days: index));
-                    final String key = _dateKey(date);
-                    return _WeekDayCard(
-                      date: date,
-                      day: byDate[key],
-                      meals: mealRepository.getMealsWithItemsForDate(key),
-                      analytics: analytics,
-                    );
-                  },
-                ),
-                const SizedBox(height: AppSpacing.md),
-              ],
+              _WeekCalendarStrip(
+                monday: monday,
+                daysByDate: byDate,
+                mealRepository: mealRepository,
+                analytics: analytics,
+                profile: profile,
+              ),
             ],
           );
         },
@@ -464,7 +887,8 @@ class FoodDaysScreen extends ConsumerWidget {
         ref.watch(foodDaysV01Provider);
     return Scaffold(
       appBar: AppBar(title: const Text('Giorni')),
-      floatingActionButton: const TtGlobalNavFab(),
+      bottomNavigationBar:
+          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
       body: days.when(
         loading: () => const _LoadingState(),
         error: (Object error, StackTrace stackTrace) => _ErrorState(
@@ -554,15 +978,34 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
     }
     final DailyRecordEntity day = _bundle.day;
     final MealRepository mealRepository = ref.watch(mealRepositoryProvider);
+    final measurementRepository = ref.watch(measurementRepositoryProvider);
     final FoodAnalyticsService analytics =
         ref.watch(foodAnalyticsServiceProvider);
+    final UserProfileEntity? profile =
+        ref.watch(userProfileRepositoryProvider).getActiveProfile();
+    final List<DailyRecordEntity> allDays =
+        ref.watch(dailyRecordRepositoryProvider).getAllActive();
     final List<MealWithItems> meals =
         mealRepository.getMealsWithItemsForDate(day.dateKey);
     final double caloriesIn = analytics.caloriesForDate(day.dateKey);
-    final ActivityBreakdown activity = analytics.activityForDay(day);
-    final double? target = day.targetKcal;
-    final double? balance = target == null ? null : caloriesIn - target;
-    final double? weight = analytics.weightForDay(day);
+    final MealNutritionTotals totals = _totalsForMeals(meals);
+    final ActivityBreakdown activity =
+        analytics.activityForDay(day, profile: profile);
+    final double target = analytics.targetForDay(
+      day: day,
+      allDays: allDays,
+      profile: profile,
+    );
+    final ProfileNutritionTargets macroTargets = analytics.macroTargetsForDay(
+      day: day,
+      profile: profile,
+    );
+    final double balance = caloriesIn - target;
+    final ScaleMeasurementEntity? scaleMeasurement =
+        measurementRepository.findScaleByDate(day.dateKey);
+    final double? weight =
+        scaleMeasurement?.weightKg ?? analytics.weightForDay(day);
+    final bool hasScaleMeasurement = scaleMeasurement != null;
     final bool partial = analytics.hasPartialNutrition(day.dateKey);
 
     return Scaffold(
@@ -571,12 +1014,14 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
         actions: <Widget>[
           IconButton(
             tooltip: 'Aggiorna monitoraggio',
-            onPressed: () => _showDayTrackingDialog(day, weight),
+            onPressed: () =>
+                _showDayTrackingDialog(day, weight, hasScaleMeasurement),
             icon: const Icon(Icons.edit_note_rounded),
           ),
         ],
       ),
-      floatingActionButton: const TtGlobalNavFab(),
+      bottomNavigationBar:
+          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
       body: ListView(
         padding: _screenPadding,
         children: <Widget>[
@@ -596,29 +1041,25 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
           TtPrimaryButton(
             label: 'Aggiorna dati giornalieri',
             icon: Icons.edit_note_rounded,
-            onPressed: () => _showDayTrackingDialog(day, weight),
+            onPressed: () =>
+                _showDayTrackingDialog(day, weight, hasScaleMeasurement),
           ),
           const SizedBox(height: AppSpacing.sectionGap),
-          _MetricGrid(
-            metrics: <_Metric>[
-              _Metric('Target kcal', _fmtNullableKcal(target)),
-              _Metric('Assunte', _fmtKcal(caloriesIn)),
-              _Metric(
-                  'Bilancio', balance == null ? 'n/d' : _signedKcal(balance)),
-              _Metric('Passi kcal', _fmtKcal(activity.stepKcal)),
-              _Metric(
-                  'Workout completed', _fmtKcal(activity.completedWorkoutKcal)),
-              _Metric('Attive effettive', _fmtKcal(activity.actualTotalKcal)),
-              _Metric('Peso', _fmtNullable(weight, 'kg')),
-              _Metric('Acqua', _fmtNullable(day.waterLiters, 'l')),
-              _Metric('Bicchieri', day.waterGlasses?.toString() ?? 'n/d'),
-              _Metric('Sonno profondo', _fmtNullable(day.sleepDeepHours, 'h')),
-              _Metric('Sonno leggero', _fmtNullable(day.sleepLightHours, 'h')),
-              _Metric('Qualità sonno',
-                  day.sleepQualityCode.isEmpty ? 'n/d' : day.sleepQualityCode),
-              _Metric('Passi', day.steps.toString()),
-              _Metric('Obiettivo passi', day.stepGoal.toString()),
-            ],
+          _DashboardDailySummary(
+            day: day,
+            meals: meals,
+            targetKcal: target,
+            totals: totals,
+            macroTargets: macroTargets,
+            onTap: () => _showDayStatsSheet(
+              context: context,
+              day: day,
+              caloriesIn: caloriesIn,
+              target: target,
+              balance: balance,
+              activity: activity,
+              weight: weight,
+            ),
           ),
           if (partial) ...<Widget>[
             const SizedBox(height: AppSpacing.md),
@@ -653,6 +1094,7 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
   Future<void> _showDayTrackingDialog(
     DailyRecordEntity day,
     double? measuredWeight,
+    bool hasScaleMeasurement,
   ) async {
     final TextEditingController target =
         TextEditingController(text: day.targetKcal?.toStringAsFixed(0) ?? '');
@@ -674,59 +1116,31 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
         TextEditingController(text: day.stepGoal.toString());
     final TextEditingController notes = TextEditingController(text: day.notes);
     final GlobalKey<FormState> formKey = GlobalKey<FormState>();
-    final bool? saved = await showDialog<bool>(
+    final bool? saved = await showModalBottomSheet<bool>(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Monitoraggio giornaliero'),
-          content: Form(
-            key: formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  _field(target, 'Target kcal',
-                      keyboardType: TextInputType.number),
-                  _field(weight, 'Peso bilancia kg',
-                      keyboardType: TextInputType.number),
-                  _field(water, 'Acqua litri',
-                      keyboardType: TextInputType.number),
-                  _field(glasses, 'Bicchieri',
-                      keyboardType: TextInputType.number),
-                  _field(deep, 'Sonno profondo ore',
-                      keyboardType: TextInputType.number),
-                  _field(light, 'Sonno leggero ore',
-                      keyboardType: TextInputType.number),
-                  _field(quality, 'Qualità sonno'),
-                  _field(steps, 'Passi', keyboardType: TextInputType.number),
-                  _field(stepGoal, 'Obiettivo passi',
-                      keyboardType: TextInputType.number),
-                  _field(notes, 'Note', maxLines: 4),
-                ],
-              ),
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Annulla'),
-            ),
-            FilledButton(
-              onPressed: () {
-                if (formKey.currentState?.validate() ?? false) {
-                  Navigator.of(context).pop(true);
-                }
-              },
-              child: const Text('Salva'),
-            ),
-          ],
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext _) {
+        return _DayTrackingSheet(
+          formKey: formKey,
+          target: target,
+          weight: weight,
+          water: water,
+          glasses: glasses,
+          deep: deep,
+          light: light,
+          quality: quality,
+          steps: steps,
+          stepGoal: stepGoal,
+          notes: notes,
+          hasScaleMeasurement: hasScaleMeasurement,
         );
       },
     );
     if (saved != true) {
       return;
     }
-    day.targetKcal = _toDouble(target.text);
     day.waterLiters = _toDouble(water.text);
     day.waterGlasses = _toInt(glasses.text);
     day.sleepDeepHours = _toDouble(deep.text);
@@ -737,7 +1151,7 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
     day.notes = notes.text.trim();
     ref.read(dailyRecordRepositoryProvider).save(day);
     final double? nextWeight = _toDouble(weight.text);
-    if (nextWeight != null) {
+    if (!hasScaleMeasurement && nextWeight != null) {
       final measurementRepository = ref.read(measurementRepositoryProvider);
       final ScaleMeasurementEntity measurement =
           measurementRepository.findScaleByDate(day.dateKey) ??
@@ -759,16 +1173,432 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
   }
 }
 
-class FoodMealsScreen extends ConsumerWidget {
+class _DayTrackingSheet extends StatelessWidget {
+  const _DayTrackingSheet({
+    required this.formKey,
+    required this.target,
+    required this.weight,
+    required this.water,
+    required this.glasses,
+    required this.deep,
+    required this.light,
+    required this.quality,
+    required this.steps,
+    required this.stepGoal,
+    required this.notes,
+    required this.hasScaleMeasurement,
+  });
+
+  final GlobalKey<FormState> formKey;
+  final TextEditingController target;
+  final TextEditingController weight;
+  final TextEditingController water;
+  final TextEditingController glasses;
+  final TextEditingController deep;
+  final TextEditingController light;
+  final TextEditingController quality;
+  final TextEditingController steps;
+  final TextEditingController stepGoal;
+  final TextEditingController notes;
+  final bool hasScaleMeasurement;
+
+  @override
+  Widget build(BuildContext context) {
+    return FractionallySizedBox(
+      heightFactor: 0.92,
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: Column(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.sm,
+                AppSpacing.sm,
+                AppSpacing.md,
+              ),
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'Monitoraggio giornaliero',
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                        Text(
+                          'Aggiorna i dati della giornata',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Chiudi',
+                    onPressed: () => Navigator.of(context).pop(false),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Form(
+                key: formKey,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    0,
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                  ),
+                  children: <Widget>[
+                    _TrackingSheetSection(
+                      emoji: '🔥',
+                      title: 'Energia',
+                      children: <Widget>[
+                        _field(
+                          target,
+                          'Target kcal',
+                          enabled: false,
+                          helperText: 'Gestito da profilo e impostazioni',
+                          keyboardType: TextInputType.number,
+                        ),
+                      ],
+                    ),
+                    _TrackingSheetSection(
+                      emoji: '⚖️',
+                      title: 'Peso',
+                      children: <Widget>[
+                        _field(
+                          weight,
+                          'Peso bilancia kg',
+                          enabled: !hasScaleMeasurement,
+                          helperText: hasScaleMeasurement
+                              ? 'Gestito dalla sezione Body Measurement'
+                              : 'Se salvi qui creo una misurazione bilancia',
+                          keyboardType: TextInputType.number,
+                          onTap: hasScaleMeasurement
+                              ? () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Peso gia registrato nelle misurazioni: apri Body Measurement per modificarlo.',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              : null,
+                        ),
+                      ],
+                    ),
+                    _TrackingSheetSection(
+                      emoji: '💧',
+                      title: 'Idratazione',
+                      children: <Widget>[
+                        Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: _field(
+                                water,
+                                'Acqua litri',
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: _field(
+                                glasses,
+                                'Bicchieri',
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    _TrackingSheetSection(
+                      emoji: '😴',
+                      title: 'Sonno',
+                      children: <Widget>[
+                        Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: _field(
+                                deep,
+                                'Profondo h',
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: _field(
+                                light,
+                                'Leggero h',
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                          ],
+                        ),
+                        _field(quality, 'Qualita sonno'),
+                      ],
+                    ),
+                    _TrackingSheetSection(
+                      emoji: '🚶',
+                      title: 'Attivita',
+                      children: <Widget>[
+                        Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: _field(
+                                steps,
+                                'Passi',
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: _field(
+                                stepGoal,
+                                'Obiettivo',
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    _TrackingSheetSection(
+                      emoji: '📝',
+                      title: 'Note',
+                      children: <Widget>[
+                        _field(notes, 'Note', maxLines: 4),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                  AppSpacing.lg,
+                  AppSpacing.md,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Annulla'),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () {
+                          if (formKey.currentState?.validate() ?? false) {
+                            Navigator.of(context).pop(true);
+                          }
+                        },
+                        icon: const Icon(Icons.save_rounded),
+                        label: const Text('Salva'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TrackingSheetSection extends StatelessWidget {
+  const _TrackingSheetSection({
+    required this.emoji,
+    required this.title,
+    required this.children,
+  });
+
+  final String emoji;
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: TtAppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Text(
+                  emoji,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MacroProgressLine extends StatelessWidget {
+  const _MacroProgressLine({
+    required this.label,
+    required this.value,
+    required this.target,
+  });
+
+  final String label;
+  final double value;
+  final double target;
+
+  @override
+  Widget build(BuildContext context) {
+    final double safeTarget = target <= 0 ? 1 : target;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(child: Text(label)),
+              Text('${_fmt(value)} / ${_fmt(safeTarget)} g'),
+            ],
+          ),
+          const SizedBox(height: 4),
+          LinearProgressIndicator(
+            value: (value / safeTarget).clamp(0, 1).toDouble(),
+            minHeight: 8,
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<void> _showDayStatsSheet({
+  required BuildContext context,
+  required DailyRecordEntity day,
+  required double caloriesIn,
+  required double? target,
+  required double? balance,
+  required ActivityBreakdown activity,
+  required double? weight,
+}) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (BuildContext context) {
+      return SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.sm,
+            AppSpacing.lg,
+            AppSpacing.lg,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                'Riepilogo ${day.dateKey}',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: AppSpacing.sectionGap),
+              _MetricGrid(
+                metrics: <_Metric>[
+                  _Metric('Target kcal', _fmtNullableKcal(target)),
+                  _Metric('Assunte', _fmtKcal(caloriesIn)),
+                  _Metric(
+                    'Bilancio',
+                    balance == null ? 'n/d' : _signedKcal(balance),
+                  ),
+                  _Metric('Passi kcal', _fmtKcal(activity.stepKcal)),
+                  _Metric(
+                    'Workout completed',
+                    _fmtKcal(activity.completedWorkoutKcal),
+                  ),
+                  _Metric(
+                      'Attive effettive', _fmtKcal(activity.actualTotalKcal)),
+                  _Metric('Peso', _fmtNullable(weight, 'kg')),
+                  _Metric('Acqua', _fmtNullable(day.waterLiters, 'l')),
+                  _Metric('Bicchieri', day.waterGlasses?.toString() ?? 'n/d'),
+                  _Metric(
+                    'Sonno profondo',
+                    _fmtNullable(day.sleepDeepHours, 'h'),
+                  ),
+                  _Metric(
+                    'Sonno leggero',
+                    _fmtNullable(day.sleepLightHours, 'h'),
+                  ),
+                  _Metric(
+                    'Qualità sonno',
+                    day.sleepQualityCode.isEmpty ? 'n/d' : day.sleepQualityCode,
+                  ),
+                  _Metric('Passi', day.steps.toString()),
+                  _Metric('Obiettivo passi', day.stepGoal.toString()),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class FoodMealsScreen extends ConsumerStatefulWidget {
   const FoodMealsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FoodMealsScreen> createState() => _FoodMealsScreenState();
+}
+
+class _FoodMealsScreenState extends ConsumerState<FoodMealsScreen> {
+  final TextEditingController _from = TextEditingController();
+  final TextEditingController _to = TextEditingController();
+
+  @override
+  void dispose() {
+    _from.dispose();
+    _to.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final AsyncValue<List<MealWithItems>> meals =
         ref.watch(foodMealsV01Provider);
     return Scaffold(
       appBar: AppBar(title: const Text('Pasti')),
-      floatingActionButton: const TtGlobalNavFab(),
+      bottomNavigationBar:
+          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
       body: meals.when(
         loading: () => const _LoadingState(),
         error: (Object error, StackTrace stackTrace) => _ErrorState(
@@ -776,6 +1606,15 @@ class FoodMealsScreen extends ConsumerWidget {
           onRetry: () => ref.invalidate(foodMealsV01Provider),
         ),
         data: (List<MealWithItems> meals) {
+          final String from = _from.text.trim();
+          final String to = _to.text.trim();
+          final List<MealWithItems> filtered =
+              meals.where((MealWithItems meal) {
+            final String date = meal.meal.dateKey;
+            final bool afterFrom = from.isEmpty || date.compareTo(from) >= 0;
+            final bool beforeTo = to.isEmpty || date.compareTo(to) <= 0;
+            return afterFrom && beforeTo;
+          }).toList();
           if (meals.isEmpty) {
             return const _EmptyState(
               title: 'Nessun pasto',
@@ -783,18 +1622,102 @@ class FoodMealsScreen extends ConsumerWidget {
                   'I pasti vengono creati automaticamente quando apri un giorno.',
             );
           }
-          return ListView.separated(
+          return ListView(
             padding: _screenPadding,
-            itemCount: meals.length,
-            separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.md),
-            itemBuilder: (BuildContext context, int index) {
-              final MealWithItems meal = meals[index];
-              return _MealListCard(meal: meal);
-            },
+            children: <Widget>[
+              TtAppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Filtra per data',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: _field(
+                            _from,
+                            'Da',
+                            enabled: false,
+                            onTap: () => _pickFilterDate(_from),
+                            suffixIcon: const Icon(Icons.calendar_today),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: _field(
+                            _to,
+                            'A',
+                            enabled: false,
+                            onTap: () => _pickFilterDate(_to),
+                            suffixIcon: const Icon(Icons.calendar_today),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Wrap(
+                      spacing: AppSpacing.sm,
+                      runSpacing: AppSpacing.sm,
+                      children: <Widget>[
+                        ActionChip(
+                          avatar: const Icon(Icons.today_rounded),
+                          label: const Text('Oggi'),
+                          onPressed: () {
+                            final String today = _dateKey(DateTime.now());
+                            setState(() {
+                              _from.text = today;
+                              _to.text = today;
+                            });
+                          },
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.clear_rounded),
+                          label: const Text('Pulisci'),
+                          onPressed: () {
+                            setState(() {
+                              _from.clear();
+                              _to.clear();
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sectionGap),
+              if (filtered.isEmpty)
+                const _EmptyInline(
+                  message: 'Nessun pasto in questo intervallo.',
+                )
+              else
+                for (final MealWithItems meal in filtered)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                    child: _MealListCard(meal: meal),
+                  ),
+            ],
           );
         },
       ),
     );
+  }
+
+  Future<void> _pickFilterDate(TextEditingController controller) async {
+    final DateTime initial =
+        DateTime.tryParse(controller.text.trim()) ?? DateTime.now();
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2035),
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() => controller.text = _dateKey(picked));
   }
 }
 
@@ -817,11 +1740,26 @@ class FoodMealDetailScreen extends ConsumerStatefulWidget {
 
 class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
   late MealWithItems _details;
+  final TextEditingController _ingredientSheetQuery = TextEditingController();
+  final Set<int> _pendingIngredientIds = <int>{};
+  final Map<int, TextEditingController> _pendingIngredientGrams =
+      <int, TextEditingController>{};
+  int _ingredientSheetStep = 0;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _ingredientSheetQuery.dispose();
+    for (final TextEditingController controller
+        in _pendingIngredientGrams.values) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 
   void _load() {
@@ -852,7 +1790,8 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
           ),
         ],
       ),
-      floatingActionButton: const TtGlobalNavFab(),
+      bottomNavigationBar:
+          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
       body: ListView(
         padding: _screenPadding,
         children: <Widget>[
@@ -878,26 +1817,60 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
             ),
           ],
           const SizedBox(height: AppSpacing.sectionGap),
+          TtAppCard(
+            onTap: _showMealSettingsDialog,
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  Icons.tune_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'Pasto libero e impostazioni',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      Text(
+                        meal.mealModeCode == 'free'
+                            ? 'Configurazione: ${meal.freeMealTrackingCode}'
+                            : 'Standard. Tocca per impostare un pasto libero.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sectionGap),
           const TtSectionHeader(title: 'Aggiungi voce'),
           const SizedBox(height: AppSpacing.md),
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
+          Column(
             children: <Widget>[
-              ActionChip(
-                avatar: const Icon(Icons.inventory_2_outlined),
-                label: const Text('Ingrediente'),
-                onPressed: _showAddIngredientDialog,
+              _MealAddActionCard(
+                icon: Icons.inventory_2_outlined,
+                title: 'Ingrediente',
+                subtitle: 'Cerca alimenti locali e inserisci la grammatura.',
+                onTap: _showAddIngredientDialog,
               ),
-              ActionChip(
-                avatar: const Icon(Icons.menu_book_rounded),
-                label: const Text('Ricetta'),
-                onPressed: _showAddRecipeDialog,
+              const SizedBox(height: AppSpacing.sm),
+              _MealAddActionCard(
+                icon: Icons.menu_book_rounded,
+                title: 'Ricetta',
+                subtitle: 'Aggiungi una ricetta salvata come porzione.',
+                onTap: _showAddRecipeDialog,
               ),
-              ActionChip(
-                avatar: const Icon(Icons.edit_rounded),
-                label: const Text('Stima manuale'),
-                onPressed: _showManualEstimateDialog,
+              const SizedBox(height: AppSpacing.sm),
+              _MealAddActionCard(
+                icon: Icons.edit_note_rounded,
+                title: 'Stima manuale',
+                subtitle: 'Inserisci calorie e macro quando non hai dati precisi.',
+                onTap: _showManualEstimateDialog,
               ),
             ],
           ),
@@ -913,14 +1886,7 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
                 child: _MealItemCard(
                   item: item,
                   imageUrl: _imageForItem(item),
-                  onDelete: () {
-                    setState(() {
-                      _details = ref
-                          .read(foodPlanningServiceProvider)
-                          .removeItemAt(_details, item.position);
-                    });
-                    _invalidateFood(ref);
-                  },
+                  onTap: () => _showMealItemActions(item),
                 ),
               ),
         ],
@@ -937,6 +1903,187 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
             .findByUuid(item.sourceUuid)
             ?.imageUrl ??
         '';
+  }
+
+  VoidCallback? _openReferenceForItem(MealItemEntity item) {
+    if (item.kindCode == 'ingredient') {
+      final IngredientEntity? ingredient =
+          ref.read(ingredientRepositoryProvider).findByUuid(item.sourceUuid);
+      if (ingredient == null) {
+        return null;
+      }
+      return () => context.push('/food/ingredients/${ingredient.id}');
+    }
+    if (item.kindCode == 'recipe') {
+      final RecipeEntity? recipe = ref
+          .read(recipeRepositoryProvider)
+          .getAllActive()
+          .where((RecipeEntity recipe) => recipe.uuid == item.sourceUuid)
+          .firstOrNull;
+      if (recipe == null) {
+        return null;
+      }
+      return () => context.push('/food/recipes/${recipe.id}');
+    }
+    return null;
+  }
+
+  Future<void> _showMealItemActions(MealItemEntity item) async {
+    final VoidCallback? openReference = _openReferenceForItem(item);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.sm,
+              AppSpacing.lg,
+              AppSpacing.lg,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  item.itemNameSnapshot,
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _ActionSheetCard(
+                  icon: Icons.delete_outline_rounded,
+                  title: 'Rimuovi',
+                  subtitle: 'Elimina questa voce dal pasto.',
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    setState(() {
+                      _details = ref
+                          .read(foodPlanningServiceProvider)
+                          .removeItemAt(_details, item.position);
+                    });
+                    _invalidateFood(ref);
+                  },
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _ActionSheetCard(
+                  icon: Icons.scale_outlined,
+                  title: 'Modifica quantita',
+                  subtitle: item.quantityModeCode == 'grams'
+                      ? 'Aggiorna i grammi mantenendo lo snapshot.'
+                      : 'Aggiorna le porzioni mantenendo lo snapshot.',
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _showEditMealItemQuantity(item);
+                  },
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _ActionSheetCard(
+                  icon: Icons.open_in_new_rounded,
+                  title: 'Apri ingrediente/ricetta',
+                  subtitle: openReference == null
+                      ? 'Nessun collegamento disponibile.'
+                      : 'Apri la scheda collegata.',
+                  onTap: openReference == null
+                      ? null
+                      : () {
+                          Navigator.of(context).pop();
+                          openReference();
+                        },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showEditMealItemQuantity(MealItemEntity item) async {
+    final bool gramsMode = item.quantityModeCode == 'grams';
+    final double current = gramsMode ? item.grams ?? 0 : item.portions ?? 1;
+    final TextEditingController controller =
+        TextEditingController(text: current <= 0 ? '' : _fmt(current));
+    final bool? saved = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: AppSpacing.lg,
+              right: AppSpacing.lg,
+              top: AppSpacing.sm,
+              bottom: MediaQuery.viewInsetsOf(context).bottom + AppSpacing.lg,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Modifica quantita',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _field(
+                  controller,
+                  gramsMode ? 'Grammi' : 'Porzioni',
+                  keyboardType: TextInputType.number,
+                  isRequired: true,
+                ),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Annulla'),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: const Text('Salva'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (saved != true) {
+      return;
+    }
+    final double? next = _toDouble(controller.text);
+    if (next == null || next <= 0) {
+      return;
+    }
+    final double ratio = current <= 0 ? 1 : next / current;
+    final List<MealItemEntity> nextItems = <MealItemEntity>[
+      for (final MealItemEntity existing in _details.items)
+        if (existing.position == item.position)
+          existing
+            ..grams = gramsMode ? next : existing.grams
+            ..portions = gramsMode ? existing.portions : next
+            ..kcal = existing.kcal * ratio
+            ..proteinGrams = existing.proteinGrams * ratio
+            ..carbsGrams = existing.carbsGrams * ratio
+            ..fatGrams = existing.fatGrams * ratio
+            ..fiberGrams = existing.fiberGrams * ratio
+            ..sugarGrams = existing.sugarGrams * ratio
+        else
+          existing,
+    ];
+    setState(() {
+      _details = ref
+          .read(mealRepositoryProvider)
+          .saveMealWithItems(_details.meal, nextItems);
+    });
+    _invalidateFood(ref);
   }
 
   Future<void> _showMealSettingsDialog() async {
@@ -1071,62 +2218,342 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
       _snack('Nessun ingrediente salvato.');
       return;
     }
-    IngredientEntity selected = ingredients.first;
-    final TextEditingController grams = TextEditingController(text: '100');
-    final bool? saved = await showDialog<bool>(
+    await showModalBottomSheet<void>(
       context: context,
-      builder: (BuildContext context) {
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (BuildContext sheetContext) {
         return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setDialogState) {
-            return AlertDialog(
-              title: const Text('Aggiungi ingrediente'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  DropdownButtonFormField<IngredientEntity>(
-                    initialValue: selected,
-                    decoration: const InputDecoration(labelText: 'Ingrediente'),
-                    items: ingredients.map((IngredientEntity ingredient) {
-                      return DropdownMenuItem<IngredientEntity>(
-                        value: ingredient,
-                        child: Text(ingredient.name),
-                      );
-                    }).toList(),
-                    onChanged: (IngredientEntity? value) {
-                      if (value != null) {
-                        setDialogState(() => selected = value);
-                      }
-                    },
+          builder: (BuildContext context, StateSetter setSheetState) {
+            final String clean =
+                _ingredientSheetQuery.text.trim().toLowerCase();
+            final List<IngredientEntity> filtered =
+                ingredients.where((IngredientEntity ingredient) {
+              return clean.isEmpty ||
+                  ingredient.name.toLowerCase().contains(clean) ||
+                  ingredient.brand.toLowerCase().contains(clean) ||
+                  ingredient.barcode.toLowerCase().contains(clean);
+            }).toList();
+            final List<IngredientEntity> selectedIngredients = ingredients
+                .where((IngredientEntity ingredient) =>
+                    _pendingIngredientIds.contains(ingredient.id))
+                .toList();
+            for (final IngredientEntity ingredient in selectedIngredients) {
+              _pendingIngredientGrams.putIfAbsent(
+                ingredient.id,
+                () => TextEditingController(text: '100'),
+              );
+            }
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.92,
+              minChildSize: 0.32,
+              maxChildSize: 0.96,
+              builder: (
+                BuildContext context,
+                ScrollController scrollController,
+              ) {
+                return SafeArea(
+                  child: ListView(
+                    controller: scrollController,
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.sm,
+                      AppSpacing.lg,
+                      AppSpacing.lg,
+                    ),
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Text(
+                              _ingredientSheetStep == 0
+                                  ? 'Seleziona alimenti'
+                                  : 'Inserisci grammature',
+                              style: Theme.of(context).textTheme.headlineSmall,
+                            ),
+                          ),
+                          _StatusPill(
+                            label:
+                                '${_pendingIngredientIds.length} selezionati',
+                            isWarning: _pendingIngredientIds.isEmpty,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                if (_ingredientSheetStep == 1) {
+                                  setSheetState(() {
+                                    _ingredientSheetStep = 0;
+                                  });
+                                } else {
+                                  Navigator.of(sheetContext).pop();
+                                }
+                              },
+                              icon: Icon(_ingredientSheetStep == 1
+                                  ? Icons.arrow_back_rounded
+                                  : Icons.keyboard_arrow_down),
+                              label: Text(_ingredientSheetStep == 1
+                                  ? 'Indietro'
+                                  : 'Chiudi'),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: _pendingIngredientIds.isEmpty
+                                  ? null
+                                  : () {
+                                      if (_ingredientSheetStep == 0) {
+                                        setSheetState(() {
+                                          _ingredientSheetStep = 1;
+                                        });
+                                      } else {
+                                        _confirmPendingIngredients(
+                                          selectedIngredients,
+                                        );
+                                        Navigator.of(sheetContext).pop();
+                                      }
+                                    },
+                              icon: Icon(_ingredientSheetStep == 0
+                                  ? Icons.arrow_forward_rounded
+                                  : Icons.check_rounded),
+                              label: Text(_ingredientSheetStep == 0
+                                  ? 'Continua'
+                                  : 'Conferma'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      if (_ingredientSheetStep == 0) ...<Widget>[
+                        TextField(
+                          controller: _ingredientSheetQuery,
+                          decoration: const InputDecoration(
+                            labelText: 'Cerca per nome, brand o barcode',
+                            prefixIcon: Icon(Icons.search_rounded),
+                          ),
+                          onChanged: (_) => setSheetState(() {}),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        if (filtered.isEmpty)
+                          const _EmptyInline(
+                            message: 'Nessun alimento trovato.',
+                          )
+                        else
+                          for (final IngredientEntity ingredient in filtered)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: AppSpacing.sm,
+                              ),
+                              child: TtAppCard(
+                                onTap: () {
+                                  setSheetState(() {
+                                    if (_pendingIngredientIds
+                                        .contains(ingredient.id)) {
+                                      _pendingIngredientIds
+                                          .remove(ingredient.id);
+                                    } else {
+                                      _pendingIngredientIds.add(ingredient.id);
+                                      _pendingIngredientGrams.putIfAbsent(
+                                        ingredient.id,
+                                        () =>
+                                            TextEditingController(text: '100'),
+                                      );
+                                    }
+                                  });
+                                },
+                                child: Row(
+                                  children: <Widget>[
+                                    _FoodThumb(
+                                      imageUrl: ingredient.imageUrl,
+                                      fallbackIcon: Icons.inventory_2_outlined,
+                                    ),
+                                    const SizedBox(width: AppSpacing.md),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: <Widget>[
+                                          Text(
+                                            ingredient.name,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleMedium,
+                                          ),
+                                          Text(
+                                            ingredient.brand.isEmpty
+                                                ? _fmtKcal(
+                                                    ingredient.kcalPerReference,
+                                                  )
+                                                : ingredient.brand,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Icon(
+                                      _pendingIngredientIds
+                                              .contains(ingredient.id)
+                                          ? Icons.check_circle_rounded
+                                          : Icons.circle_outlined,
+                                      color: _pendingIngredientIds
+                                              .contains(ingredient.id)
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .primary
+                                          : Theme.of(context)
+                                              .colorScheme
+                                              .outline,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                      ] else ...<Widget>[
+                        for (final IngredientEntity ingredient
+                            in selectedIngredients)
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.sm,
+                            ),
+                            child: TtAppCard(
+                              child: Row(
+                                children: <Widget>[
+                                  _FoodThumb(
+                                    imageUrl: ingredient.imageUrl,
+                                    fallbackIcon: Icons.inventory_2_outlined,
+                                  ),
+                                  const SizedBox(width: AppSpacing.md),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Text(
+                                          ingredient.name,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleMedium,
+                                        ),
+                                        Text(
+                                          ingredient.brand,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    width: 112,
+                                    child: TextField(
+                                      controller: _pendingIngredientGrams[
+                                          ingredient.id],
+                                      keyboardType: TextInputType.number,
+                                      decoration: const InputDecoration(
+                                        labelText: 'g',
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                      const SizedBox(height: AppSpacing.sectionGap),
+                      Row(
+                        children: <Widget>[
+                          if (_ingredientSheetStep == 1)
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () {
+                                  setSheetState(() {
+                                    _ingredientSheetStep = 0;
+                                  });
+                                },
+                                icon: const Icon(Icons.arrow_back_rounded),
+                                label: const Text('Indietro'),
+                              ),
+                            )
+                          else
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () =>
+                                    Navigator.of(sheetContext).pop(),
+                                icon: const Icon(Icons.keyboard_arrow_down),
+                                label: const Text('Chiudi'),
+                              ),
+                            ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: _pendingIngredientIds.isEmpty
+                                  ? null
+                                  : () {
+                                      if (_ingredientSheetStep == 0) {
+                                        setSheetState(() {
+                                          _ingredientSheetStep = 1;
+                                        });
+                                      } else {
+                                        _confirmPendingIngredients(
+                                          selectedIngredients,
+                                        );
+                                        Navigator.of(sheetContext).pop();
+                                      }
+                                    },
+                              icon: Icon(_ingredientSheetStep == 0
+                                  ? Icons.arrow_forward_rounded
+                                  : Icons.check_rounded),
+                              label: Text(_ingredientSheetStep == 0
+                                  ? 'Continua'
+                                  : 'Conferma'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: AppSpacing.md),
-                  _field(grams, 'Grammi', keyboardType: TextInputType.number),
-                ],
-              ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Annulla'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Aggiungi'),
-                ),
-              ],
+                );
+              },
             );
           },
         );
       },
     );
-    if (saved == true) {
-      setState(() {
-        _details = ref.read(foodPlanningServiceProvider).addIngredientToMeal(
-              meal: _details,
-              ingredient: selected,
-              grams: _toDouble(grams.text) ?? 100,
-            );
-      });
-      _invalidateFood(ref);
+  }
+
+  void _confirmPendingIngredients(List<IngredientEntity> ingredients) {
+    MealWithItems next = _details;
+    final FoodPlanningService planning = ref.read(foodPlanningServiceProvider);
+    for (final IngredientEntity ingredient in ingredients) {
+      final TextEditingController? controller =
+          _pendingIngredientGrams[ingredient.id];
+      final double grams = _toDouble(controller?.text ?? '') ?? 100;
+      next = planning.addIngredientToMeal(
+        meal: next,
+        ingredient: ingredient,
+        grams: grams <= 0 ? 100 : grams,
+      );
     }
+    setState(() {
+      _details = next;
+      _ingredientSheetStep = 0;
+      _pendingIngredientIds.clear();
+      for (final TextEditingController controller
+          in _pendingIngredientGrams.values) {
+        controller.dispose();
+      }
+      _pendingIngredientGrams.clear();
+      _ingredientSheetQuery.clear();
+    });
+    _invalidateFood(ref);
   }
 
   Future<void> _showAddRecipeDialog() async {
@@ -1265,12 +2692,16 @@ class PersistentIngredientListScreen extends ConsumerStatefulWidget {
 class _PersistentIngredientListScreenState
     extends ConsumerState<PersistentIngredientListScreen> {
   final TextEditingController _query = TextEditingController();
+  final TextEditingController _brandFilter = TextEditingController();
   List<OpenFoodFactsProduct> _onlineResults = const <OpenFoodFactsProduct>[];
   bool _searchingOnline = false;
+  String _onlineError = '';
+  int _onlineAttempt = 0;
 
   @override
   void dispose() {
     _query.dispose();
+    _brandFilter.dispose();
     super.dispose();
   }
 
@@ -1294,7 +2725,8 @@ class _PersistentIngredientListScreenState
           ),
         ],
       ),
-      floatingActionButton: const TtGlobalNavFab(),
+      bottomNavigationBar:
+          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
       body: ingredientsValue.when(
         loading: () => const _LoadingState(),
         error: (Object error, StackTrace stackTrace) => _ErrorState(
@@ -1303,34 +2735,44 @@ class _PersistentIngredientListScreenState
         ),
         data: (List<IngredientEntity> ingredients) {
           final String query = _query.text.trim().toLowerCase();
-          final List<IngredientEntity> filtered = query.isEmpty
-              ? ingredients
-              : ingredients.where((IngredientEntity ingredient) {
-                  return ingredient.name.toLowerCase().contains(query) ||
-                      ingredient.brand.toLowerCase().contains(query) ||
-                      ingredient.barcode.contains(query);
-                }).toList();
+          final String brandQuery = _brandFilter.text.trim().toLowerCase();
+          final List<IngredientEntity> filtered =
+              ingredients.where((IngredientEntity ingredient) {
+            final bool nameMatch = query.isEmpty ||
+                ingredient.name.toLowerCase().contains(query) ||
+                ingredient.barcode.toLowerCase().contains(query);
+            final bool brandMatch = brandQuery.isEmpty ||
+                ingredient.brand.toLowerCase().contains(brandQuery);
+            return nameMatch && brandMatch;
+          }).toList();
+          final List<OpenFoodFactsProduct> filteredOnline =
+              _onlineResults.where((OpenFoodFactsProduct product) {
+            final bool nameMatch = query.isEmpty ||
+                product.name.toLowerCase().contains(query) ||
+                product.code.toLowerCase().contains(query);
+            final bool brandMatch = brandQuery.isEmpty ||
+                product.brand.toLowerCase().contains(brandQuery);
+            return nameMatch && brandMatch;
+          }).toList();
           return ListView(
             padding: _screenPadding,
             children: <Widget>[
               TextField(
                 controller: _query,
-                decoration: InputDecoration(
-                  labelText: 'Cerca alimento salvato o online',
-                  prefixIcon: const Icon(Icons.search_rounded),
-                  suffixIcon: IconButton(
-                    tooltip: 'Cerca su Open Food Facts',
-                    onPressed: _searchOpenFoodFacts,
-                    icon: _searchingOnline
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.public_rounded),
-                  ),
+                decoration: const InputDecoration(
+                  labelText: 'Cerca alimento salvato',
+                  prefixIcon: Icon(Icons.search_rounded),
                 ),
                 onChanged: (_) => setState(() {}),
-                onSubmitted: (_) => _searchOpenFoodFacts(),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              TextField(
+                controller: _brandFilter,
+                decoration: const InputDecoration(
+                  labelText: 'Filtra per brand',
+                  prefixIcon: Icon(Icons.sell_outlined),
+                ),
+                onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: AppSpacing.md),
               Wrap(
@@ -1348,24 +2790,44 @@ class _PersistentIngredientListScreenState
                     onPressed: () => context.push('/food/ingredients/scan'),
                   ),
                   ActionChip(
-                    avatar: const Icon(Icons.public_rounded),
-                    label: const Text('Cerca online'),
-                    onPressed: _searchOpenFoodFacts,
+                    avatar: _searchingOnline
+                        ? const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.public_rounded),
+                    label: Text(_searchingOnline
+                        ? 'Ricerca online $_onlineAttempt/20'
+                        : 'Cerca online su Open Food Facts'),
+                    onPressed: _searchingOnline ? null : _searchOpenFoodFacts,
                   ),
                 ],
               ),
+              if (_onlineError.isNotEmpty) ...<Widget>[
+                const SizedBox(height: AppSpacing.md),
+                TtAppCard(
+                  child: Text(
+                    'Ricerca online non riuscita dopo 20 tentativi: $_onlineError',
+                  ),
+                ),
+              ],
               if (_onlineResults.isNotEmpty) ...<Widget>[
                 const SizedBox(height: AppSpacing.sectionGap),
                 const TtSectionHeader(title: 'Open Food Facts'),
                 const SizedBox(height: AppSpacing.md),
-                for (final OpenFoodFactsProduct product in _onlineResults)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: _OnlineProductCard(
-                      product: product,
-                      onSave: () => _saveOpenFoodFactsProduct(product),
+                if (filteredOnline.isEmpty)
+                  const _EmptyInline(
+                    message: 'Nessun risultato online con questi filtri.',
+                  )
+                else
+                  for (final OpenFoodFactsProduct product in filteredOnline)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                      child: _OnlineProductCard(
+                        product: product,
+                        onTap: () => _showOpenFoodFactsProductSheet(product),
+                      ),
                     ),
-                  ),
               ],
               const SizedBox(height: AppSpacing.sectionGap),
               const TtSectionHeader(title: 'Archivio locale'),
@@ -1390,26 +2852,144 @@ class _PersistentIngredientListScreenState
   Future<void> _searchOpenFoodFacts() async {
     final String query = _query.text.trim();
     if (query.isEmpty) {
+      setState(() {
+        _onlineError = 'Inserisci prima un nome alimento o un barcode.';
+      });
       return;
     }
-    setState(() => _searchingOnline = true);
-    try {
-      OpenFoodFactsProduct? byBarcode;
-      if (RegExp(r'^\d{6,}$').hasMatch(query)) {
-        byBarcode =
-            await ref.read(openFoodFactsServiceProvider).findByBarcode(query);
+    setState(() {
+      _searchingOnline = true;
+      _onlineError = '';
+      _onlineAttempt = 0;
+    });
+    Object? lastError;
+    for (int attempt = 1; attempt <= 20; attempt += 1) {
+      if (!mounted) {
+        return;
       }
-      final List<OpenFoodFactsProduct> byText = byBarcode == null
-          ? await ref.read(openFoodFactsServiceProvider).searchText(query)
-          : <OpenFoodFactsProduct>[byBarcode];
-      if (mounted) {
-        setState(() => _onlineResults = byText);
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _searchingOnline = false);
+      setState(() => _onlineAttempt = attempt);
+      try {
+        OpenFoodFactsProduct? byBarcode;
+        if (RegExp(r'^\d{6,}$').hasMatch(query)) {
+          byBarcode =
+              await ref.read(openFoodFactsServiceProvider).findByBarcode(query);
+        }
+        final List<OpenFoodFactsProduct> byText = byBarcode == null
+            ? await ref.read(openFoodFactsServiceProvider).searchText(query)
+            : <OpenFoodFactsProduct>[byBarcode];
+        if (mounted) {
+          setState(() {
+            _onlineResults = byText;
+            _searchingOnline = false;
+            _onlineError = '';
+          });
+        }
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 20) {
+          await Future<void>.delayed(const Duration(milliseconds: 220));
+        }
       }
     }
+    if (mounted) {
+      setState(() {
+        _searchingOnline = false;
+        _onlineError = lastError.toString();
+      });
+    }
+  }
+
+  Future<void> _showOpenFoodFactsProductSheet(
+    OpenFoodFactsProduct product,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.sm,
+              AppSpacing.lg,
+              AppSpacing.lg,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _FoodThumb(
+                      imageUrl: product.imageUrl,
+                      fallbackIcon: Icons.public_rounded,
+                      size: 86,
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            product.name,
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          if (product.brand.isNotEmpty)
+                            Text(
+                              product.brand,
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                          const SizedBox(height: AppSpacing.xs),
+                          _StatusPill(
+                            label: product.code.isEmpty
+                                ? 'Open Food Facts'
+                                : product.code,
+                            isWarning: false,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sectionGap),
+                _MetricGrid(
+                  metrics: <_Metric>[
+                    _Metric('Kcal', _fmtKcal(product.kcal100)),
+                    _Metric('Proteine', '${_fmt(product.protein100)} g'),
+                    _Metric('Carboidrati', '${_fmt(product.carbs100)} g'),
+                    _Metric('Grassi', '${_fmt(product.fat100)} g'),
+                    _Metric('Fibre', '${_fmt(product.fiber100)} g'),
+                    _Metric('Zuccheri', '${_fmt(product.sugar100)} g'),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sectionGap),
+                TtAppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      _detailRow('Quantita', product.quantity),
+                      _detailRow('Categorie', product.categories),
+                      _detailRow('Fonte', product.sourceUrl),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sectionGap),
+                TtPrimaryButton(
+                  label: 'Importa alimento',
+                  icon: Icons.download_done_rounded,
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _saveOpenFoodFactsProduct(product);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _saveOpenFoodFactsProduct(OpenFoodFactsProduct product) async {
@@ -1425,6 +3005,7 @@ class _PersistentIngredientListScreenState
     ref.invalidate(ingredientArchiveProvider);
     _invalidateFood(ref);
     if (mounted) {
+      _resetIngredientSearchState();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${product.name} salvato')),
       );
@@ -1501,9 +3082,834 @@ class _PersistentIngredientListScreenState
           ),
         );
     ref.invalidate(ingredientArchiveProvider);
+    _invalidateFood(ref);
+    if (mounted) {
+      _resetIngredientSearchState();
+    }
+  }
+
+  void _resetIngredientSearchState() {
+    setState(() {
+      _query.clear();
+      _brandFilter.clear();
+      _onlineResults = const <OpenFoodFactsProduct>[];
+      _onlineError = '';
+      _onlineAttempt = 0;
+      _searchingOnline = false;
+    });
   }
 }
 
+class IngredientDetailScreen extends ConsumerStatefulWidget {
+  const IngredientDetailScreen({
+    required this.id,
+    super.key,
+  });
+
+  final String id;
+
+  @override
+  ConsumerState<IngredientDetailScreen> createState() =>
+      _IngredientDetailScreenState();
+}
+
+class _IngredientDetailScreenState
+    extends ConsumerState<IngredientDetailScreen> {
+  bool _isWorking = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final int? numericId = int.tryParse(widget.id);
+    final IngredientEntity? ingredient = numericId == null
+        ? ref.read(ingredientRepositoryProvider).findByUuid(widget.id)
+        : ref.read(ingredientRepositoryProvider).getById(numericId);
+    if (ingredient == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Ingrediente')),
+        bottomNavigationBar:
+            const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
+        body: const _EmptyInline(message: 'Ingrediente non trovato.'),
+      );
+    }
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(ingredient.name),
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Modifica ingrediente',
+            onPressed: () async {
+              try {
+                final bool saved = await _showIngredientEditSheet(
+                  context,
+                  ref,
+                  ingredient,
+                  onApplying: () {
+                    if (mounted) {
+                      setState(() => _isWorking = true);
+                    }
+                  },
+                );
+                if (!mounted) {
+                  return;
+                }
+                if (saved) {
+                  setState(() {});
+                }
+              } finally {
+                if (mounted) {
+                  setState(() => _isWorking = false);
+                }
+              }
+            },
+            icon: const Icon(Icons.edit_rounded),
+          ),
+          IconButton(
+            tooltip: 'Rimuovi ingrediente',
+            onPressed: () => _confirmDeleteIngredient(ingredient),
+            icon: const Icon(Icons.delete_outline_rounded),
+          ),
+        ],
+      ),
+      bottomNavigationBar:
+          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
+      body: Stack(
+        children: <Widget>[
+          ListView(
+            padding: _screenPadding,
+            children: <Widget>[
+              TtAppCard(
+                child: Row(
+                  children: <Widget>[
+                    _FoodThumb(
+                      imageUrl: ingredient.imageUrl,
+                      fallbackIcon: Icons.inventory_2_outlined,
+                      size: 84,
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            ingredient.name,
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                          if (ingredient.brand.isNotEmpty)
+                            Text(
+                              ingredient.brand,
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                          const SizedBox(height: AppSpacing.xs),
+                          _StatusPill(
+                            label: ingredient.sourceName.isEmpty
+                                ? ingredient.sourceTypeCode
+                                : ingredient.sourceName,
+                            isWarning: false,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sectionGap),
+              const TtSectionHeader(title: 'Nutrizione'),
+              const SizedBox(height: AppSpacing.md),
+              _MetricGrid(
+                metrics: <_Metric>[
+                  _Metric(
+                    'Riferimento',
+                    '${_fmt(ingredient.nutritionReferenceAmount)} ${ingredient.baseUnit}',
+                  ),
+                  _Metric('Calorie', _fmtKcal(ingredient.kcalPerReference)),
+                  _Metric(
+                      'Proteine', '${_fmt(ingredient.proteinPerReference)} g'),
+                  _Metric(
+                      'Carboidrati', '${_fmt(ingredient.carbsPerReference)} g'),
+                  _Metric('Grassi', '${_fmt(ingredient.fatPerReference)} g'),
+                  _Metric('Fibre', '${_fmt(ingredient.fiberPerReference)} g'),
+                  _Metric('Zuccheri', '${_fmt(ingredient.sugarPerReference)} g'),
+                  _Metric('Sale', '${_fmt(ingredient.saltPerReference)} g'),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sectionGap),
+              const TtSectionHeader(title: 'Dettagli'),
+              const SizedBox(height: AppSpacing.md),
+              TtAppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _detailRow('Barcode', ingredient.barcode),
+                    _detailRow(
+                      'Quantità confezione',
+                      ingredient.packageQuantity == null
+                          ? ''
+                          : _fmt(ingredient.packageQuantity!),
+                    ),
+                    _detailRow('Categorie', ingredient.categories),
+                    _detailRow('Fonte', ingredient.sourceUrl),
+                    _detailRow('Note', ingredient.notes),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (_isWorking)
+            Positioned.fill(
+              child: ColoredBox(
+                color: Theme.of(context)
+                    .colorScheme
+                    .scrim
+                    .withValues(alpha: 0.42),
+                child: Center(
+                  child: TtAppCard(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        const CircularProgressIndicator(),
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          'Aggiorno pasti e ricette...',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteIngredient(IngredientEntity ingredient) async {
+    final bool? confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.sm,
+              AppSpacing.lg,
+              MediaQuery.viewInsetsOf(sheetContext).bottom + AppSpacing.lg,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Rimuovi ingrediente',
+                  style: Theme.of(sheetContext).textTheme.titleLarge,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  '${ingredient.name} verrà rimosso dall archivio. I pasti e le ricette esistenti manterranno gli snapshot salvati.',
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(false),
+                        child: const Text('Annulla'),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.of(sheetContext).pop(true),
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        label: const Text('Rimuovi'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    setState(() => _isWorking = true);
+    try {
+      ref.read(ingredientRepositoryProvider).softDelete(ingredient);
+      ref.invalidate(ingredientArchiveProvider);
+      _invalidateFood(ref);
+      if (!mounted) {
+        return;
+      }
+      context.go('/food/ingredients');
+    } finally {
+      if (mounted) {
+        setState(() => _isWorking = false);
+      }
+    }
+  }
+}
+
+class _IngredientSourceSnapshot {
+  const _IngredientSourceSnapshot({
+    required this.uuid,
+    required this.name,
+  });
+
+  factory _IngredientSourceSnapshot.from(IngredientEntity ingredient) {
+    return _IngredientSourceSnapshot(
+      uuid: ingredient.uuid,
+      name: ingredient.name,
+    );
+  }
+
+  final String uuid;
+  final String name;
+}
+
+Future<bool> _showIngredientEditSheet(
+  BuildContext parentContext,
+  WidgetRef ref,
+  IngredientEntity ingredient, {
+  VoidCallback? onApplying,
+}) async {
+  final _IngredientSourceSnapshot before =
+      _IngredientSourceSnapshot.from(ingredient);
+  final TextEditingController name =
+      TextEditingController(text: ingredient.name);
+  final TextEditingController brand =
+      TextEditingController(text: ingredient.brand);
+  final TextEditingController barcode =
+      TextEditingController(text: ingredient.barcode);
+  final TextEditingController image =
+      TextEditingController(text: ingredient.imageUrl);
+  final TextEditingController quantity =
+      TextEditingController(text: ingredient.packageQuantity?.toString() ?? '');
+  final TextEditingController unit = TextEditingController(
+      text: ingredient.baseUnit.trim().isEmpty ? 'g' : ingredient.baseUnit);
+  final TextEditingController sourceName =
+      TextEditingController(text: ingredient.sourceName);
+  final TextEditingController sourceUrl =
+      TextEditingController(text: ingredient.sourceUrl);
+  final TextEditingController categories =
+      TextEditingController(text: ingredient.categories);
+  final TextEditingController notes =
+      TextEditingController(text: ingredient.notes);
+  final TextEditingController kcal =
+      TextEditingController(text: ingredient.kcalPerReference.toString());
+  final TextEditingController protein =
+      TextEditingController(text: ingredient.proteinPerReference.toString());
+  final TextEditingController carbs =
+      TextEditingController(text: ingredient.carbsPerReference.toString());
+  final TextEditingController fat =
+      TextEditingController(text: ingredient.fatPerReference.toString());
+  final TextEditingController fiber =
+      TextEditingController(text: ingredient.fiberPerReference.toString());
+  final TextEditingController sugar =
+      TextEditingController(text: ingredient.sugarPerReference.toString());
+  final TextEditingController salt =
+      TextEditingController(text: ingredient.saltPerReference.toString());
+  final GlobalKey<FormState> formKey = GlobalKey<FormState>();
+  final bool? saved = await showModalBottomSheet<bool>(
+    context: parentContext,
+    showDragHandle: true,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (BuildContext sheetContext) {
+      return FractionallySizedBox(
+        heightFactor: 0.92,
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+          ),
+          child: Column(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  0,
+                  AppSpacing.lg,
+                  AppSpacing.md,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        'Modifica ingrediente',
+                        style: Theme.of(sheetContext).textTheme.titleLarge,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Chiudi',
+                      onPressed: () => Navigator.of(sheetContext).pop(false),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Form(
+                  key: formKey,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      0,
+                      AppSpacing.lg,
+                      AppSpacing.md,
+                    ),
+                    children: <Widget>[
+                      _field(name, 'Nome', isRequired: true),
+                      _field(brand, 'Brand'),
+                      _field(
+                        barcode,
+                        'Barcode',
+                        suffixIcon: IconButton(
+                          tooltip: 'Apri scanner',
+                          onPressed: () {
+                            Navigator.of(sheetContext).pop(false);
+                            parentContext.push('/food/ingredients/scan');
+                          },
+                          icon: const Icon(Icons.qr_code_scanner_rounded),
+                        ),
+                      ),
+                      _field(
+                        image,
+                        'URL o percorso immagine',
+                        suffixIcon: IconButton(
+                          tooltip: 'Scegli file',
+                          onPressed: () {
+                            ScaffoldMessenger.of(parentContext).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Inserisci qui il percorso del file immagine o un URL.',
+                                ),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.folder_open_rounded),
+                        ),
+                      ),
+                      _field(
+                        quantity,
+                        'Quantità confezione',
+                        keyboardType: TextInputType.number,
+                      ),
+                      _field(unit, 'Unità base'),
+                      _field(sourceName, 'Fonte'),
+                      _field(sourceUrl, 'URL fonte'),
+                      _field(categories, 'Categorie'),
+                      _field(kcal, 'Kcal per 100 g',
+                          keyboardType: TextInputType.number),
+                      _field(protein, 'Proteine per 100 g',
+                          keyboardType: TextInputType.number),
+                      _field(carbs, 'Carboidrati per 100 g',
+                          keyboardType: TextInputType.number),
+                      _field(fat, 'Grassi per 100 g',
+                          keyboardType: TextInputType.number),
+                      _field(fiber, 'Fibre per 100 g',
+                          keyboardType: TextInputType.number),
+                      _field(sugar, 'Zuccheri per 100 g',
+                          keyboardType: TextInputType.number),
+                      _field(salt, 'Sale per 100 g',
+                          keyboardType: TextInputType.number),
+                      _field(notes, 'Note', maxLines: 4),
+                    ],
+                  ),
+                ),
+              ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.sm,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(sheetContext).pop(false),
+                          child: const Text('Annulla'),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () {
+                            if (formKey.currentState?.validate() ?? false) {
+                              Navigator.of(sheetContext).pop(true);
+                            }
+                          },
+                          child: const Text('Salva'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+  if (saved != true) {
+    return false;
+  }
+  onApplying?.call();
+  ingredient
+    ..name = name.text.trim()
+    ..brand = brand.text.trim()
+    ..barcode = barcode.text.trim()
+    ..imageUrl = image.text.trim()
+    ..packageQuantity = _toDouble(quantity.text)
+    ..baseUnit = unit.text.trim().isEmpty ? 'g' : unit.text.trim()
+    ..sourceName = sourceName.text.trim()
+    ..sourceUrl = sourceUrl.text.trim()
+    ..categories = categories.text.trim()
+    ..kcalPerReference = _toDouble(kcal.text) ?? 0
+    ..proteinPerReference = _toDouble(protein.text) ?? 0
+    ..carbsPerReference = _toDouble(carbs.text) ?? 0
+    ..fatPerReference = _toDouble(fat.text) ?? 0
+    ..fiberPerReference = _toDouble(fiber.text) ?? 0
+    ..sugarPerReference = _toDouble(sugar.text) ?? 0
+    ..saltPerReference = _toDouble(salt.text) ?? 0
+    ..notes = notes.text.trim();
+  ref.read(ingredientRepositoryProvider).save(ingredient);
+  _syncIngredientSnapshots(ref, before, ingredient);
+  ref.invalidate(ingredientArchiveProvider);
+  ref.invalidate(recipeArchiveProvider);
+  _invalidateFood(ref);
+  if (parentContext.mounted) {
+    ScaffoldMessenger.of(parentContext).showSnackBar(
+      SnackBar(content: Text('${ingredient.name} aggiornato')),
+    );
+  }
+  return true;
+}
+
+void _syncIngredientSnapshots(
+  WidgetRef ref,
+  _IngredientSourceSnapshot before,
+  IngredientEntity ingredient,
+) {
+  final Store store = ref.read(objectBoxStoreProvider);
+  final int now = DateTime.now().millisecondsSinceEpoch;
+  store.runInTransaction(TxMode.write, () {
+    final Box<MealItemEntity> mealItemBox = store.box<MealItemEntity>();
+    final List<MealItemEntity> mealItems = mealItemBox
+        .getAll()
+        .where(
+          (MealItemEntity item) =>
+              item.deletedAtEpochMs == null &&
+              item.kindCode == 'ingredient' &&
+              item.sourceUuid == before.uuid,
+        )
+        .toList();
+    for (final MealItemEntity item in mealItems) {
+      final double grams = item.grams ?? ingredient.nutritionReferenceAmount;
+      final double factor = ingredient.nutritionReferenceAmount == 0
+          ? 0
+          : grams / ingredient.nutritionReferenceAmount;
+      item
+        ..itemNameSnapshot = ingredient.name
+        ..kcal = ingredient.kcalPerReference * factor
+        ..proteinGrams = ingredient.proteinPerReference * factor
+        ..carbsGrams = ingredient.carbsPerReference * factor
+        ..fatGrams = ingredient.fatPerReference * factor
+        ..fiberGrams = ingredient.fiberPerReference * factor
+        ..sugarGrams = ingredient.sugarPerReference * factor
+        ..updatedAtEpochMs = now;
+    }
+    if (mealItems.isNotEmpty) {
+      mealItemBox.putMany(mealItems);
+    }
+
+    final Box<RecipeIngredientEntity> recipeIngredientBox =
+        store.box<RecipeIngredientEntity>();
+    final Box<RecipeEntity> recipeBox = store.box<RecipeEntity>();
+    final List<RecipeIngredientEntity> recipeIngredients = recipeIngredientBox
+        .getAll()
+        .where(
+          (RecipeIngredientEntity item) =>
+              item.deletedAtEpochMs == null &&
+              (item.ingredientUuid == before.uuid ||
+                  (item.ingredientUuid.trim().isEmpty &&
+                      item.nameSnapshot.toLowerCase() ==
+                          before.name.toLowerCase())),
+        )
+        .toList();
+    final Set<int> affectedRecipeIds = <int>{};
+    for (final RecipeIngredientEntity item in recipeIngredients) {
+      final double factor = ingredient.nutritionReferenceAmount == 0
+          ? 0
+          : item.grams / ingredient.nutritionReferenceAmount;
+      item
+        ..ingredientUuid = ingredient.uuid
+        ..nameSnapshot = ingredient.name
+        ..calories = ingredient.kcalPerReference * factor
+        ..proteinGrams = ingredient.proteinPerReference * factor
+        ..carbsGrams = ingredient.carbsPerReference * factor
+        ..fatGrams = ingredient.fatPerReference * factor
+        ..fiberGrams = ingredient.fiberPerReference * factor
+        ..sugarGrams = ingredient.sugarPerReference * factor
+        ..updatedAtEpochMs = now;
+      affectedRecipeIds.add(item.recipe.targetId);
+    }
+    if (recipeIngredients.isNotEmpty) {
+      recipeIngredientBox.putMany(recipeIngredients);
+    }
+    for (final int recipeId in affectedRecipeIds) {
+      final RecipeEntity? recipe = recipeBox.get(recipeId);
+      if (recipe == null || recipe.deletedAtEpochMs != null) {
+        continue;
+      }
+      final List<RecipeIngredientEntity> ingredients = recipeIngredientBox
+          .getAll()
+          .where(
+            (RecipeIngredientEntity item) =>
+                item.recipe.targetId == recipeId &&
+                item.deletedAtEpochMs == null,
+          )
+          .toList();
+      _applyRecipeTotals(recipe, ingredients);
+      recipe.updatedAtEpochMs = now;
+      recipeBox.put(recipe);
+    }
+  });
+}
+
+/*
+                    children: <Widget>[
+                      Text(
+                        ingredient.name,
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      if (ingredient.brand.isNotEmpty)
+                        Text(
+                          ingredient.brand,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      const SizedBox(height: AppSpacing.xs),
+                      _StatusPill(
+                        label: ingredient.sourceName.isEmpty
+                            ? ingredient.sourceTypeCode
+                            : ingredient.sourceName,
+                        isWarning: false,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sectionGap),
+          const TtSectionHeader(title: 'Nutrizione'),
+          const SizedBox(height: AppSpacing.md),
+          _MetricGrid(
+            metrics: <_Metric>[
+              _Metric(
+                'Riferimento',
+                '${_fmt(ingredient.nutritionReferenceAmount)} ${ingredient.baseUnit}',
+              ),
+              _Metric('Calorie', _fmtKcal(ingredient.kcalPerReference)),
+              _Metric('Proteine', '${_fmt(ingredient.proteinPerReference)} g'),
+              _Metric('Carboidrati', '${_fmt(ingredient.carbsPerReference)} g'),
+              _Metric('Grassi', '${_fmt(ingredient.fatPerReference)} g'),
+              _Metric('Fibre', '${_fmt(ingredient.fiberPerReference)} g'),
+              _Metric('Zuccheri', '${_fmt(ingredient.sugarPerReference)} g'),
+              _Metric('Sale', '${_fmt(ingredient.saltPerReference)} g'),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sectionGap),
+          const TtSectionHeader(title: 'Dettagli'),
+          const SizedBox(height: AppSpacing.md),
+          TtAppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                _detailRow('Barcode', ingredient.barcode),
+                _detailRow(
+                  'Quantità confezione',
+                  ingredient.packageQuantity == null
+                      ? ''
+                      : _fmt(ingredient.packageQuantity!),
+                ),
+                _detailRow('Categorie', ingredient.categories),
+                _detailRow('Fonte', ingredient.sourceUrl),
+                _detailRow('Note', ingredient.notes),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<bool> _showIngredientEditDialog(
+  BuildContext parentContext,
+  WidgetRef ref,
+  IngredientEntity ingredient,
+) async {
+  final TextEditingController name =
+      TextEditingController(text: ingredient.name);
+  final TextEditingController brand =
+      TextEditingController(text: ingredient.brand);
+  final TextEditingController barcode =
+      TextEditingController(text: ingredient.barcode);
+  final TextEditingController image =
+      TextEditingController(text: ingredient.imageUrl);
+  final TextEditingController quantity =
+      TextEditingController(text: ingredient.packageQuantity?.toString() ?? '');
+  final TextEditingController unit = TextEditingController(
+      text: ingredient.baseUnit.trim().isEmpty ? 'g' : ingredient.baseUnit);
+  final TextEditingController sourceName =
+      TextEditingController(text: ingredient.sourceName);
+  final TextEditingController sourceUrl =
+      TextEditingController(text: ingredient.sourceUrl);
+  final TextEditingController categories =
+      TextEditingController(text: ingredient.categories);
+  final TextEditingController notes =
+      TextEditingController(text: ingredient.notes);
+  final TextEditingController kcal =
+      TextEditingController(text: ingredient.kcalPerReference.toString());
+  final TextEditingController protein =
+      TextEditingController(text: ingredient.proteinPerReference.toString());
+  final TextEditingController carbs =
+      TextEditingController(text: ingredient.carbsPerReference.toString());
+  final TextEditingController fat =
+      TextEditingController(text: ingredient.fatPerReference.toString());
+  final TextEditingController fiber =
+      TextEditingController(text: ingredient.fiberPerReference.toString());
+  final TextEditingController sugar =
+      TextEditingController(text: ingredient.sugarPerReference.toString());
+  final TextEditingController salt =
+      TextEditingController(text: ingredient.saltPerReference.toString());
+  final GlobalKey<FormState> formKey = GlobalKey<FormState>();
+  final bool? saved = await showDialog<bool>(
+    context: parentContext,
+    builder: (BuildContext dialogContext) {
+      return AlertDialog(
+        title: const Text('Modifica ingrediente'),
+        content: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                _field(name, 'Nome', isRequired: true),
+                _field(brand, 'Brand'),
+                _field(
+                  barcode,
+                  'Barcode',
+                  suffixIcon: IconButton(
+                    tooltip: 'Apri scanner',
+                    onPressed: () {
+                      Navigator.of(dialogContext).pop(false);
+                      parentContext.push('/food/ingredients/scan');
+                    },
+                    icon: const Icon(Icons.qr_code_scanner_rounded),
+                  ),
+                ),
+                _field(
+                  image,
+                  'URL o percorso immagine',
+                  suffixIcon: IconButton(
+                    tooltip: 'Scegli file',
+                    onPressed: () {
+                      ScaffoldMessenger.of(parentContext).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Inserisci qui il percorso del file immagine o un URL.',
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.folder_open_rounded),
+                  ),
+                ),
+                _field(quantity, 'Quantita confezione',
+                    keyboardType: TextInputType.number),
+                _field(unit, 'Unita base'),
+                _field(sourceName, 'Fonte'),
+                _field(sourceUrl, 'URL fonte'),
+                _field(categories, 'Categorie'),
+                _field(kcal, 'Kcal per 100 g',
+                    keyboardType: TextInputType.number),
+                _field(protein, 'Proteine per 100 g',
+                    keyboardType: TextInputType.number),
+                _field(carbs, 'Carboidrati per 100 g',
+                    keyboardType: TextInputType.number),
+                _field(fat, 'Grassi per 100 g',
+                    keyboardType: TextInputType.number),
+                _field(fiber, 'Fibre per 100 g',
+                    keyboardType: TextInputType.number),
+                _field(sugar, 'Zuccheri per 100 g',
+                    keyboardType: TextInputType.number),
+                _field(salt, 'Sale per 100 g',
+                    keyboardType: TextInputType.number),
+                _field(notes, 'Note', maxLines: 4),
+              ],
+            ),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annulla'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() ?? false) {
+                Navigator.of(dialogContext).pop(true);
+              }
+            },
+            child: const Text('Salva'),
+          ),
+        ],
+      );
+    },
+  );
+  if (saved != true) {
+    return false;
+  }
+  ingredient
+    ..name = name.text.trim()
+    ..brand = brand.text.trim()
+    ..barcode = barcode.text.trim()
+    ..imageUrl = image.text.trim()
+    ..packageQuantity = _toDouble(quantity.text)
+    ..baseUnit = unit.text.trim().isEmpty ? 'g' : unit.text.trim()
+    ..sourceName = sourceName.text.trim()
+    ..sourceUrl = sourceUrl.text.trim()
+    ..categories = categories.text.trim()
+    ..kcalPerReference = _toDouble(kcal.text) ?? 0
+    ..proteinPerReference = _toDouble(protein.text) ?? 0
+    ..carbsPerReference = _toDouble(carbs.text) ?? 0
+    ..fatPerReference = _toDouble(fat.text) ?? 0
+    ..fiberPerReference = _toDouble(fiber.text) ?? 0
+    ..sugarPerReference = _toDouble(sugar.text) ?? 0
+    ..saltPerReference = _toDouble(salt.text) ?? 0
+    ..notes = notes.text.trim();
+  ref.read(ingredientRepositoryProvider).save(ingredient);
+  ref.invalidate(ingredientArchiveProvider);
+  _invalidateFood(ref);
+  if (parentContext.mounted) {
+    ScaffoldMessenger.of(parentContext).showSnackBar(
+      SnackBar(content: Text('${ingredient.name} aggiornato')),
+    );
+  }
+  return true;
+}
+
+*/
 class IngredientScannerScreen extends ConsumerStatefulWidget {
   const IngredientScannerScreen({super.key});
 
@@ -1520,7 +3926,8 @@ class _IngredientScannerScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Scanner barcode')),
-      floatingActionButton: const TtGlobalNavFab(),
+      bottomNavigationBar:
+          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
       body: Stack(
         children: <Widget>[
           MobileScanner(
@@ -1600,7 +4007,8 @@ class RecipesScreen extends ConsumerWidget {
         ref.watch(recipeArchiveProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Ricette')),
-      floatingActionButton: const TtGlobalNavFab(),
+      bottomNavigationBar:
+          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
       body: recipes.when(
         loading: () => const _LoadingState(),
         error: (Object error, StackTrace stackTrace) => _ErrorState(
@@ -1614,7 +4022,7 @@ class RecipesScreen extends ConsumerWidget {
               TtPrimaryButton(
                 label: 'Nuova ricetta',
                 icon: Icons.add_rounded,
-                onPressed: () => context.push('/food/recipes/new'),
+                onPressed: () => _showCreateRecipeNameDialog(context, ref),
               ),
               const SizedBox(height: AppSpacing.sectionGap),
               if (recipes.isEmpty)
@@ -1660,6 +4068,53 @@ class RecipesScreen extends ConsumerWidget {
   }
 }
 
+Future<void> _showCreateRecipeNameDialog(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final TextEditingController name = TextEditingController();
+  final GlobalKey<FormState> formKey = GlobalKey<FormState>();
+  final bool? saved = await showDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      return AlertDialog(
+        title: const Text('Nuova ricetta'),
+        content: Form(
+          key: formKey,
+          child: _field(name, 'Nome ricetta', isRequired: true),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annulla'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() ?? false) {
+                Navigator.of(dialogContext).pop(true);
+              }
+            },
+            child: const Text('Crea'),
+          ),
+        ],
+      );
+    },
+  );
+  if (saved != true || !context.mounted) {
+    return;
+  }
+  final RecipeEntity recipe = ref.read(recipeRepositoryProvider).save(
+        RecipeEntity(
+          uuid: '',
+          title: name.text.trim(),
+          createdAtEpochMs: 0,
+          updatedAtEpochMs: 0,
+        ),
+      );
+  ref.invalidate(recipeArchiveProvider);
+  context.push('/food/recipes/${recipe.id}');
+}
+
 class RecipeDetailScreen extends ConsumerStatefulWidget {
   const RecipeDetailScreen({
     required this.id,
@@ -1673,7 +4128,6 @@ class RecipeDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
-  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _title = TextEditingController();
   final TextEditingController _summary = TextEditingController();
   final TextEditingController _servings = TextEditingController(text: '1');
@@ -1681,6 +4135,8 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   final TextEditingController _cook = TextEditingController(text: '0');
   final TextEditingController _difficulty = TextEditingController(text: 'easy');
   final TextEditingController _kcal = TextEditingController();
+  final TextEditingController _yield = TextEditingController();
+  final TextEditingController _image = TextEditingController();
   final TextEditingController _ingredients = TextEditingController();
   final TextEditingController _steps = TextEditingController();
   RecipeEntity? _recipe;
@@ -1700,6 +4156,8 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     _cook.dispose();
     _difficulty.dispose();
     _kcal.dispose();
+    _yield.dispose();
+    _image.dispose();
     _ingredients.dispose();
     _steps.dispose();
     super.dispose();
@@ -1719,9 +4177,10 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       _cook.text = _recipe!.cookTimeMinutes.toString();
       _difficulty.text = _recipe!.difficultyCode;
       _kcal.text = _recipe!.kcalPerServing?.toString() ?? '';
-      _ingredients.text = details!.ingredients
-          .map((RecipeIngredientEntity item) => item.nameSnapshot)
-          .join('\n');
+      _yield.text = _recipe!.yieldGrams?.toString() ?? '';
+      _image.text = _recipe!.imagePath;
+      _ingredients.text =
+          details!.ingredients.map(_encodeRecipeIngredientLine).join('\n');
       _steps.text = details.steps
           .map((RecipeStepEntity step) => step.instruction)
           .join('\n');
@@ -1732,38 +4191,761 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-          title: Text(widget.id == 'new' ? 'Nuova ricetta' : _title.text)),
-      floatingActionButton: const TtGlobalNavFab(),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: _screenPadding,
-          children: <Widget>[
-            _field(_title, 'Titolo', isRequired: true),
-            _field(_summary, 'Descrizione', maxLines: 3),
-            _field(_servings, 'Porzioni', keyboardType: TextInputType.number),
-            _field(_prep, 'Preparazione min',
-                keyboardType: TextInputType.number),
-            _field(_cook, 'Cottura min', keyboardType: TextInputType.number),
-            _field(_difficulty, 'Difficoltà'),
-            _field(_kcal, 'Kcal per porzione',
-                keyboardType: TextInputType.number),
-            _field(_ingredients, 'Ingredienti, uno per riga', maxLines: 6),
-            _field(_steps, 'Passaggi, uno per riga', maxLines: 6),
-            const SizedBox(height: AppSpacing.md),
-            TtPrimaryButton(
-              label: 'Salva ricetta',
-              icon: Icons.check_rounded,
-              onPressed: _saveRecipe,
+        title: Text(widget.id == 'new' ? 'Nuova ricetta' : _title.text),
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Modifica dati ricetta',
+            onPressed: _showRecipeMetaDialog,
+            icon: const Icon(Icons.edit_rounded),
+          ),
+          IconButton(
+            tooltip: 'Aggiungi ingrediente',
+            onPressed: _showAddRecipeIngredientDialog,
+            icon: const Icon(Icons.add_rounded),
+          ),
+          IconButton(
+            tooltip: 'Note e passaggi',
+            onPressed: _showRecipeNotesDialog,
+            icon: const Icon(Icons.note_alt_outlined),
+          ),
+        ],
+      ),
+      bottomNavigationBar:
+          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
+      body: ListView(
+        padding: _screenPadding,
+        children: <Widget>[
+          TtAppCard(
+            child: Row(
+              children: <Widget>[
+                _FoodThumb(
+                  imageUrl: _image.text,
+                  fallbackIcon: Icons.menu_book_rounded,
+                  size: 84,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        _title.text.isEmpty ? 'Ricetta' : _title.text,
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      if (_summary.text.trim().isNotEmpty)
+                        Text(
+                          _summary.text,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: AppSpacing.sectionGap),
+          _MetricGrid(
+            metrics: <_Metric>[
+              _Metric('Porzioni', _servings.text),
+              _Metric(
+                'Tempo',
+                '${(_toInt(_prep.text) ?? 0) + (_toInt(_cook.text) ?? 0)} min',
+              ),
+              _Metric('Difficolta', _difficulty.text),
+              _Metric(
+                'Peso finale',
+                _yield.text.trim().isEmpty ? 'n/d' : '${_yield.text} g',
+              ),
+              _Metric('Kcal totali', _fmtNullableKcal(_recipe?.caloriesTotal)),
+              _Metric(
+                  'Kcal porzione', _fmtNullableKcal(_recipe?.kcalPerServing)),
+              _Metric(
+                  'Kcal / 100 g', _fmtNullableKcal(_recipe?.kcalPer100Grams)),
+              _Metric(
+                'Ingredienti',
+                _ingredients.text.trim().isEmpty
+                    ? '0'
+                    : _ingredients.text.trim().split('\n').length.toString(),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sectionGap),
+          const TtSectionHeader(title: 'Ingredienti'),
+          const SizedBox(height: AppSpacing.md),
+          if (_ingredients.text.trim().isEmpty)
+            const _EmptyInline(message: 'Nessun ingrediente nella ricetta.')
+          else
+            for (final MapEntry<int, String> entry
+                in _ingredients.text.split('\n').asMap().entries)
+              if (entry.value.trim().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: _RecipeIngredientSnapshotCard(
+                    line: entry.value.trim(),
+                    onTap: () => _showRecipeIngredientActions(
+                      entry.key,
+                      entry.value.trim(),
+                    ),
+                  ),
+                ),
+          const SizedBox(height: AppSpacing.sectionGap),
+          const TtSectionHeader(title: 'Passaggi'),
+          const SizedBox(height: AppSpacing.md),
+          if (_steps.text.trim().isEmpty)
+            const _EmptyInline(message: 'Nessun passaggio salvato.')
+          else
+            for (final MapEntry<int, String> entry
+                in _steps.text.split('\n').asMap().entries)
+              if (entry.value.trim().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: TtAppCard(
+                    child: Text('${entry.key + 1}. ${entry.value.trim()}'),
+                  ),
+                ),
+        ],
       ),
     );
   }
 
+  Future<void> _showRecipeMetaDialog() async {
+    final TextEditingController title =
+        TextEditingController(text: _title.text);
+    final TextEditingController summary =
+        TextEditingController(text: _summary.text);
+    final TextEditingController servings =
+        TextEditingController(text: _servings.text);
+    final TextEditingController prep = TextEditingController(text: _prep.text);
+    final TextEditingController cook = TextEditingController(text: _cook.text);
+    final TextEditingController difficulty =
+        TextEditingController(text: _difficulty.text);
+    final TextEditingController yieldController =
+        TextEditingController(text: _yield.text);
+    final TextEditingController image =
+        TextEditingController(text: _image.text);
+    final GlobalKey<FormState> formKey = GlobalKey<FormState>();
+    final bool? saved = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Dati ricetta'),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  _field(title, 'Titolo', isRequired: true),
+                  _field(summary, 'Descrizione', maxLines: 3),
+                  _field(servings, 'Porzioni',
+                      keyboardType: TextInputType.number),
+                  _field(prep, 'Preparazione min',
+                      keyboardType: TextInputType.number),
+                  _field(cook, 'Cottura min',
+                      keyboardType: TextInputType.number),
+                  _field(difficulty, 'Difficoltà'),
+                  _field(yieldController, 'Peso finale prodotto g',
+                      keyboardType: TextInputType.number),
+                  _field(image, 'URL o percorso immagine'),
+                ],
+              ),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Annulla'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (formKey.currentState?.validate() ?? false) {
+                  Navigator.of(context).pop(true);
+                }
+              },
+              child: const Text('Applica'),
+            ),
+          ],
+        );
+      },
+    );
+    if (saved != true) {
+      return;
+    }
+    setState(() {
+      _title.text = title.text.trim();
+      _summary.text = summary.text.trim();
+      _servings.text = servings.text.trim();
+      _prep.text = prep.text.trim();
+      _cook.text = cook.text.trim();
+      _difficulty.text = difficulty.text.trim();
+      _yield.text = yieldController.text.trim();
+      _image.text = image.text.trim();
+    });
+    _saveRecipe();
+  }
+
+  Future<void> _showAddRecipeIngredientDialog() async {
+    final List<IngredientEntity> archive =
+        ref.read(ingredientRepositoryProvider).getAllActive();
+    if (archive.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nessun ingrediente disponibile.')),
+      );
+      return;
+    }
+    final TextEditingController query = TextEditingController();
+    final Set<int> selectedIds = <int>{};
+    final Map<int, TextEditingController> gramsControllers =
+        <int, TextEditingController>{};
+    int step = 0;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (BuildContext sheetContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setSheetState) {
+            final String clean = query.text.trim().toLowerCase();
+            final List<IngredientEntity> filtered =
+                archive.where((IngredientEntity ingredient) {
+              return clean.isEmpty ||
+                  ingredient.name.toLowerCase().contains(clean) ||
+                  ingredient.brand.toLowerCase().contains(clean);
+            }).toList();
+            final List<IngredientEntity> selected = archive
+                .where((IngredientEntity ingredient) =>
+                    selectedIds.contains(ingredient.id))
+                .toList();
+            for (final IngredientEntity ingredient in selected) {
+              gramsControllers.putIfAbsent(
+                ingredient.id,
+                () => TextEditingController(text: '100'),
+              );
+            }
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.9,
+              minChildSize: 0.35,
+              maxChildSize: 0.96,
+              builder: (BuildContext context, ScrollController controller) {
+                return SafeArea(
+                  child: ListView(
+                    controller: controller,
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.sm,
+                      AppSpacing.lg,
+                      AppSpacing.lg,
+                    ),
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Text(
+                              step == 0
+                                  ? 'Ingredienti ricetta'
+                                  : 'Grammature ricetta',
+                              style: Theme.of(context).textTheme.headlineSmall,
+                            ),
+                          ),
+                          _StatusPill(
+                            label: '${selectedIds.length} selezionati',
+                            isWarning: selectedIds.isEmpty,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                if (step == 1) {
+                                  setSheetState(() => step = 0);
+                                } else {
+                                  Navigator.of(sheetContext).pop();
+                                }
+                              },
+                              icon: Icon(step == 1
+                                  ? Icons.arrow_back_rounded
+                                  : Icons.keyboard_arrow_down),
+                              label: Text(step == 1 ? 'Indietro' : 'Chiudi'),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: selectedIds.isEmpty
+                                  ? null
+                                  : () {
+                                      if (step == 0) {
+                                        setSheetState(() => step = 1);
+                                      } else {
+                                        _appendRecipeIngredients(
+                                          selected,
+                                          gramsControllers,
+                                        );
+                                        Navigator.of(sheetContext).pop();
+                                      }
+                                    },
+                              icon: Icon(step == 0
+                                  ? Icons.arrow_forward_rounded
+                                  : Icons.check_rounded),
+                              label: Text(step == 0 ? 'Continua' : 'Conferma'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      if (step == 0) ...<Widget>[
+                        TextField(
+                          controller: query,
+                          decoration: const InputDecoration(
+                            labelText: 'Cerca archivio ingredienti',
+                            prefixIcon: Icon(Icons.search_rounded),
+                          ),
+                          onChanged: (_) => setSheetState(() {}),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        for (final IngredientEntity ingredient in filtered)
+                          Padding(
+                            padding:
+                                const EdgeInsets.only(bottom: AppSpacing.sm),
+                            child: TtAppCard(
+                              onTap: () {
+                                setSheetState(() {
+                                  if (selectedIds.contains(ingredient.id)) {
+                                    selectedIds.remove(ingredient.id);
+                                  } else {
+                                    selectedIds.add(ingredient.id);
+                                    gramsControllers.putIfAbsent(
+                                      ingredient.id,
+                                      () => TextEditingController(text: '100'),
+                                    );
+                                  }
+                                });
+                              },
+                              child: Row(
+                                children: <Widget>[
+                                  _FoodThumb(
+                                    imageUrl: ingredient.imageUrl,
+                                    fallbackIcon: Icons.inventory_2_outlined,
+                                  ),
+                                  const SizedBox(width: AppSpacing.md),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Text(
+                                          ingredient.name,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleMedium,
+                                        ),
+                                        Text(
+                                          ingredient.brand,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Icon(
+                                    selectedIds.contains(ingredient.id)
+                                        ? Icons.check_circle_rounded
+                                        : Icons.circle_outlined,
+                                    color: selectedIds.contains(ingredient.id)
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Theme.of(context).colorScheme.outline,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ] else ...<Widget>[
+                        for (final IngredientEntity ingredient in selected)
+                          Padding(
+                            padding:
+                                const EdgeInsets.only(bottom: AppSpacing.sm),
+                            child: TtAppCard(
+                              child: Row(
+                                children: <Widget>[
+                                  Expanded(child: Text(ingredient.name)),
+                                  SizedBox(
+                                    width: 110,
+                                    child: TextField(
+                                      controller:
+                                          gramsControllers[ingredient.id],
+                                      keyboardType: TextInputType.number,
+                                      decoration: const InputDecoration(
+                                        labelText: 'g',
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                      const SizedBox(height: AppSpacing.sectionGap),
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                if (step == 1) {
+                                  setSheetState(() => step = 0);
+                                } else {
+                                  Navigator.of(sheetContext).pop();
+                                }
+                              },
+                              icon: Icon(step == 1
+                                  ? Icons.arrow_back_rounded
+                                  : Icons.keyboard_arrow_down),
+                              label: Text(step == 1 ? 'Indietro' : 'Chiudi'),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: selectedIds.isEmpty
+                                  ? null
+                                  : () {
+                                      if (step == 0) {
+                                        setSheetState(() => step = 1);
+                                      } else {
+                                        _appendRecipeIngredients(
+                                          selected,
+                                          gramsControllers,
+                                        );
+                                        Navigator.of(sheetContext).pop();
+                                      }
+                                    },
+                              icon: Icon(step == 0
+                                  ? Icons.arrow_forward_rounded
+                                  : Icons.check_rounded),
+                              label: Text(step == 0 ? 'Continua' : 'Conferma'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _appendRecipeIngredients(
+    List<IngredientEntity> selected,
+    Map<int, TextEditingController> gramsControllers,
+  ) {
+    final List<String> lines = <String>[];
+    for (final IngredientEntity ingredient in selected) {
+      final double gramsValue =
+          _toDouble(gramsControllers[ingredient.id]?.text ?? '') ?? 100;
+      final double safeGrams = gramsValue <= 0 ? 100 : gramsValue;
+      final double factor = ingredient.nutritionReferenceAmount == 0
+          ? 0
+          : safeGrams / ingredient.nutritionReferenceAmount;
+      lines.add(<String>[
+        ingredient.name,
+        _fmt(safeGrams),
+        _fmt(ingredient.kcalPerReference * factor),
+        _fmt(ingredient.proteinPerReference * factor),
+        _fmt(ingredient.carbsPerReference * factor),
+        _fmt(ingredient.fatPerReference * factor),
+        ingredient.uuid,
+      ].join(' | '));
+    }
+    setState(() {
+      final String current = _ingredients.text.trim();
+      _ingredients.text =
+          current.isEmpty ? lines.join('\n') : '$current\n${lines.join('\n')}';
+    });
+    _saveRecipe();
+  }
+
+  Future<void> _showRecipeIngredientActions(int index, String line) async {
+    final RecipeIngredientEntity item = _recipeIngredientFromLine(line);
+    final IngredientEntity? ingredient = item.ingredientUuid.trim().isNotEmpty
+        ? ref.read(ingredientRepositoryProvider).findByUuid(item.ingredientUuid)
+        : ref
+            .read(ingredientRepositoryProvider)
+            .getAllActive()
+            .where((IngredientEntity ingredient) {
+            return ingredient.name.toLowerCase() ==
+                item.nameSnapshot.toLowerCase();
+          }).firstOrNull;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.sm,
+              AppSpacing.lg,
+              AppSpacing.lg,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  item.nameSnapshot,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _ActionSheetCard(
+                  icon: Icons.delete_outline_rounded,
+                  title: 'Rimuovi',
+                  subtitle: 'Elimina questo ingrediente dalla ricetta',
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _removeRecipeIngredientAt(index);
+                  },
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _ActionSheetCard(
+                  icon: Icons.scale_outlined,
+                  title: 'Modifica quantita',
+                  subtitle: '${_fmt(item.grams)} g',
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _editRecipeIngredientGrams(index, item);
+                  },
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _ActionSheetCard(
+                  icon: Icons.open_in_new_rounded,
+                  title: 'Apri ingrediente',
+                  subtitle: ingredient == null
+                      ? 'Non trovato nell archivio locale'
+                      : ingredient.name,
+                  onTap: ingredient == null
+                      ? null
+                      : () {
+                          Navigator.of(sheetContext).pop();
+                          context.push('/food/ingredients/${ingredient.id}');
+                        },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _removeRecipeIngredientAt(int index) {
+    final List<String> lines = _ingredients.text
+        .split('\n')
+        .map((String line) => line.trim())
+        .where((String line) => line.isNotEmpty)
+        .toList();
+    if (index < 0 || index >= lines.length) {
+      return;
+    }
+    lines.removeAt(index);
+    setState(() => _ingredients.text = lines.join('\n'));
+    _saveRecipe();
+  }
+
+  Future<void> _editRecipeIngredientGrams(
+    int index,
+    RecipeIngredientEntity item,
+  ) async {
+    final TextEditingController grams =
+        TextEditingController(text: _fmt(item.grams));
+    final bool? saved = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.sm,
+            AppSpacing.lg,
+            MediaQuery.viewInsetsOf(sheetContext).bottom + AppSpacing.lg,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              _field(
+                grams,
+                'Grammatura',
+                keyboardType: TextInputType.number,
+              ),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(sheetContext).pop(false),
+                      child: const Text('Annulla'),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(sheetContext).pop(true),
+                      child: const Text('Salva'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (saved != true) {
+      return;
+    }
+    final double nextGrams = _toDouble(grams.text) ?? item.grams;
+    if (nextGrams <= 0 || item.grams <= 0) {
+      return;
+    }
+    final double ratio = nextGrams / item.grams;
+    final RecipeIngredientEntity updated = RecipeIngredientEntity(
+      uuid: '',
+      ingredientUuid: item.ingredientUuid,
+      nameSnapshot: item.nameSnapshot,
+      grams: nextGrams,
+      calories: item.calories * ratio,
+      proteinGrams: item.proteinGrams * ratio,
+      carbsGrams: item.carbsGrams * ratio,
+      fatGrams: item.fatGrams * ratio,
+      fiberGrams: item.fiberGrams * ratio,
+      sugarGrams: item.sugarGrams * ratio,
+      createdAtEpochMs: 0,
+      updatedAtEpochMs: 0,
+    );
+    final List<String> lines = _ingredients.text
+        .split('\n')
+        .map((String line) => line.trim())
+        .where((String line) => line.isNotEmpty)
+        .toList();
+    if (index < 0 || index >= lines.length) {
+      return;
+    }
+    lines[index] = _encodeRecipeIngredientLine(updated);
+    setState(() => _ingredients.text = lines.join('\n'));
+    _saveRecipe();
+  }
+
+  Future<void> _showRecipeNotesDialog() async {
+    final TextEditingController steps =
+        TextEditingController(text: _steps.text);
+    final bool? saved = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) {
+        return FractionallySizedBox(
+          heightFactor: 0.72,
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+            ),
+            child: Column(
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    0,
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          'Note e passaggi',
+                          style: Theme.of(sheetContext).textTheme.titleLarge,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Chiudi',
+                        onPressed: () => Navigator.of(sheetContext).pop(false),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      0,
+                      AppSpacing.lg,
+                      AppSpacing.md,
+                    ),
+                    children: <Widget>[
+                      _field(
+                        steps,
+                        'Passaggi, uno per riga',
+                        maxLines: 10,
+                      ),
+                    ],
+                  ),
+                ),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.sm,
+                      AppSpacing.lg,
+                      AppSpacing.lg,
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(false),
+                            child: const Text('Annulla'),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(true),
+                            child: const Text('Applica'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (saved == true) {
+      setState(() => _steps.text = steps.text);
+      _saveRecipe();
+    }
+  }
+
   void _saveRecipe() {
-    if (!(_formKey.currentState?.validate() ?? false)) {
+    if (_title.text.trim().isEmpty) {
       return;
     }
     final RecipeEntity recipe = _recipe ??
@@ -1780,19 +4962,16 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     recipe.cookTimeMinutes = _toInt(_cook.text) ?? 0;
     recipe.difficultyCode =
         _difficulty.text.trim().isEmpty ? 'easy' : _difficulty.text.trim();
-    recipe.kcalPerServing = _toDouble(_kcal.text);
+    recipe.yieldGrams = _toDouble(_yield.text);
+    recipe.imagePath = _image.text.trim();
     final List<RecipeIngredientEntity> ingredients = _ingredients.text
         .split('\n')
         .map((String line) => line.trim())
         .where((String line) => line.isNotEmpty)
-        .map((String line) {
-      return RecipeIngredientEntity(
-        uuid: '',
-        nameSnapshot: line,
-        createdAtEpochMs: 0,
-        updatedAtEpochMs: 0,
-      );
-    }).toList();
+        .map(_recipeIngredientFromLine)
+        .toList();
+    _applyRecipeTotals(recipe, ingredients);
+    _kcal.text = recipe.kcalPerServing?.toStringAsFixed(0) ?? '';
     final List<RecipeStepEntity> steps = _steps.text
         .split('\n')
         .map((String line) => line.trim())
@@ -1808,77 +4987,567 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     final RecipeDetails saved = ref
         .read(recipeRepositoryProvider)
         .saveRecipeWithChildren(recipe, ingredients: ingredients, steps: steps);
+    _recipe = saved.recipe;
+    _kcal.text = saved.recipe.kcalPerServing?.toStringAsFixed(0) ?? '';
     ref.invalidate(recipeArchiveProvider);
-    context.go('/food/recipes/${saved.recipe.id}');
+    if (mounted) {
+      setState(() {});
+    }
   }
 }
 
-class _WeekDayCard extends StatelessWidget {
-  const _WeekDayCard({
-    required this.date,
-    required this.day,
+String _encodeRecipeIngredientLine(RecipeIngredientEntity item) {
+  return <String>[
+    item.nameSnapshot,
+    _fmt(item.grams),
+    _fmt(item.calories),
+    _fmt(item.proteinGrams),
+    _fmt(item.carbsGrams),
+    _fmt(item.fatGrams),
+    item.ingredientUuid,
+  ].join(' | ');
+}
+
+RecipeIngredientEntity _recipeIngredientFromLine(String line) {
+  final List<String> parts =
+      line.split('|').map((String part) => part.trim()).toList();
+  double valueAt(int index) {
+    if (index >= parts.length) {
+      return 0;
+    }
+    return _toDouble(parts[index]) ?? 0;
+  }
+
+  return RecipeIngredientEntity(
+    uuid: '',
+    ingredientUuid: parts.length > 6 ? parts[6] : '',
+    nameSnapshot: parts.isEmpty ? line : parts.first,
+    grams: valueAt(1),
+    calories: valueAt(2),
+    proteinGrams: valueAt(3),
+    carbsGrams: valueAt(4),
+    fatGrams: valueAt(5),
+    createdAtEpochMs: 0,
+    updatedAtEpochMs: 0,
+  );
+}
+
+void _applyRecipeTotals(
+  RecipeEntity recipe,
+  List<RecipeIngredientEntity> ingredients,
+) {
+  double kcal = 0;
+  double protein = 0;
+  double carbs = 0;
+  double fat = 0;
+  double fiber = 0;
+  double sugar = 0;
+  double inputWeight = 0;
+  for (final RecipeIngredientEntity ingredient in ingredients) {
+    kcal += ingredient.calories;
+    protein += ingredient.proteinGrams;
+    carbs += ingredient.carbsGrams;
+    fat += ingredient.fatGrams;
+    fiber += ingredient.fiberGrams;
+    sugar += ingredient.sugarGrams;
+    inputWeight += ingredient.grams;
+  }
+  recipe
+    ..totalWeightGrams = inputWeight == 0 ? null : inputWeight
+    ..caloriesTotal = kcal == 0 ? null : kcal
+    ..proteinTotalGrams = protein == 0 ? null : protein
+    ..carbsTotalGrams = carbs == 0 ? null : carbs
+    ..fatTotalGrams = fat == 0 ? null : fat
+    ..fiberTotalGrams = fiber == 0 ? null : fiber
+    ..sugarTotalGrams = sugar == 0 ? null : sugar
+    ..kcalPerServing =
+        kcal == 0 ? null : kcal / (recipe.servings <= 0 ? 1 : recipe.servings);
+  final double? yield = recipe.yieldGrams;
+  if (yield != null && yield > 0) {
+    recipe
+      ..kcalPer100Grams = kcal == 0 ? null : kcal / yield * 100
+      ..proteinPer100Grams = protein == 0 ? null : protein / yield * 100
+      ..carbsPer100Grams = carbs == 0 ? null : carbs / yield * 100
+      ..fatPer100Grams = fat == 0 ? null : fat / yield * 100;
+  } else {
+    recipe
+      ..kcalPer100Grams = null
+      ..proteinPer100Grams = null
+      ..carbsPer100Grams = null
+      ..fatPer100Grams = null;
+  }
+}
+
+class _MonthCalendarCard extends StatefulWidget {
+  const _MonthCalendarCard({
+    required this.reference,
+    required this.days,
     required this.meals,
     required this.analytics,
+    required this.profile,
+    required this.adaptiveSummary,
   });
 
-  final DateTime date;
-  final DailyRecordEntity? day;
+  final DateTime reference;
+  final List<DailyRecordEntity> days;
   final List<MealWithItems> meals;
   final FoodAnalyticsService analytics;
+  final UserProfileEntity? profile;
+  final WeekAdaptiveSummary adaptiveSummary;
+
+  @override
+  State<_MonthCalendarCard> createState() => _MonthCalendarCardState();
+}
+
+class _MonthCalendarCardState extends State<_MonthCalendarCard> {
+  late DateTime _visibleMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    _visibleMonth = DateTime(widget.reference.year, widget.reference.month);
+  }
+
+  @override
+  void didUpdateWidget(covariant _MonthCalendarCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.reference.year != widget.reference.year ||
+        oldWidget.reference.month != widget.reference.month) {
+      _visibleMonth = DateTime(widget.reference.year, widget.reference.month);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final String dateKey = _dateKey(date);
-    final bool hasFree =
-        meals.any((MealWithItems item) => item.meal.mealModeCode == 'free');
-    final bool partial =
-        meals.any((MealWithItems item) => item.isNutritionPartial);
-    final double kcal = meals.fold<double>(
-      0,
-      (double sum, MealWithItems meal) => sum + meal.totals.kcal,
-    );
+    final DateTime month = _visibleMonth;
+    final DateTime firstDay = DateTime(month.year, month.month);
+    final int daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+    final int leadingEmptyCells = firstDay.weekday - 1;
+    final Map<String, DailyRecordEntity> byDate = <String, DailyRecordEntity>{
+      for (final DailyRecordEntity day in widget.days) day.dateKey: day,
+    };
+    final Map<String, List<MealWithItems>> mealsByDate =
+        <String, List<MealWithItems>>{};
+    for (final MealWithItems meal in widget.meals) {
+      mealsByDate.putIfAbsent(meal.meal.dateKey, () => <MealWithItems>[]);
+      mealsByDate[meal.meal.dateKey]!.add(meal);
+    }
     return TtAppCard(
-      onTap: () => context.push('/food/days/$dateKey'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
             children: <Widget>[
               Expanded(
-                child: Text('${_weekdayFromDate(date)} $dateKey',
-                    style: Theme.of(context).textTheme.titleLarge),
+                child: Text(
+                  'Calendario',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
               ),
-              _StatusPill(
-                label: day == null ? 'Auto' : 'Presente',
-                isWarning: day == null,
+              IconButton(
+                tooltip: 'Mese precedente',
+                onPressed: () {
+                  setState(() {
+                    _visibleMonth = DateTime(month.year, month.month - 1);
+                  });
+                },
+                icon: const Icon(Icons.chevron_left_rounded),
+              ),
+              Text(
+                '${month.month.toString().padLeft(2, '0')}/${month.year}',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              IconButton(
+                tooltip: 'Mese successivo',
+                onPressed: () {
+                  setState(() {
+                    _visibleMonth = DateTime(month.year, month.month + 1);
+                  });
+                },
+                icon: const Icon(Icons.chevron_right_rounded),
               ),
             ],
           ),
           const SizedBox(height: AppSpacing.md),
-          _MetricGrid(
-            metrics: <_Metric>[
-              _Metric('Calorie', _fmtKcal(kcal)),
-              _Metric('Pasti', meals.length.toString()),
-              _Metric('Passi', day?.steps.toString() ?? '0'),
-              _Metric(
-                  'Peso',
-                  day == null
-                      ? 'n/d'
-                      : _fmtNullable(analytics.weightForDay(day!), 'kg')),
+          Material(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => context.push('/food/week'),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.view_week_rounded,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Settimana corrente',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          Text(
+                            '${_dateKey(widget.adaptiveSummary.monday)} - ${_dateKey(widget.adaptiveSummary.sunday)}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right_rounded),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          const Row(
+            children: <Widget>[
+              _WeekdayHeader('L'),
+              _WeekdayHeader('M'),
+              _WeekdayHeader('M'),
+              _WeekdayHeader('G'),
+              _WeekdayHeader('V'),
+              _WeekdayHeader('S'),
+              _WeekdayHeader('D'),
             ],
           ),
-          if (hasFree || partial) ...<Widget>[
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              partial
-                  ? 'Pasto libero non quantificato'
-                  : 'Pasto libero presente',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-            ),
-          ],
+          const SizedBox(height: AppSpacing.xs),
+          GridView.count(
+            crossAxisCount: 7,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 4,
+            crossAxisSpacing: 4,
+            childAspectRatio: 0.94,
+            children: <Widget>[
+              for (int index = 0; index < leadingEmptyCells; index += 1)
+                const SizedBox.shrink(),
+              for (int dayNumber = 1; dayNumber <= daysInMonth; dayNumber += 1)
+                Builder(
+                  builder: (BuildContext context) {
+                    final DateTime date =
+                        DateTime(month.year, month.month, dayNumber);
+                    final String dateKey = _dateKey(date);
+                    final DailyRecordEntity? day = byDate[dateKey];
+                    final List<MealWithItems> meals =
+                        mealsByDate[dateKey] ?? const <MealWithItems>[];
+                    final double kcal = meals.fold<double>(
+                      0,
+                      (double sum, MealWithItems meal) =>
+                          sum + meal.totals.kcal,
+                    );
+                    final bool hasFood = meals.any(
+                      (MealWithItems meal) => meal.items.isNotEmpty,
+                    );
+                    final bool hasFreeTrackedOrEstimated = meals.any(
+                      (MealWithItems meal) =>
+                          meal.meal.mealModeCode == 'free' &&
+                          (meal.meal.freeMealTrackingCode == 'tracked' ||
+                              meal.meal.freeMealTrackingCode == 'estimated'),
+                    );
+                    final bool hasFreeUntracked = meals.any(
+                      (MealWithItems meal) =>
+                          meal.meal.mealModeCode == 'free' &&
+                          meal.meal.freeMealTrackingCode == 'untracked',
+                    );
+                    return _CalendarDayCell(
+                      date: date,
+                      day: day,
+                      mealsCount: meals
+                          .where((MealWithItems meal) => meal.items.isNotEmpty)
+                          .length,
+                      kcal: kcal,
+                      targetKcal: day == null
+                          ? null
+                          : widget.analytics.targetForDay(
+                              day: day,
+                              allDays: widget.days,
+                              profile: widget.profile,
+                            ),
+                      hasFood: hasFood,
+                      hasFreeTrackedOrEstimated: hasFreeTrackedOrEstimated,
+                      hasFreeUntracked: hasFreeUntracked,
+                    );
+                  },
+                ),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _WeekCalendarStrip extends StatelessWidget {
+  const _WeekCalendarStrip({
+    required this.monday,
+    required this.daysByDate,
+    required this.mealRepository,
+    required this.analytics,
+    required this.profile,
+  });
+
+  final DateTime monday;
+  final Map<String, DailyRecordEntity> daysByDate;
+  final MealRepository mealRepository;
+  final FoodAnalyticsService analytics;
+  final UserProfileEntity? profile;
+
+  @override
+  Widget build(BuildContext context) {
+    return TtAppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Calendario settimanale',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final double cellWidth =
+                  (constraints.maxWidth - AppSpacing.sm) / 2;
+              Widget buildCell(int index) {
+                final DateTime date = monday.add(Duration(days: index));
+                final String dateKey = _dateKey(date);
+                final DailyRecordEntity? day = daysByDate[dateKey];
+                final List<MealWithItems> meals =
+                    mealRepository.getMealsWithItemsForDate(dateKey);
+                final double kcal = meals.fold<double>(
+                  0,
+                  (double sum, MealWithItems meal) => sum + meal.totals.kcal,
+                );
+                final bool hasFood = meals.any(
+                  (MealWithItems meal) => meal.items.isNotEmpty,
+                );
+                final bool hasFreeTrackedOrEstimated = meals.any(
+                  (MealWithItems meal) =>
+                      meal.meal.mealModeCode == 'free' &&
+                      (meal.meal.freeMealTrackingCode == 'tracked' ||
+                          meal.meal.freeMealTrackingCode == 'estimated'),
+                );
+                final bool hasFreeUntracked = meals.any(
+                  (MealWithItems meal) =>
+                      meal.meal.mealModeCode == 'free' &&
+                      meal.meal.freeMealTrackingCode == 'untracked',
+                );
+                return SizedBox(
+                  width: cellWidth,
+                  height: 146,
+                  child: _CalendarDayCell(
+                    date: date,
+                    day: day,
+                    mealsCount: meals
+                        .where((MealWithItems meal) => meal.items.isNotEmpty)
+                        .length,
+                    kcal: kcal,
+                    targetKcal: day == null
+                        ? null
+                        : analytics.targetForDay(
+                            day: day,
+                            allDays: daysByDate.values.toList(),
+                            profile: profile,
+                          ),
+                    compact: false,
+                    hasFood: hasFood,
+                    hasFreeTrackedOrEstimated: hasFreeTrackedOrEstimated,
+                    hasFreeUntracked: hasFreeUntracked,
+                    weight: day == null ? null : analytics.weightForDay(day),
+                  ),
+                );
+              }
+
+              return Column(
+                children: <Widget>[
+                  for (int row = 0; row < 3; row += 1) ...<Widget>[
+                    Row(
+                      children: <Widget>[
+                        buildCell(row * 2),
+                        const SizedBox(width: AppSpacing.sm),
+                        buildCell(row * 2 + 1),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                  ],
+                  Align(
+                    alignment: Alignment.center,
+                    child: buildCell(6),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CalendarDayCell extends StatelessWidget {
+  const _CalendarDayCell({
+    required this.date,
+    required this.day,
+    required this.mealsCount,
+    required this.kcal,
+    this.targetKcal,
+    this.compact = true,
+    this.hasFood = false,
+    this.hasFreeTrackedOrEstimated = false,
+    this.hasFreeUntracked = false,
+    this.weight,
+  });
+
+  final DateTime date;
+  final DailyRecordEntity? day;
+  final int mealsCount;
+  final double kcal;
+  final double? targetKcal;
+  final bool compact;
+  final bool hasFood;
+  final bool hasFreeTrackedOrEstimated;
+  final bool hasFreeUntracked;
+  final double? weight;
+
+  @override
+  Widget build(BuildContext context) {
+    final String dateKey = _dateKey(date);
+    final bool hasData = day != null;
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final double? target = targetKcal ?? day?.targetKcal;
+    final bool isOnTarget =
+        hasFood && target != null && (kcal - target).abs() <= 50;
+    final bool canColorByNutrition = hasFood;
+    final Color fillColor = canColorByNutrition && hasFreeUntracked
+        ? colors.errorContainer.withValues(alpha: 0.88)
+        : canColorByNutrition && hasFreeTrackedOrEstimated
+            ? Colors.amber.withValues(alpha: 0.34)
+            : canColorByNutrition && isOnTarget
+                ? colors.primaryContainer.withValues(alpha: 0.88)
+                : colors.surfaceContainerHighest.withValues(alpha: 0.72);
+    final Color borderColor = canColorByNutrition && hasFreeUntracked
+        ? colors.error
+        : canColorByNutrition && hasFreeTrackedOrEstimated
+            ? Colors.amber.shade700
+            : canColorByNutrition && isOnTarget
+                ? colors.primary
+                : colors.outlineVariant;
+    final Color textColor = canColorByNutrition && hasFreeUntracked
+        ? colors.onErrorContainer
+        : canColorByNutrition && isOnTarget
+            ? colors.onPrimaryContainer
+            : colors.onSurfaceVariant;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => context.push('/food/days/$dateKey'),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: fillColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: borderColor),
+          ),
+          padding: EdgeInsets.all(compact ? 6 : 10),
+          child: compact
+              ? Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    Center(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          date.day.toString(),
+                          maxLines: 1,
+                          style:
+                              Theme.of(context).textTheme.labelLarge?.copyWith(
+                                    color: hasData
+                                        ? textColor
+                                        : colors.onSurfaceVariant,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                        ),
+                      ),
+                    ),
+                    if (hasFood)
+                      Align(
+                        alignment: Alignment.bottomCenter,
+                        child: SizedBox.square(
+                          dimension: 4,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: borderColor,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                )
+              : Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      date.day.toString(),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color:
+                                hasData ? textColor : colors.onSurfaceVariant,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      _weekdayFromDate(date).substring(0, 3),
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                    const Spacer(),
+                    if (kcal > 0)
+                      Text(
+                        _fmtKcal(kcal),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                    Text(
+                      '$mealsCount pasti',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                    Text(
+                      weight == null ? 'Peso n/d' : '${_fmt(weight!)} kg',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WeekdayHeader extends StatelessWidget {
+  const _WeekdayHeader(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Center(
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall,
+        ),
       ),
     );
   }
@@ -1973,16 +5642,17 @@ class _MealItemCard extends StatelessWidget {
   const _MealItemCard({
     required this.item,
     required this.imageUrl,
-    required this.onDelete,
+    required this.onTap,
   });
 
   final MealItemEntity item;
   final String imageUrl;
-  final VoidCallback onDelete;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return TtAppCard(
+      onTap: onTap,
       child: Row(
         children: <Widget>[
           _FoodThumb(
@@ -1995,17 +5665,134 @@ class _MealItemCard extends StatelessWidget {
                 Text(item.itemNameSnapshot,
                     style: Theme.of(context).textTheme.titleMedium),
                 Text(
-                  '${item.kindCode} - ${_fmtKcal(item.kcal)} - ${_fmt(item.proteinGrams)}P ${_fmt(item.carbsGrams)}C ${_fmt(item.fatGrams)}F',
+                  '${_mealItemQuantityText(item)} - ${_fmtKcal(item.kcal)} - ${_fmt(item.proteinGrams)}P ${_fmt(item.carbsGrams)}C ${_fmt(item.fatGrams)}F',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
             ),
           ),
-          IconButton(
-            tooltip: 'Rimuovi',
-            onPressed: onDelete,
-            icon: const Icon(Icons.delete_outline_rounded),
+          const Icon(Icons.more_horiz_rounded),
+        ],
+      ),
+    );
+  }
+}
+
+class _MealAddActionCard extends StatelessWidget {
+  const _MealAddActionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return TtAppCard(
+      onTap: onTap,
+      child: Row(
+        children: <Widget>[
+          CircleAvatar(
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+            child: Icon(icon),
           ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(title, style: Theme.of(context).textTheme.titleMedium),
+                Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right_rounded),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecipeIngredientSnapshotCard extends StatelessWidget {
+  const _RecipeIngredientSnapshotCard({
+    required this.line,
+    required this.onTap,
+  });
+
+  final String line;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final RecipeIngredientEntity item = _recipeIngredientFromLine(line);
+    return TtAppCard(
+      onTap: onTap,
+      child: Row(
+        children: <Widget>[
+          const _FoodThumb(
+            imageUrl: '',
+            fallbackIcon: Icons.inventory_2_outlined,
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  item.nameSnapshot,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                Text(
+                  '${_fmt(item.grams)} g - ${_fmtKcal(item.calories)} - ${_fmt(item.proteinGrams)}P ${_fmt(item.carbsGrams)}C ${_fmt(item.fatGrams)}F',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.more_horiz_rounded),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionSheetCard extends StatelessWidget {
+  const _ActionSheetCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return TtAppCard(
+      onTap: onTap,
+      child: Row(
+        children: <Widget>[
+          Icon(icon, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(title, style: Theme.of(context).textTheme.titleMedium),
+                Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right_rounded),
         ],
       ),
     );
@@ -2020,6 +5807,7 @@ class _IngredientCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TtAppCard(
+      onTap: () => context.push('/food/ingredients/${ingredient.id}'),
       child: Row(
         children: <Widget>[
           _FoodThumb(
@@ -2055,15 +5843,16 @@ class _IngredientCard extends StatelessWidget {
 class _OnlineProductCard extends StatelessWidget {
   const _OnlineProductCard({
     required this.product,
-    required this.onSave,
+    required this.onTap,
   });
 
   final OpenFoodFactsProduct product;
-  final VoidCallback onSave;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return TtAppCard(
+      onTap: onTap,
       child: Row(
         children: <Widget>[
           _FoodThumb(
@@ -2085,11 +5874,7 @@ class _OnlineProductCard extends StatelessWidget {
               ],
             ),
           ),
-          IconButton(
-            tooltip: 'Salva ingrediente',
-            onPressed: onSave,
-            icon: const Icon(Icons.add_circle_outline_rounded),
-          ),
+          const Icon(Icons.chevron_right_rounded),
         ],
       ),
     );
@@ -2100,17 +5885,19 @@ class _FoodThumb extends StatelessWidget {
   const _FoodThumb({
     required this.imageUrl,
     required this.fallbackIcon,
+    this.size = 54,
   });
 
   final String imageUrl;
   final IconData fallbackIcon;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: SizedBox.square(
-        dimension: 54,
+        dimension: size,
         child: imageUrl.trim().isEmpty
             ? ColoredBox(
                 color: Theme.of(context).colorScheme.primaryContainer,
@@ -2158,43 +5945,6 @@ class _ChartCard extends StatelessWidget {
           Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: AppSpacing.md),
           child,
-        ],
-      ),
-    );
-  }
-}
-
-class _SectionLink extends StatelessWidget {
-  const _SectionLink({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.route,
-  });
-
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final String route;
-
-  @override
-  Widget build(BuildContext context) {
-    return TtAppCard(
-      onTap: () => context.push(route),
-      child: Row(
-        children: <Widget>[
-          Icon(icon, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(title, style: Theme.of(context).textTheme.titleMedium),
-                Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
-          ),
-          const Icon(Icons.chevron_right_rounded),
         ],
       ),
     );
@@ -2380,7 +6130,8 @@ class _EmptyInline extends StatelessWidget {
 }
 
 void _showInsights(BuildContext context, FoodHubV01Data data) {
-  final MealNutritionTotals totals = _totalsForMeals(data.latestMeals);
+  final MealNutritionTotals totals = _totalsForMeals(data.allMeals);
+  final int averageDivisor = data.days.isEmpty ? 1 : data.days.length;
   final double averageBalance = data.days.isEmpty
       ? 0
       : data.days.take(7).fold<double>(0, (double sum, DailyRecordEntity day) {
@@ -2390,7 +6141,7 @@ void _showInsights(BuildContext context, FoodHubV01Data data) {
           }) /
           data.days.take(7).length;
   final Map<String, int> eaten = <String, int>{};
-  for (final MealWithItems meal in data.latestMeals) {
+  for (final MealWithItems meal in data.allMeals) {
     for (final MealItemEntity item in meal.items) {
       eaten[item.itemNameSnapshot] = (eaten[item.itemNameSnapshot] ?? 0) + 1;
     }
@@ -2399,6 +6150,62 @@ void _showInsights(BuildContext context, FoodHubV01Data data) {
     ..sort((MapEntry<String, int> a, MapEntry<String, int> b) {
       return b.value.compareTo(a.value);
     });
+  final List<DailyRecordEntity> recentDays =
+      data.days.take(10).toList().reversed.toList();
+  final List<TtChartSeries> macroSeries = <TtChartSeries>[
+    TtChartSeries(
+      label: 'Proteine',
+      points: <TtChartPoint>[
+        for (final DailyRecordEntity day in recentDays)
+          TtChartPoint(
+            label: day.dateKey.substring(5),
+            value: _totalsForMeals(data.allMeals
+                    .where((MealWithItems meal) =>
+                        meal.meal.dateKey == day.dateKey)
+                    .toList())
+                .proteinGrams,
+          ),
+      ],
+    ),
+    TtChartSeries(
+      label: 'Carboidrati',
+      points: <TtChartPoint>[
+        for (final DailyRecordEntity day in recentDays)
+          TtChartPoint(
+            label: day.dateKey.substring(5),
+            value: _totalsForMeals(data.allMeals
+                    .where((MealWithItems meal) =>
+                        meal.meal.dateKey == day.dateKey)
+                    .toList())
+                .carbsGrams,
+          ),
+      ],
+    ),
+    TtChartSeries(
+      label: 'Grassi',
+      points: <TtChartPoint>[
+        for (final DailyRecordEntity day in recentDays)
+          TtChartPoint(
+            label: day.dateKey.substring(5),
+            value: _totalsForMeals(data.allMeals
+                    .where((MealWithItems meal) =>
+                        meal.meal.dateKey == day.dateKey)
+                    .toList())
+                .fatGrams,
+          ),
+      ],
+    ),
+  ];
+  final List<TtChartPoint> mealsPerDay = <TtChartPoint>[
+    for (final DailyRecordEntity day in recentDays)
+      TtChartPoint(
+        label: day.dateKey.substring(5),
+        value: data.allMeals
+            .where((MealWithItems meal) => meal.meal.dateKey == day.dateKey)
+            .length
+            .toDouble(),
+      ),
+  ];
   showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
@@ -2421,12 +6228,42 @@ void _showInsights(BuildContext context, FoodHubV01Data data) {
                 metrics: <_Metric>[
                   _Metric('Deficit/surplus medio', _signedKcal(averageBalance)),
                   _Metric('Macro medie',
-                      '${_fmt(totals.proteinGrams)}P ${_fmt(totals.carbsGrams)}C ${_fmt(totals.fatGrams)}F'),
+                      '${_fmt(totals.proteinGrams / averageDivisor)}P ${_fmt(totals.carbsGrams / averageDivisor)}C ${_fmt(totals.fatGrams / averageDivisor)}F'),
                   _Metric('Ingredienti', data.ingredients.length.toString()),
                   _Metric('Ricette', data.recipes.length.toString()),
+                  _Metric('Giorni registrati', data.days.length.toString()),
+                  _Metric('Pasti registrati', data.allMeals.length.toString()),
                 ],
               ),
               const SizedBox(height: AppSpacing.sectionGap),
+              _ChartCard(
+                title: 'Calorie',
+                subtitle: 'Totale giornaliero calcolato dai pasti',
+                child: TtMiniBarChart(points: data.recentCalories),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _ChartCard(
+                title: 'Passi',
+                subtitle: 'Trend giornaliero',
+                child: TtMiniLineChart(points: data.recentSteps),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _ChartCard(
+                title: 'Macro',
+                subtitle: 'Proteine, carboidrati e grassi negli ultimi giorni',
+                child: TtMiniMultiLineChart(
+                  series: macroSeries,
+                  valueSuffix: 'g',
+                  height: 190,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _ChartCard(
+                title: 'Pasti registrati',
+                subtitle: 'Numero pasti per giorno',
+                child: TtMiniBarChart(points: mealsPerDay),
+              ),
+              const SizedBox(height: AppSpacing.md),
               _ChartCard(
                 title: 'Peso',
                 subtitle: 'Ultime misurazioni bilancia',
@@ -2474,39 +6311,6 @@ void _showInsights(BuildContext context, FoodHubV01Data data) {
                       child: Text('${entry.key} - ${entry.value} volte'),
                     ),
                   ),
-              const SizedBox(height: AppSpacing.sectionGap),
-              const TtSectionHeader(title: 'Calendario rapido'),
-              const SizedBox(height: AppSpacing.md),
-              Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
-                children: <Widget>[
-                  for (final DailyRecordEntity day in data.days.take(14))
-                    ActionChip(
-                      label: Text(day.dateKey.substring(5)),
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        context.push('/food/days/${day.dateKey}');
-                      },
-                    ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sectionGap),
-              TtAppCard(
-                onTap: () {
-                  Navigator.of(context).pop();
-                  context.push('/food/ingredients');
-                },
-                child: const Row(
-                  children: <Widget>[
-                    Icon(Icons.search_rounded),
-                    SizedBox(width: AppSpacing.md),
-                    Expanded(
-                        child: Text('Cerca negli alimenti salvati o online')),
-                    Icon(Icons.chevron_right_rounded),
-                  ],
-                ),
-              ),
             ],
           );
         },
@@ -2551,6 +6355,12 @@ void _showAdaptiveDetails(BuildContext context, WeekAdaptiveSummary summary) {
                       : '${_fmt(summary.deltaWeightKg!)} kg'),
               _detailRow(
                   'Media kcal ref', _fmtNullableKcal(summary.avgCalories)),
+              _detailRow('Coefficiente peso',
+                  '${summary.kcalPerKg.round()} kcal/kg'),
+              _detailRow(
+                'Formula osservata',
+                'kcal medie - variazione peso * kcal/kg / giorni',
+              ),
             ],
           ),
         ),
@@ -2566,12 +6376,21 @@ void _showAdaptiveDetails(BuildContext context, WeekAdaptiveSummary summary) {
 }
 
 Widget _detailRow(String label, String value) {
+  final String displayValue = value.trim().isEmpty ? 'n/d' : value.trim();
   return Padding(
     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-    child: Row(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Expanded(child: Text(label)),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
+        Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 2),
+        SelectableText(
+          displayValue,
+          style: const TextStyle(height: 1.25),
+        ),
       ],
     ),
   );
@@ -2612,6 +6431,10 @@ Widget _field(
   TextEditingController controller,
   String label, {
   bool isRequired = false,
+  bool enabled = true,
+  String? helperText,
+  VoidCallback? onTap,
+  Widget? suffixIcon,
   TextInputType? keyboardType,
   int maxLines = 1,
 }) {
@@ -2621,12 +6444,18 @@ Widget _field(
       controller: controller,
       keyboardType: keyboardType,
       maxLines: maxLines,
+      readOnly: !enabled,
+      onTap: onTap,
       validator: isRequired
           ? (String? value) => value == null || value.trim().isEmpty
               ? 'Campo obbligatorio'
               : null
           : null,
-      decoration: InputDecoration(labelText: label),
+      decoration: InputDecoration(
+        labelText: label,
+        helperText: helperText,
+        suffixIcon: suffixIcon,
+      ),
     ),
   );
 }
@@ -2687,12 +6516,13 @@ String _slotEmoji(String slot) {
       '🍴';
 }
 
-String _sleepText(DailyRecordEntity day) {
-  final double total = (day.sleepDeepHours ?? 0) + (day.sleepLightHours ?? 0);
-  if (total <= 0) {
-    return 'n/d';
+String _mealItemQuantityText(MealItemEntity item) {
+  if (item.quantityModeCode == 'portions') {
+    final double portions = item.portions ?? 0;
+    return portions <= 0 ? 'Porzioni n/d' : '${_fmt(portions)} porzioni';
   }
-  return '${_fmt(total)} h';
+  final double grams = item.grams ?? 0;
+  return grams <= 0 ? 'Quantità n/d' : '${_fmt(grams)} g';
 }
 
 String _fmtNullable(double? value, String suffix) {

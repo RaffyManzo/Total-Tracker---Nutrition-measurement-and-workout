@@ -90,6 +90,19 @@ class ObsidianDevelopmentSeedService {
         _listOfMaps(seed['mealItems'], 'mealItems');
     final List<Map<String, dynamic>> warnings =
         _listOfMaps(seed['warnings'], 'warnings');
+    final Set<String> dayUuids = <String>{
+      for (final Map<String, dynamic> day in days)
+        _mapper.readString(day['uuid'])
+    };
+    final Set<String> mealUuids = <String>{
+      for (final Map<String, dynamic> meal in meals)
+        _mapper.readString(meal['uuid'])
+    };
+    final Set<String> mealItemUuids = <String>{
+      for (final Map<String, dynamic> item in mealItems)
+        _mapper.readString(item['uuid'])
+    };
+    final Set<String> ingredientUuids = <String>{};
     final Map<String, List<Map<String, dynamic>>> itemsByMealUuid =
         <String, List<Map<String, dynamic>>>{};
 
@@ -98,7 +111,20 @@ class ObsidianDevelopmentSeedService {
       itemsByMealUuid
           .putIfAbsent(mealUuid, () => <Map<String, dynamic>>[])
           .add(item);
+      if (_mapper.readString(item['kind']) == 'ingredient') {
+        final IngredientEntity? ingredient = _ingredientFromItem(item);
+        if (ingredient != null) {
+          ingredientUuids.add(ingredient.uuid);
+        }
+      }
     }
+
+    _removeStaleImportedFoodData(
+      dayUuids: dayUuids,
+      mealUuids: mealUuids,
+      mealItemUuids: mealItemUuids,
+      ingredientUuids: ingredientUuids,
+    );
 
     _store.runInTransaction(TxMode.write, () {
       for (final Map<String, dynamic> rawDay in days) {
@@ -146,6 +172,73 @@ class ObsidianDevelopmentSeedService {
       skipped: _readCount(seed, 'skipped'),
       warnings: warnings,
     );
+  }
+
+  void _removeStaleImportedFoodData({
+    required Set<String> dayUuids,
+    required Set<String> mealUuids,
+    required Set<String> mealItemUuids,
+    required Set<String> ingredientUuids,
+  }) {
+    _store.runInTransaction(TxMode.write, () {
+      final Box<MealItemEntity> itemBox = _store.box<MealItemEntity>();
+      final Box<MealEntity> mealBox = _store.box<MealEntity>();
+      final Box<DailyRecordEntity> dayBox = _store.box<DailyRecordEntity>();
+      final Box<IngredientEntity> ingredientBox =
+          _store.box<IngredientEntity>();
+
+      final List<int> staleItemIds = itemBox
+          .getAll()
+          .where(
+            (MealItemEntity item) =>
+                item.uuid.startsWith('obsidian-meal-item:') &&
+                !mealItemUuids.contains(item.uuid),
+          )
+          .map((MealItemEntity item) => item.id)
+          .toList();
+      if (staleItemIds.isNotEmpty) {
+        itemBox.removeMany(staleItemIds);
+      }
+
+      final List<int> staleMealIds = mealBox
+          .getAll()
+          .where(
+            (MealEntity meal) =>
+                meal.uuid.startsWith('obsidian-meal:') &&
+                !mealUuids.contains(meal.uuid),
+          )
+          .map((MealEntity meal) => meal.id)
+          .toList();
+      if (staleMealIds.isNotEmpty) {
+        mealBox.removeMany(staleMealIds);
+      }
+
+      final List<int> staleDayIds = dayBox
+          .getAll()
+          .where(
+            (DailyRecordEntity day) =>
+                day.uuid.startsWith('obsidian-day:') &&
+                !dayUuids.contains(day.uuid),
+          )
+          .map((DailyRecordEntity day) => day.id)
+          .toList();
+      if (staleDayIds.isNotEmpty) {
+        dayBox.removeMany(staleDayIds);
+      }
+
+      final List<int> staleIngredientIds = ingredientBox
+          .getAll()
+          .where(
+            (IngredientEntity ingredient) =>
+                ingredient.uuid.startsWith('obsidian-ingredient:') &&
+                !ingredientUuids.contains(ingredient.uuid),
+          )
+          .map((IngredientEntity ingredient) => ingredient.id)
+          .toList();
+      if (staleIngredientIds.isNotEmpty) {
+        ingredientBox.removeMany(staleIngredientIds);
+      }
+    });
   }
 
   DailyRecordEntity _dayFromSeed(Map<String, dynamic> raw) {

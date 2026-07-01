@@ -11,16 +11,29 @@ class UserProfileEntity {
     this.birthDateEpochDay,
     this.biologicalSexCode = BiologicalSexCodes.unspecified,
     this.heightCm,
+    this.initialWeightKg,
     this.defaultStepGoal = 8000,
     this.defaultTargetKcal = 1980,
+    this.targetModeCode = TargetModeCodes.adaptiveWeekly,
+    this.sedentaryBaseKcal = 0,
+    this.averageWorkoutsPerWeek = 3,
+    this.averageWorkoutDurationMinutes = 60,
+    this.workoutActivityTypeCode = WorkoutActivityTypeCodes.weights,
+    this.macroModeCode = MacroModeCodes.defaultByWeight,
+    this.proteinGramsPerKg = 2.2,
+    this.fatGramsPerKg = 1.0,
+    this.fiberGramsPerKg = 0.5,
+    this.carbsGramsPerKg = 3.0,
     this.waterGlassLiters = 0.25,
-    this.stepKcalCoefficient = 0.025,
+    this.stepKcalCoefficient = 0.020,
     this.adaptiveReferenceDays = 28,
     this.adaptiveMinimumObservedDays = 7,
     this.rmrActivityFactor = 1.10,
     this.kcalPerKg = 7700,
     this.minimumReasonableTdee = 1300,
     this.maximumReasonableTdee = 4600,
+    this.themeModeCode = ThemePreferenceCodes.system,
+    this.languageCode = 'it',
     this.isActive = true,
     required this.createdAtEpochMs,
     required this.updatedAtEpochMs,
@@ -37,9 +50,20 @@ class UserProfileEntity {
   int? birthDateEpochDay;
   String biologicalSexCode;
   double? heightCm;
+  double? initialWeightKg;
 
   int defaultStepGoal;
   int defaultTargetKcal;
+  String targetModeCode;
+  double sedentaryBaseKcal;
+  int averageWorkoutsPerWeek;
+  int averageWorkoutDurationMinutes;
+  String workoutActivityTypeCode;
+  String macroModeCode;
+  double proteinGramsPerKg;
+  double fatGramsPerKg;
+  double fiberGramsPerKg;
+  double carbsGramsPerKg;
   double waterGlassLiters;
   double stepKcalCoefficient;
 
@@ -49,6 +73,8 @@ class UserProfileEntity {
   double kcalPerKg;
   double minimumReasonableTdee;
   double maximumReasonableTdee;
+  String themeModeCode;
+  String languageCode;
 
   bool isActive;
   int createdAtEpochMs;

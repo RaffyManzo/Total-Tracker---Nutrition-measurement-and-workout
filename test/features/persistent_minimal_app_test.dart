@@ -316,7 +316,7 @@ ignored: true
       await _pumpAsync(tester);
 
       expect(find.text('Food Plan'), findsOneWidget);
-      expect(find.text('Riepilogo recente'), findsOneWidget);
+      expect(find.text('Riepilogo giornaliero'), findsOneWidget);
       expect(find.textContaining('Diario pronto'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
     });
@@ -507,6 +507,7 @@ FoodHubV01Data _foodHubData(
   return FoodHubV01Data(
     latest: resolvedLatest,
     latestMeals: latestMeals ?? <MealWithItems>[_mealWithItems()],
+    allMeals: latestMeals ?? <MealWithItems>[_mealWithItems()],
     days: resolvedDays,
     ingredients: const [],
     recipes: const [],
@@ -517,6 +518,7 @@ FoodHubV01Data _foodHubData(
       monday: DateTime(2026, 6, 22),
       allDays: resolvedDays,
     ),
+    profile: null,
   );
 }
 

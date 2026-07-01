@@ -52,6 +52,14 @@ class IngredientRepository {
     return null;
   }
 
+  IngredientEntity? getById(int id) {
+    final IngredientEntity? ingredient = _box.get(id);
+    if (ingredient == null || ingredient.deletedAtEpochMs != null) {
+      return null;
+    }
+    return ingredient;
+  }
+
   List<IngredientEntity> searchByName(String query) {
     final String normalizedQuery = query.trim().toLowerCase();
     if (normalizedQuery.isEmpty) {

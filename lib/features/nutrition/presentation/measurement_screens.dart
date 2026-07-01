@@ -63,6 +63,56 @@ class MeasurementHubData {
     ];
   }
 
+  List<TtChartSeries> get tapeOverviewSeries {
+    return tapeSeries(
+      codes: const <String>[
+        'waist_cm',
+        'abdomen_cm',
+        'chest_cm',
+        'hips_cm',
+        'shoulders_cm',
+      ],
+    );
+  }
+
+  List<TtChartSeries> tapeSeries({List<String>? codes}) {
+    final List<String> selectedCodes = codes ?? tapeMeasurementCodes;
+    return <TtChartSeries>[
+      for (final String code in selectedCodes)
+        if (_tapeTrendForCode(code).length >= 2)
+          TtChartSeries(
+            label: _tapeLabel(code),
+            points: _tapeTrendForCode(code),
+          ),
+    ];
+  }
+
+  List<TtChartPoint> _tapeTrendForCode(String code) {
+    final List<TtChartPoint> points = <TtChartPoint>[];
+    for (final TapeMeasurementEntity measurement
+        in tapeMeasurements.take(12).toList().reversed) {
+      final List<TapeMeasurementEntryEntity> entries =
+          entriesByTapeId[measurement.id] ??
+              const <TapeMeasurementEntryEntity>[];
+      TapeMeasurementEntryEntity? entry;
+      for (final TapeMeasurementEntryEntity item in entries) {
+        if (item.measurementCode == code && item.valueCm != null) {
+          entry = item;
+          break;
+        }
+      }
+      if (entry != null) {
+        points.add(
+          TtChartPoint(
+            label: measurement.dateKey.substring(5),
+            value: entry.valueCm!,
+          ),
+        );
+      }
+    }
+    return points;
+  }
+
   List<TapeMeasurementEntryEntity> latestTapeEntries() {
     final TapeMeasurementEntity? tape = latestTape;
     if (tape == null) {
@@ -95,7 +145,8 @@ class MeasurementsHubScreen extends ConsumerWidget {
           ),
         ],
       ),
-      floatingActionButton: const TtGlobalNavFab(),
+      bottomNavigationBar:
+          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
       body: data.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (Object error, StackTrace stackTrace) => _ErrorView(
@@ -166,6 +217,44 @@ class MeasurementsHubScreen extends ConsumerWidget {
                 child: TtMiniLineChart(
                     points: data.bodyFatTrend, valueSuffix: '%'),
               ),
+              const SizedBox(height: AppSpacing.md),
+              _ChartCard(
+                title: 'Misure metro',
+                subtitle: 'Trend congiunto delle misure principali',
+                child: TtMiniMultiLineChart(
+                  series: data.tapeOverviewSeries,
+                  valueSuffix: 'cm',
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              TtAppCard(
+                onTap: () => _showMeasurementChartsSheet(context, data),
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.insights_rounded,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Tutti i grafici',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          Text(
+                            'Apri statistiche complete per bilancia e metro',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right_rounded),
+                  ],
+                ),
+              ),
               const SizedBox(height: AppSpacing.sectionGap),
               const TtSectionHeader(title: 'Ultime misurazioni'),
               const SizedBox(height: AppSpacing.md),
@@ -177,7 +266,11 @@ class MeasurementsHubScreen extends ConsumerWidget {
                     in data.scaleMeasurements.take(4))
                   Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: _ScaleTile(item: item),
+                    child: _ScaleTile(
+                      item: item,
+                      onTap: () =>
+                          _showScaleDialog(context, ref, existing: item),
+                    ),
                   ),
                 for (final TapeMeasurementEntity item
                     in data.tapeMeasurements.take(4))
@@ -187,6 +280,13 @@ class MeasurementsHubScreen extends ConsumerWidget {
                       item: item,
                       entries: data.entriesByTapeId[item.id] ??
                           const <TapeMeasurementEntryEntity>[],
+                      onTap: () => _showTapeDialog(
+                        context,
+                        ref,
+                        existing: item,
+                        existingEntries: data.entriesByTapeId[item.id] ??
+                            const <TapeMeasurementEntryEntity>[],
+                      ),
                     ),
                   ),
               ],
@@ -196,6 +296,93 @@ class MeasurementsHubScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+Future<void> _showMeasurementChartsSheet(
+  BuildContext context,
+  MeasurementHubData data,
+) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (BuildContext context) {
+      final List<TtChartSeries> allTapeSeries = data.tapeSeries();
+      return SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.sm,
+            AppSpacing.lg,
+            AppSpacing.lg,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                'Statistiche misurazioni',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: AppSpacing.sectionGap),
+              _ChartCard(
+                title: 'Peso',
+                subtitle: 'Tutte le misurazioni bilancia disponibili',
+                child: TtMiniLineChart(
+                  points: data.weightTrend,
+                  valueSuffix: 'kg',
+                  height: 180,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _ChartCard(
+                title: 'Grasso corporeo',
+                subtitle: 'Percentuale quando disponibile',
+                child: TtMiniLineChart(
+                  points: data.bodyFatTrend,
+                  valueSuffix: '%',
+                  height: 180,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _ChartCard(
+                title: 'Metro congiunto',
+                subtitle: 'Tutte le circonferenze con almeno due dati',
+                child: TtMiniMultiLineChart(
+                  series: allTapeSeries,
+                  valueSuffix: 'cm',
+                  height: 220,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sectionGap),
+              Text(
+                'Dettaglio metro',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              if (allTapeSeries.isEmpty)
+                const TtAppCard(
+                  child:
+                      Text('Non ci sono ancora abbastanza misurazioni metro.'),
+                )
+              else
+                for (final TtChartSeries series in allTapeSeries)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                    child: _ChartCard(
+                      title: series.label,
+                      subtitle: 'Trend dedicato',
+                      child: TtMiniLineChart(
+                        points: series.points,
+                        valueSuffix: 'cm',
+                      ),
+                    ),
+                  ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
 }
 
 class ScaleMeasurementsScreen extends ConsumerWidget {
@@ -216,7 +403,8 @@ class ScaleMeasurementsScreen extends ConsumerWidget {
           ),
         ],
       ),
-      floatingActionButton: const TtGlobalNavFab(),
+      bottomNavigationBar:
+          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
       body: data.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (Object error, StackTrace stackTrace) => _ErrorView(
@@ -235,7 +423,11 @@ class ScaleMeasurementsScreen extends ConsumerWidget {
             itemCount: data.scaleMeasurements.length,
             separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.md),
             itemBuilder: (BuildContext context, int index) {
-              return _ScaleTile(item: data.scaleMeasurements[index]);
+              final ScaleMeasurementEntity item = data.scaleMeasurements[index];
+              return _ScaleTile(
+                item: item,
+                onTap: () => _showScaleDialog(context, ref, existing: item),
+              );
             },
           );
         },
@@ -262,7 +454,8 @@ class TapeMeasurementsScreen extends ConsumerWidget {
           ),
         ],
       ),
-      floatingActionButton: const TtGlobalNavFab(),
+      bottomNavigationBar:
+          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
       body: data.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (Object error, StackTrace stackTrace) => _ErrorView(
@@ -286,6 +479,13 @@ class TapeMeasurementsScreen extends ConsumerWidget {
                 item: item,
                 entries: data.entriesByTapeId[item.id] ??
                     const <TapeMeasurementEntryEntity>[],
+                onTap: () => _showTapeDialog(
+                  context,
+                  ref,
+                  existing: item,
+                  existingEntries: data.entriesByTapeId[item.id] ??
+                      const <TapeMeasurementEntryEntity>[],
+                ),
               );
             },
           );
@@ -296,13 +496,18 @@ class TapeMeasurementsScreen extends ConsumerWidget {
 }
 
 class _ScaleTile extends StatelessWidget {
-  const _ScaleTile({required this.item});
+  const _ScaleTile({
+    required this.item,
+    required this.onTap,
+  });
 
   final ScaleMeasurementEntity item;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return TtAppCard(
+      onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -320,6 +525,13 @@ class _ScaleTile extends StatelessWidget {
             const SizedBox(height: AppSpacing.sm),
             Text(item.notes),
           ],
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Tocca per modificare',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
         ],
       ),
     );
@@ -330,10 +542,12 @@ class _TapeTile extends StatelessWidget {
   const _TapeTile({
     required this.item,
     required this.entries,
+    required this.onTap,
   });
 
   final TapeMeasurementEntity item;
   final List<TapeMeasurementEntryEntity> entries;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -341,6 +555,7 @@ class _TapeTile extends StatelessWidget {
         .where((TapeMeasurementEntryEntity entry) => entry.valueCm != null)
         .toList();
     return TtAppCard(
+      onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -362,6 +577,13 @@ class _TapeTile extends StatelessWidget {
                   ),
                 ),
             ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Tocca per modificare',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
           ),
         ],
       ),
@@ -524,20 +746,52 @@ class _EmptyList extends StatelessWidget {
   }
 }
 
-Future<void> _showScaleDialog(BuildContext context, WidgetRef ref) async {
+Future<void> _showScaleDialog(
+  BuildContext context,
+  WidgetRef ref, {
+  ScaleMeasurementEntity? existing,
+}) async {
   final String today = _dateKey(DateTime.now());
-  final TextEditingController date = TextEditingController(text: today);
-  final TextEditingController weight = TextEditingController();
-  final TextEditingController bodyFat = TextEditingController();
-  final TextEditingController muscle = TextEditingController();
-  final TextEditingController water = TextEditingController();
-  final TextEditingController notes = TextEditingController();
+  final TextEditingController date =
+      TextEditingController(text: existing?.dateKey ?? today);
+  final TextEditingController weight =
+      TextEditingController(text: existing?.weightKg?.toString() ?? '');
+  final TextEditingController bodyFat =
+      TextEditingController(text: existing?.bodyFatPercent?.toString() ?? '');
+  final TextEditingController muscle =
+      TextEditingController(text: existing?.muscleMassKg?.toString() ?? '');
+  final TextEditingController water =
+      TextEditingController(text: existing?.waterPercent?.toString() ?? '');
+  final TextEditingController bone =
+      TextEditingController(text: existing?.boneMassKg?.toString() ?? '');
+  final TextEditingController visceral =
+      TextEditingController(text: existing?.visceralFat?.toString() ?? '');
+  final TextEditingController subcutaneous = TextEditingController(
+      text: existing?.subcutaneousFatPercent?.toString() ?? '');
+  final TextEditingController bmr = TextEditingController(
+      text: existing?.basalMetabolismKcal?.toString() ?? '');
+  final TextEditingController bmi =
+      TextEditingController(text: existing?.bmi?.toString() ?? '');
+  final TextEditingController metabolicAge =
+      TextEditingController(text: existing?.metabolicAge?.toString() ?? '');
+  final TextEditingController physique =
+      TextEditingController(text: existing?.physiqueRating ?? '');
+  final TextEditingController time =
+      TextEditingController(text: existing?.measurementTime ?? '');
+  final TextEditingController device =
+      TextEditingController(text: existing?.device ?? '');
+  final TextEditingController reliability =
+      TextEditingController(text: existing?.reliabilityCode ?? 'normal');
+  final TextEditingController notes =
+      TextEditingController(text: existing?.notes ?? '');
   final GlobalKey<FormState> formKey = GlobalKey<FormState>();
   final bool? saved = await showDialog<bool>(
     context: context,
     builder: (BuildContext context) {
       return AlertDialog(
-        title: const Text('Nuova misurazione bilancia'),
+        title: Text(existing == null
+            ? 'Nuova misurazione bilancia'
+            : 'Modifica misurazione bilancia'),
         content: Form(
           key: formKey,
           child: SingleChildScrollView(
@@ -545,11 +799,27 @@ Future<void> _showScaleDialog(BuildContext context, WidgetRef ref) async {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 _field(date, 'Data', isRequired: true),
-                _field(weight, 'Peso kg', keyboardType: TextInputType.number),
+                _field(weight, 'Peso kg',
+                    isRequired: true, keyboardType: TextInputType.number),
                 _field(bodyFat, 'Grasso %', keyboardType: TextInputType.number),
                 _field(muscle, 'Massa muscolare kg',
                     keyboardType: TextInputType.number),
                 _field(water, 'Acqua %', keyboardType: TextInputType.number),
+                _field(bone, 'Massa ossea kg',
+                    keyboardType: TextInputType.number),
+                _field(visceral, 'Grasso viscerale',
+                    keyboardType: TextInputType.number),
+                _field(subcutaneous, 'Grasso sottocutaneo %',
+                    keyboardType: TextInputType.number),
+                _field(bmr, 'Metabolismo basale kcal',
+                    keyboardType: TextInputType.number),
+                _field(bmi, 'BMI', keyboardType: TextInputType.number),
+                _field(metabolicAge, 'Eta metabolica',
+                    keyboardType: TextInputType.number),
+                _field(physique, 'Physique rating'),
+                _field(time, 'Ora misurazione'),
+                _field(device, 'Dispositivo'),
+                _field(reliability, 'Affidabilita'),
                 _field(notes, 'Note', maxLines: 3),
               ],
             ),
@@ -578,39 +848,69 @@ Future<void> _showScaleDialog(BuildContext context, WidgetRef ref) async {
   final String dateKey = date.text.trim();
   ref.read(foodPlanningServiceProvider).ensureDay(dateKey);
   final repository = ref.read(measurementRepositoryProvider);
-  final ScaleMeasurementEntity measurement =
+  final ScaleMeasurementEntity measurement = existing ??
       repository.findScaleByDate(dateKey) ??
-          ScaleMeasurementEntity(
-            uuid: '',
-            dateKey: dateKey,
-            title: 'Bilancia - $dateKey',
-            createdAtEpochMs: 0,
-            updatedAtEpochMs: 0,
-          );
+      ScaleMeasurementEntity(
+        uuid: '',
+        dateKey: dateKey,
+        title: 'Bilancia - $dateKey',
+        createdAtEpochMs: 0,
+        updatedAtEpochMs: 0,
+      );
+  measurement.dateKey = dateKey;
+  measurement.title = 'Bilancia - $dateKey';
   measurement.weightKg = _toDouble(weight.text);
   measurement.bodyFatPercent = _toDouble(bodyFat.text);
   measurement.muscleMassKg = _toDouble(muscle.text);
   measurement.waterPercent = _toDouble(water.text);
+  measurement.boneMassKg = _toDouble(bone.text);
+  measurement.visceralFat = _toDouble(visceral.text);
+  measurement.subcutaneousFatPercent = _toDouble(subcutaneous.text);
+  measurement.basalMetabolismKcal = _toDouble(bmr.text);
+  measurement.bmi = _toDouble(bmi.text);
+  measurement.metabolicAge = _toDouble(metabolicAge.text);
+  measurement.physiqueRating = physique.text.trim();
+  measurement.measurementTime = time.text.trim();
+  measurement.device = device.text.trim();
+  measurement.reliabilityCode =
+      reliability.text.trim().isEmpty ? 'normal' : reliability.text.trim();
   measurement.notes = notes.text.trim();
   repository.saveScale(measurement);
   ref.invalidate(measurementHubProvider);
 }
 
-Future<void> _showTapeDialog(BuildContext context, WidgetRef ref) async {
+Future<void> _showTapeDialog(
+  BuildContext context,
+  WidgetRef ref, {
+  TapeMeasurementEntity? existing,
+  List<TapeMeasurementEntryEntity> existingEntries =
+      const <TapeMeasurementEntryEntity>[],
+}) async {
   final String today = _dateKey(DateTime.now());
-  final TextEditingController date = TextEditingController(text: today);
-  final TextEditingController notes = TextEditingController();
+  final TextEditingController date =
+      TextEditingController(text: existing?.dateKey ?? today);
+  final TextEditingController notes =
+      TextEditingController(text: existing?.notes ?? '');
+  final Map<String, TapeMeasurementEntryEntity> entryByCode =
+      <String, TapeMeasurementEntryEntity>{
+    for (final TapeMeasurementEntryEntity entry in existingEntries)
+      entry.measurementCode: entry,
+  };
   final Map<String, TextEditingController> controllers =
       <String, TextEditingController>{
     for (final String code in tapeMeasurementCodes)
-      code: TextEditingController(),
+      code: TextEditingController(
+        text: entryByCode[code]?.valueCm?.toString() ?? '',
+      ),
   };
   final GlobalKey<FormState> formKey = GlobalKey<FormState>();
   final bool? saved = await showDialog<bool>(
     context: context,
     builder: (BuildContext context) {
       return AlertDialog(
-        title: const Text('Nuova misurazione metro'),
+        title: Text(existing == null
+            ? 'Nuova misurazione metro'
+            : 'Modifica misurazione metro'),
         content: Form(
           key: formKey,
           child: SingleChildScrollView(
@@ -652,14 +952,17 @@ Future<void> _showTapeDialog(BuildContext context, WidgetRef ref) async {
   final String dateKey = date.text.trim();
   ref.read(foodPlanningServiceProvider).ensureDay(dateKey);
   ref.read(measurementRepositoryProvider).saveTapeWithEntries(
-    TapeMeasurementEntity(
-      uuid: '',
-      dateKey: dateKey,
-      title: 'Metro - $dateKey',
-      notes: notes.text.trim(),
-      createdAtEpochMs: 0,
-      updatedAtEpochMs: 0,
-    ),
+    (existing ??
+        TapeMeasurementEntity(
+          uuid: '',
+          dateKey: dateKey,
+          title: 'Metro - $dateKey',
+          createdAtEpochMs: 0,
+          updatedAtEpochMs: 0,
+        ))
+      ..dateKey = dateKey
+      ..title = 'Metro - $dateKey'
+      ..notes = notes.text.trim(),
     <TapeMeasurementEntryEntity>[
       for (int index = 0; index < tapeMeasurementCodes.length; index += 1)
         TapeMeasurementEntryEntity(

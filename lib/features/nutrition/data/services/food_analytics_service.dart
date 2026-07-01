@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
 import '../../../profile/data/entities/user_profile_entity.dart';
+import '../../../profile/domain/profile_codes.dart';
+import '../../../profile/domain/profile_nutrition_calculator.dart';
 import '../../../workout/data/repositories/workout_session_repository.dart';
 import '../entities/nutrition_tracking_entities.dart';
 import '../repositories/meal_repository.dart';
@@ -56,6 +58,7 @@ class WeekAdaptiveSummary {
     required this.activityDeltaKcal,
     required this.deltaWeightKg,
     required this.avgCalories,
+    required this.kcalPerKg,
   });
 
   final DateTime monday;
@@ -76,6 +79,7 @@ class WeekAdaptiveSummary {
   final double activityDeltaKcal;
   final double? deltaWeightKg;
   final double? avgCalories;
+  final double kcalPerKg;
 }
 
 class FoodAnalyticsService {
@@ -90,12 +94,14 @@ class FoodAnalyticsService {
   final MealRepository _meals;
   final MeasurementRepository _measurements;
   final WorkoutSessionRepository _workoutSessions;
+  final ProfileNutritionCalculator _profileCalculator =
+      const ProfileNutritionCalculator();
 
   ActivityBreakdown activityForDay(
     DailyRecordEntity day, {
     UserProfileEntity? profile,
   }) {
-    final double stepCoeff = profile?.stepKcalCoefficient ?? 0.025;
+    final double stepCoeff = profile?.stepKcalCoefficient ?? 0.020;
     final double stepKcal = day.activeKcalSteps ?? day.steps * stepCoeff;
     final double completedWorkout =
         _workoutSessions.completedKcalForDate(day.dateKey);
@@ -114,6 +120,47 @@ class FoodAnalyticsService {
           0,
           (double sum, MealWithItems meal) => sum + meal.totals.kcal,
         );
+  }
+
+  double targetForDay({
+    required DailyRecordEntity day,
+    required List<DailyRecordEntity> allDays,
+    UserProfileEntity? profile,
+  }) {
+    if (profile == null) {
+      return day.targetKcal ?? 1980;
+    }
+    if (profile.targetModeCode != TargetModeCodes.adaptiveWeekly) {
+      return _profileCalculator
+          .calculateFixedTargets(
+            profile,
+            currentWeightKg: weightForDay(day),
+          )
+          .targetKcal;
+    }
+    final DateTime date = DateTime.parse(day.dateKey);
+    final DateTime monday = date.subtract(Duration(days: date.weekday - 1));
+    return adaptiveSummaryForWeek(
+      monday: monday,
+      allDays: allDays,
+      profile: profile,
+    ).targetKcal;
+  }
+
+  ProfileNutritionTargets macroTargetsForDay({
+    required DailyRecordEntity day,
+    UserProfileEntity? profile,
+  }) {
+    final UserProfileEntity fallbackProfile = profile ??
+        UserProfileEntity(
+          uuid: 'fallback',
+          createdAtEpochMs: 0,
+          updatedAtEpochMs: 0,
+        );
+    return _profileCalculator.calculateFixedTargets(
+      fallbackProfile,
+      currentWeightKg: weightForDay(day),
+    );
   }
 
   bool hasPartialNutrition(String dateKey) {
@@ -236,6 +283,7 @@ class FoodAnalyticsService {
       activityDeltaKcal: activityDelta,
       deltaWeightKg: observed.deltaWeightKg,
       avgCalories: observed.avgCalories,
+      kcalPerKg: profile?.kcalPerKg ?? 7700,
     );
   }
 
@@ -348,16 +396,23 @@ class FoodAnalyticsService {
     if (age == null) {
       return null;
     }
-    final double base = 10 * weightKg + 6.25 * profile.heightCm! - 5 * age;
+    final double male = 88.362 +
+        (13.397 * weightKg) +
+        (4.799 * profile.heightCm!) -
+        (5.677 * age);
+    final double female = 447.593 +
+        (9.247 * weightKg) +
+        (3.098 * profile.heightCm!) -
+        (4.330 * age);
     if (<String>['male', 'm', 'man', 'uomo', 'maschio']
         .contains(profile.biologicalSexCode.toLowerCase())) {
-      return base + 5;
+      return male;
     }
     if (<String>['female', 'f', 'woman', 'donna', 'femmina']
         .contains(profile.biologicalSexCode.toLowerCase())) {
-      return base - 161;
+      return female;
     }
-    return base;
+    return (male + female) / 2;
   }
 
   int? _age(int? birthDateEpochDay, DateTime now) {

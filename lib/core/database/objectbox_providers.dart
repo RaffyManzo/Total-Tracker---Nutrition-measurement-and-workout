@@ -53,6 +53,9 @@ final Provider<DatabaseInitializationStatus>
   },
 );
 
+final Provider<int> profileSettingsRevisionProvider =
+    Provider<int>((ref) => DateTime.now().microsecondsSinceEpoch);
+
 final Provider<UserProfileRepository> userProfileRepositoryProvider =
     Provider<UserProfileRepository>((ref) {
   return UserProfileRepository(ref.watch(objectBoxStoreProvider));

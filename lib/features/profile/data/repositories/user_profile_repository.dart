@@ -150,6 +150,35 @@ class UserProfileRepository {
         'Unsupported biological sex code.',
       );
     }
+    if (!TargetModeCodes.values.contains(profile.targetModeCode)) {
+      throw ArgumentError.value(
+        profile.targetModeCode,
+        'targetModeCode',
+        'Unsupported target mode code.',
+      );
+    }
+    if (!MacroModeCodes.values.contains(profile.macroModeCode)) {
+      throw ArgumentError.value(
+        profile.macroModeCode,
+        'macroModeCode',
+        'Unsupported macro mode code.',
+      );
+    }
+    if (!WorkoutActivityTypeCodes.values
+        .contains(profile.workoutActivityTypeCode)) {
+      throw ArgumentError.value(
+        profile.workoutActivityTypeCode,
+        'workoutActivityTypeCode',
+        'Unsupported workout activity type code.',
+      );
+    }
+    if (!ThemePreferenceCodes.values.contains(profile.themeModeCode)) {
+      throw ArgumentError.value(
+        profile.themeModeCode,
+        'themeModeCode',
+        'Unsupported theme mode code.',
+      );
+    }
     if (profile.defaultStepGoal < 0) {
       throw ArgumentError.value(
         profile.defaultStepGoal,
@@ -169,6 +198,41 @@ class UserProfileRepository {
         profile.heightCm,
         'heightCm',
         'Height must be positive when present.',
+      );
+    }
+    if (profile.initialWeightKg != null && profile.initialWeightKg! <= 0) {
+      throw ArgumentError.value(
+        profile.initialWeightKg,
+        'initialWeightKg',
+        'Initial weight must be positive when present.',
+      );
+    }
+    if (profile.sedentaryBaseKcal < 0) {
+      throw ArgumentError.value(
+        profile.sedentaryBaseKcal,
+        'sedentaryBaseKcal',
+        'Sedentary base cannot be negative.',
+      );
+    }
+    if (profile.averageWorkoutsPerWeek < 0) {
+      throw ArgumentError.value(
+        profile.averageWorkoutsPerWeek,
+        'averageWorkoutsPerWeek',
+        'Average workouts cannot be negative.',
+      );
+    }
+    if (profile.averageWorkoutDurationMinutes < 0) {
+      throw ArgumentError.value(
+        profile.averageWorkoutDurationMinutes,
+        'averageWorkoutDurationMinutes',
+        'Workout duration cannot be negative.',
+      );
+    }
+    if (profile.stepKcalCoefficient < 0) {
+      throw ArgumentError.value(
+        profile.stepKcalCoefficient,
+        'stepKcalCoefficient',
+        'Step coefficient cannot be negative.',
       );
     }
   }
