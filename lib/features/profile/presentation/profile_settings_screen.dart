@@ -11,6 +11,7 @@ import '../../../shared/widgets/tt_section_header.dart';
 import '../../nutrition/data/entities/ingredient_entity.dart';
 import '../../nutrition/data/entities/nutrition_tracking_entities.dart';
 import '../../nutrition/presentation/food_v01_screens.dart';
+import '../../nutrition/presentation/measurement_screens.dart';
 import '../data/entities/user_profile_entity.dart';
 import '../domain/profile_codes.dart';
 import '../domain/profile_nutrition_calculator.dart';
@@ -927,6 +928,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     ref.invalidate(foodHubV01Provider);
     ref.invalidate(foodDaysV01Provider);
     ref.invalidate(foodMealsV01Provider);
+    ref.invalidate(measurementHubProvider);
     ref.invalidate(ingredientArchiveProvider);
     ref.invalidate(recipeArchiveProvider);
     setState(() {});
