@@ -17,45 +17,102 @@ void main() {
     );
   }
 
-  test('shared target applies to every supported meal slot', () {
+  test('uniform distribution assigns 25 percent to every meal', () {
     const MealTargetSettings settings = MealTargetSettings(
       modeCode: MealTargetModeCodes.shared,
-      sharedTarget: MealNutrientTarget(
-        kcal: 500,
-        proteinGrams: 35,
-      ),
     );
 
     for (final String slot in MealTargetSettings.supportedSlots) {
-      final MealNutrientTarget target = settings.effectiveTargetForSlot(slot);
-      expect(target.kcal, 500);
-      expect(target.proteinGrams, 35);
+      final MealNutrientPercentages percentages =
+          settings.effectivePercentagesForSlot(slot);
+      expect(percentages.kcalPercent, 25);
+      expect(percentages.proteinPercent, 25);
+      expect(percentages.carbsPercent, 25);
+      expect(percentages.fatPercent, 25);
+      expect(percentages.fiberPercent, 25);
+      expect(percentages.sugarPercent, 25);
     }
+    expect(settings.validationMessage(), isNull);
   });
 
-  test('custom target returns only the selected slot values', () {
-    const MealTargetSettings settings = MealTargetSettings(
+  test('custom distribution requires every nutrient to sum to 100', () {
+    const MealTargetSettings valid = MealTargetSettings(
       modeCode: MealTargetModeCodes.custom,
-      slotTargets: <String, MealNutrientTarget>{
-        'pranzo': MealNutrientTarget(kcal: 700, carbsGrams: 80),
+      slotPercentages: <String, MealNutrientPercentages>{
+        'colazione': MealNutrientPercentages.uniform,
+        'spuntino': MealNutrientPercentages.uniform,
+        'pranzo': MealNutrientPercentages.uniform,
+        'cena': MealNutrientPercentages.uniform,
       },
     );
 
-    expect(settings.effectiveTargetForSlot('pranzo').kcal, 700);
-    expect(settings.effectiveTargetForSlot('pranzo').carbsGrams, 80);
-    expect(settings.effectiveTargetForSlot('cena').hasAny, isFalse);
+    expect(valid.validationMessage(), isNull);
+
+    const MealTargetSettings invalid = MealTargetSettings(
+      modeCode: MealTargetModeCodes.custom,
+      slotPercentages: <String, MealNutrientPercentages>{
+        'colazione': MealNutrientPercentages.uniform,
+        'spuntino': MealNutrientPercentages.uniform,
+        'pranzo': MealNutrientPercentages.uniform,
+        'cena': MealNutrientPercentages(
+          kcalPercent: 20,
+          proteinPercent: 25,
+          carbsPercent: 25,
+          fatPercent: 25,
+          fiberPercent: 25,
+          sugarPercent: 25,
+        ),
+      },
+    );
+
+    expect(invalid.validationMessage(), contains('calorie'));
+    expect(invalid.validationMessage(), contains('95%'));
+  });
+
+  test('percentage distribution resolves calories macros fiber and sugar', () {
+    const MealTargetSettings settings = MealTargetSettings(
+      modeCode: MealTargetModeCodes.custom,
+      slotPercentages: <String, MealNutrientPercentages>{
+        'pranzo': MealNutrientPercentages(
+          kcalPercent: 40,
+          proteinPercent: 35,
+          carbsPercent: 45,
+          fatPercent: 30,
+          fiberPercent: 50,
+          sugarPercent: 20,
+        ),
+      },
+    );
+
+    final MealNutrientTarget target = settings.targetForSlot(
+      slotCode: 'pranzo',
+      dailyKcal: 2000,
+      dailyProteinGrams: 120,
+      dailyCarbsGrams: 250,
+      dailyFatGrams: 60,
+      dailyFiberGrams: 30,
+      dailySugarGrams: 50,
+    );
+
+    expect(target.kcal, 800);
+    expect(target.proteinGrams, 42);
+    expect(target.carbsGrams, 112.5);
+    expect(target.fatGrams, 18);
+    expect(target.fiberGrams, 15);
+    expect(target.sugarGrams, 10);
   });
 
   test('settings survive profile JSON round trip', () {
     const MealTargetSettings original = MealTargetSettings(
       modeCode: MealTargetModeCodes.custom,
-      sharedTarget: MealNutrientTarget(kcal: 400),
-      slotTargets: <String, MealNutrientTarget>{
-        'colazione': MealNutrientTarget(
-          kcal: 450,
-          proteinGrams: 30,
-          carbsGrams: 55,
-          fatGrams: 12,
+      slotPercentages: <String, MealNutrientPercentages>{
+        'colazione': MealNutrientPercentages(
+          kcalPercent: 20,
+          proteinPercent: 30,
+          carbsPercent: 25,
+          fatPercent: 20,
+          fiberPercent: 30,
+          sugarPercent: 10,
         ),
       },
     );
@@ -65,28 +122,16 @@ void main() {
     );
 
     final MealTargetSettings decoded = MealTargetSettings.fromProfile(entity);
+    final MealNutrientPercentages percentages =
+        decoded.effectivePercentagesForSlot('colazione');
 
     expect(decoded.modeCode, MealTargetModeCodes.custom);
-    expect(decoded.effectiveTargetForSlot('colazione').kcal, 450);
-    expect(decoded.effectiveTargetForSlot('colazione').proteinGrams, 30);
-    expect(decoded.effectiveTargetForSlot('colazione').carbsGrams, 55);
-    expect(decoded.effectiveTargetForSlot('colazione').fatGrams, 12);
-  });
-
-  test('non-positive and non-finite values are omitted', () {
-    const MealNutrientTarget raw = MealNutrientTarget(
-      kcal: 0,
-      proteinGrams: -2,
-      carbsGrams: double.infinity,
-      fatGrams: 10,
-    );
-
-    final MealNutrientTarget clean = raw.normalized();
-
-    expect(clean.kcal, isNull);
-    expect(clean.proteinGrams, isNull);
-    expect(clean.carbsGrams, isNull);
-    expect(clean.fatGrams, 10);
+    expect(percentages.kcalPercent, 20);
+    expect(percentages.proteinPercent, 30);
+    expect(percentages.carbsPercent, 25);
+    expect(percentages.fatPercent, 20);
+    expect(percentages.fiberPercent, 30);
+    expect(percentages.sugarPercent, 10);
   });
 
   test('invalid profile JSON falls back without throwing', () {
@@ -98,6 +143,9 @@ void main() {
     );
 
     expect(decoded.modeCode, MealTargetModeCodes.shared);
-    expect(decoded.sharedTarget.hasAny, isFalse);
+    expect(
+      decoded.effectivePercentagesForSlot('colazione').kcalPercent,
+      25,
+    );
   });
 }

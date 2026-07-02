@@ -798,11 +798,15 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               keyboardType: TextInputType.number),
           _field(_fatKg, 'Grassi g/kg', keyboardType: TextInputType.number),
           _field(_fiberKg, 'Fibre g/kg', keyboardType: TextInputType.number),
-          _field(_carbsKg, 'Carboidrati g/kg',
-              keyboardType: TextInputType.number),
+          const TtAppCard(
+            child: Text(
+              'I carboidrati vengono calcolati dalle calorie residue dopo proteine (4 kcal/g) e grassi (9 kcal/g), così la somma energetica dei macro coincide con il target calorico.',
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
           _field(
             _sugarCarbsPercent,
-            'Zuccheri % carboidrati',
+            'Zuccheri % dei carboidrati',
             keyboardType: TextInputType.number,
           ),
         ];
@@ -1694,13 +1698,9 @@ class _MealTargetEditorSheetState extends State<_MealTargetEditorSheet> {
   final Map<String, TextEditingController> _controllers =
       <String, TextEditingController>{};
   late String _modeCode;
+  String? _distributionError;
 
-  static const List<String> _fields = <String>[
-    'kcal',
-    'protein',
-    'carbs',
-    'fat',
-  ];
+  static const List<String> _fields = MealTargetMetricCodes.values;
 
   @override
   void initState() {
@@ -1708,21 +1708,25 @@ class _MealTargetEditorSheetState extends State<_MealTargetEditorSheet> {
     _modeCode = MealTargetModeCodes.values.contains(widget.initial.modeCode)
         ? widget.initial.modeCode
         : MealTargetModeCodes.none;
-    _seedControllers('shared', widget.initial.sharedTarget);
     for (final String slot in MealTargetSettings.supportedSlots) {
+      final MealNutrientPercentages initial =
+          widget.initial.slotPercentages[slot] ??
+              MealNutrientPercentages.uniform;
       _seedControllers(
         slot,
-        widget.initial.slotTargets[slot] ?? MealNutrientTarget.empty,
+        initial.isComplete ? initial : MealNutrientPercentages.uniform,
       );
     }
   }
 
-  void _seedControllers(String group, MealNutrientTarget target) {
+  void _seedControllers(String group, MealNutrientPercentages percentages) {
     final Map<String, double?> values = <String, double?>{
-      'kcal': target.kcal,
-      'protein': target.proteinGrams,
-      'carbs': target.carbsGrams,
-      'fat': target.fatGrams,
+      MealTargetMetricCodes.kcal: percentages.kcalPercent,
+      MealTargetMetricCodes.protein: percentages.proteinPercent,
+      MealTargetMetricCodes.carbs: percentages.carbsPercent,
+      MealTargetMetricCodes.fat: percentages.fatPercent,
+      MealTargetMetricCodes.fiber: percentages.fiberPercent,
+      MealTargetMetricCodes.sugar: percentages.sugarPercent,
     };
     for (final String field in _fields) {
       _controllers['${group}_$field'] = TextEditingController(
@@ -1743,30 +1747,42 @@ class _MealTargetEditorSheetState extends State<_MealTargetEditorSheet> {
     return _controllers['${group}_$field']!;
   }
 
-  MealNutrientTarget _targetFor(String group) {
-    return MealNutrientTarget(
-      kcal: _toDouble(_controller(group, 'kcal').text),
-      proteinGrams: _toDouble(_controller(group, 'protein').text),
-      carbsGrams: _toDouble(_controller(group, 'carbs').text),
-      fatGrams: _toDouble(_controller(group, 'fat').text),
-    ).normalized();
+  MealNutrientPercentages _percentagesFor(String group) {
+    return MealNutrientPercentages(
+      kcalPercent:
+          _toDouble(_controller(group, MealTargetMetricCodes.kcal).text),
+      proteinPercent:
+          _toDouble(_controller(group, MealTargetMetricCodes.protein).text),
+      carbsPercent:
+          _toDouble(_controller(group, MealTargetMetricCodes.carbs).text),
+      fatPercent: _toDouble(_controller(group, MealTargetMetricCodes.fat).text),
+      fiberPercent:
+          _toDouble(_controller(group, MealTargetMetricCodes.fiber).text),
+      sugarPercent:
+          _toDouble(_controller(group, MealTargetMetricCodes.sugar).text),
+    );
   }
 
   MealTargetSettings _settings() {
     return MealTargetSettings(
       modeCode: _modeCode,
-      sharedTarget: _targetFor('shared'),
-      slotTargets: <String, MealNutrientTarget>{
+      slotPercentages: <String, MealNutrientPercentages>{
         for (final String slot in MealTargetSettings.supportedSlots)
-          slot: _targetFor(slot),
+          slot: _percentagesFor(slot),
       },
     );
+  }
+
+  void _refreshDistribution() {
+    if (mounted) {
+      setState(() => _distributionError = null);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return FractionallySizedBox(
-      heightFactor: 0.92,
+      heightFactor: 0.94,
       child: Form(
         key: _formKey,
         child: Column(
@@ -1785,11 +1801,11 @@ class _MealTargetEditorSheetState extends State<_MealTargetEditorSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         Text(
-                          'Target per pasto',
+                          'Distribuzione target per pasto',
                           style: Theme.of(context).textTheme.headlineSmall,
                         ),
                         Text(
-                          'Ogni valore e facoltativo. Le barre compaiono solo per i target compilati.',
+                          'Imposta la percentuale del totale giornaliero destinata a ogni pasto. Ogni metrica deve sommare al 100%.',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
@@ -1815,7 +1831,7 @@ class _MealTargetEditorSheetState extends State<_MealTargetEditorSheet> {
                   DropdownButtonFormField<String>(
                     initialValue: _modeCode,
                     decoration: const InputDecoration(
-                      labelText: 'Modalita target',
+                      labelText: 'Modalità distribuzione',
                     ),
                     items: const <DropdownMenuItem<String>>[
                       DropdownMenuItem<String>(
@@ -1824,16 +1840,19 @@ class _MealTargetEditorSheetState extends State<_MealTargetEditorSheet> {
                       ),
                       DropdownMenuItem<String>(
                         value: MealTargetModeCodes.shared,
-                        child: Text('Stesso target per tutti i pasti'),
+                        child: Text('Uniforme: 25% per ogni pasto'),
                       ),
                       DropdownMenuItem<String>(
                         value: MealTargetModeCodes.custom,
-                        child: Text('Target personalizzati per slot'),
+                        child: Text('Percentuali personalizzate'),
                       ),
                     ],
                     onChanged: (String? value) {
                       if (value != null) {
-                        setState(() => _modeCode = value);
+                        setState(() {
+                          _modeCode = value;
+                          _distributionError = null;
+                        });
                       }
                     },
                   ),
@@ -1841,26 +1860,62 @@ class _MealTargetEditorSheetState extends State<_MealTargetEditorSheet> {
                   if (_modeCode == MealTargetModeCodes.none)
                     const TtAppCard(
                       child: Text(
-                        'I pasti continueranno a mostrare i valori consumati, senza barre di avanzamento.',
+                        'I pasti mostreranno solo i valori consumati, senza target o barre di avanzamento.',
                       ),
                     ),
                   if (_modeCode == MealTargetModeCodes.shared)
-                    _targetCard(
-                      group: 'shared',
-                      title: 'Target condiviso',
-                      subtitle:
-                          'Applicato a colazione, spuntino, pranzo e cena.',
+                    const TtAppCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Distribuzione uniforme',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          SizedBox(height: AppSpacing.xs),
+                          Text(
+                            'Ogni pasto riceve il 25% di calorie, proteine, carboidrati, grassi, fibre e zuccheri del target giornaliero.',
+                          ),
+                        ],
+                      ),
                     ),
-                  if (_modeCode == MealTargetModeCodes.custom)
+                  if (_modeCode == MealTargetModeCodes.custom) ...<Widget>[
+                    _distributionSummaryCard(),
+                    const SizedBox(height: AppSpacing.md),
                     for (final String slot
                         in MealTargetSettings.supportedSlots) ...<Widget>[
                       _targetCard(
                         group: slot,
                         title: _mealSlotLabel(slot),
-                        subtitle: 'Target facoltativi per questo slot.',
+                        subtitle:
+                            'Quota percentuale del totale giornaliero per questo pasto.',
                       ),
                       const SizedBox(height: AppSpacing.md),
                     ],
+                  ],
+                  if (_distributionError != null) ...<Widget>[
+                    TtAppCard(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Icon(
+                            Icons.error_outline_rounded,
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: Text(
+                              _distributionError!,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1885,10 +1940,16 @@ class _MealTargetEditorSheetState extends State<_MealTargetEditorSheet> {
                     Expanded(
                       child: FilledButton(
                         onPressed: () {
-                          if (!_formKey.currentState!.validate()) {
+                          if (!(_formKey.currentState?.validate() ?? false)) {
                             return;
                           }
-                          Navigator.of(context).pop(_settings());
+                          final MealTargetSettings settings = _settings();
+                          final String? error = settings.validationMessage();
+                          if (error != null) {
+                            setState(() => _distributionError = error);
+                            return;
+                          }
+                          Navigator.of(context).pop(settings);
                         },
                         child: const Text('Salva'),
                       ),
@@ -1899,6 +1960,64 @@ class _MealTargetEditorSheetState extends State<_MealTargetEditorSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _distributionSummaryCard() {
+    final MealTargetDistributionTotals totals =
+        _settings().distributionTotals();
+    return TtAppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Controllo somme',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Ogni voce deve raggiungere esattamente il 100%.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: <Widget>[
+              for (final String metric in MealTargetMetricCodes.values)
+                _percentageTotalChip(
+                  label: MealTargetMetricCodes.label(metric),
+                  value: totals.valueFor(metric),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _percentageTotalChip({
+    required String label,
+    required double value,
+  }) {
+    final bool valid = (value - 100).abs() <= 0.01;
+    final Color color = valid
+        ? Theme.of(context).colorScheme.primary
+        : Theme.of(context).colorScheme.error;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.xs,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Text(
+        '$label ${_optionalNumber(value)}%',
+        style: TextStyle(color: color, fontWeight: FontWeight.w800),
       ),
     );
   }
@@ -1920,17 +2039,15 @@ class _MealTargetEditorSheetState extends State<_MealTargetEditorSheet> {
             children: <Widget>[
               Expanded(
                 child: _targetField(
-                  controller: _controller(group, 'kcal'),
+                  controller: _controller(group, MealTargetMetricCodes.kcal),
                   label: 'Calorie',
-                  suffix: 'kcal',
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: _targetField(
-                  controller: _controller(group, 'protein'),
+                  controller: _controller(group, MealTargetMetricCodes.protein),
                   label: 'Proteine',
-                  suffix: 'g',
                 ),
               ),
             ],
@@ -1940,17 +2057,33 @@ class _MealTargetEditorSheetState extends State<_MealTargetEditorSheet> {
             children: <Widget>[
               Expanded(
                 child: _targetField(
-                  controller: _controller(group, 'carbs'),
+                  controller: _controller(group, MealTargetMetricCodes.carbs),
                   label: 'Carboidrati',
-                  suffix: 'g',
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: _targetField(
-                  controller: _controller(group, 'fat'),
+                  controller: _controller(group, MealTargetMetricCodes.fat),
                   label: 'Grassi',
-                  suffix: 'g',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: _targetField(
+                  controller: _controller(group, MealTargetMetricCodes.fiber),
+                  label: 'Fibre',
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: _targetField(
+                  controller: _controller(group, MealTargetMetricCodes.sugar),
+                  label: 'Zuccheri',
                 ),
               ),
             ],
@@ -1963,7 +2096,6 @@ class _MealTargetEditorSheetState extends State<_MealTargetEditorSheet> {
   Widget _targetField({
     required TextEditingController controller,
     required String label,
-    required String suffix,
   }) {
     return TextFormField(
       controller: controller,
@@ -1971,19 +2103,20 @@ class _MealTargetEditorSheetState extends State<_MealTargetEditorSheet> {
       inputFormatters: <TextInputFormatter>[
         FilteringTextInputFormatter.allow(RegExp(r'[0-9,.]')),
       ],
+      onChanged: (_) => _refreshDistribution(),
       decoration: InputDecoration(
         labelText: label,
-        suffixText: suffix,
-        helperText: 'Facoltativo',
+        suffixText: '%',
+        helperText: 'Quota giornaliera',
       ),
       validator: (String? value) {
         final String clean = value?.trim() ?? '';
         if (clean.isEmpty) {
-          return null;
+          return 'Obbligatorio';
         }
         final double? parsed = _toDouble(clean);
-        if (parsed == null || parsed <= 0) {
-          return 'Inserisci un valore positivo';
+        if (parsed == null || parsed < 0 || parsed > 100) {
+          return 'Da 0 a 100';
         }
         return null;
       },
@@ -1993,39 +2126,23 @@ class _MealTargetEditorSheetState extends State<_MealTargetEditorSheet> {
 
 String _mealTargetModeLabel(String code) {
   return switch (code) {
-    MealTargetModeCodes.shared => 'Unico per tutti i pasti',
-    MealTargetModeCodes.custom => 'Personalizzato per slot',
+    MealTargetModeCodes.shared => 'Uniforme: 25% per pasto',
+    MealTargetModeCodes.custom => 'Percentuali personalizzate',
     _ => 'Disattivato',
   };
 }
 
 String _mealTargetSettingsSummary(MealTargetSettings settings) {
   if (settings.modeCode == MealTargetModeCodes.shared) {
-    return settings.sharedTarget.hasAny
-        ? _mealTargetCompactLabel(settings.sharedTarget)
-        : 'Nessun valore compilato';
+    return '25% di ogni target giornaliero per ciascun pasto';
   }
   if (settings.modeCode == MealTargetModeCodes.custom) {
-    final int configured = MealTargetSettings.supportedSlots
-        .where(
-          (String slot) =>
-              (settings.slotTargets[slot] ?? MealNutrientTarget.empty).hasAny,
-        )
-        .length;
-    return '$configured/4 slot configurati';
+    final String? error = settings.validationMessage();
+    return error == null
+        ? 'Sei distribuzioni complete al 100%'
+        : 'Configurazione da completare';
   }
-  return 'Nessun target configurato';
-}
-
-String _mealTargetCompactLabel(MealNutrientTarget target) {
-  final List<String> values = <String>[
-    if (target.kcal != null) '${_optionalNumber(target.kcal)} kcal',
-    if (target.proteinGrams != null)
-      'P ${_optionalNumber(target.proteinGrams)} g',
-    if (target.carbsGrams != null) 'C ${_optionalNumber(target.carbsGrams)} g',
-    if (target.fatGrams != null) 'G ${_optionalNumber(target.fatGrams)} g',
-  ];
-  return values.isEmpty ? 'Nessun valore compilato' : values.join(' · ');
+  return 'Nessuna distribuzione configurata';
 }
 
 String _mealSlotLabel(String slot) {

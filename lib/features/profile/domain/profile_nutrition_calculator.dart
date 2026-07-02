@@ -53,7 +53,20 @@ class ProfileNutritionCalculator {
     final double target = profile.targetModeCode == TargetModeCodes.fixedUser
         ? profile.defaultTargetKcal.toDouble()
         : sedentary + profileActivityDaily;
-    final double carbsGrams = profile.carbsGramsPerKg * weightKg;
+    final double targetKcal = target
+        .clamp(
+          profile.minimumReasonableTdee,
+          profile.maximumReasonableTdee,
+        )
+        .toDouble();
+    final double proteinGrams = profile.proteinGramsPerKg * weightKg;
+    final double fatGrams = profile.fatGramsPerKg * weightKg;
+    final double proteinKcal = proteinGrams * 4;
+    final double fatKcal = fatGrams * 9;
+    final double carbohydrateKcal = (targetKcal - proteinKcal - fatKcal)
+        .clamp(0, double.infinity)
+        .toDouble();
+    final double carbsGrams = carbohydrateKcal / 4;
     final double sugarPercent = profile.sugarCarbsPercent <= 0
         ? 25
         : profile.sugarCarbsPercent.clamp(0, 100).toDouble();
@@ -64,14 +77,9 @@ class ProfileNutritionCalculator {
       stepDailyKcal: stepDaily,
       workoutDailyKcal: workoutDaily,
       profileActivityDailyKcal: profileActivityDaily,
-      targetKcal: target
-          .clamp(
-            profile.minimumReasonableTdee,
-            profile.maximumReasonableTdee,
-          )
-          .toDouble(),
-      proteinGrams: profile.proteinGramsPerKg * weightKg,
-      fatGrams: profile.fatGramsPerKg * weightKg,
+      targetKcal: targetKcal,
+      proteinGrams: proteinGrams,
+      fatGrams: fatGrams,
       fiberGrams: profile.fiberGramsPerKg * weightKg,
       carbsGrams: carbsGrams,
       sugarGrams: carbsGrams * sugarPercent / 100,

@@ -22,6 +22,7 @@ import '../../profile/domain/profile_nutrition_calculator.dart';
 import '../data/entities/ingredient_entity.dart';
 import '../data/entities/nutrition_tracking_entities.dart';
 import '../data/import/obsidian_food_seed.dart';
+import '../data/repositories/daily_record_repository.dart';
 import '../data/repositories/meal_repository.dart';
 import '../data/repositories/recipe_repository.dart';
 import '../data/services/food_analytics_service.dart';
@@ -3004,10 +3005,39 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
     final MealNutritionTotals totals = _details.totals;
     final UserProfileEntity? profile =
         ref.watch(userProfileRepositoryProvider).getActiveProfile();
-    final MealNutrientTarget mealTarget = profile == null
-        ? MealNutrientTarget.empty
-        : MealTargetSettings.fromProfile(profile)
-            .effectiveTargetForSlot(meal.mealTypeCode);
+    final DailyRecordRepository dailyRepository =
+        ref.watch(dailyRecordRepositoryProvider);
+    final FoodAnalyticsService analytics =
+        ref.watch(foodAnalyticsServiceProvider);
+    final DailyRecordEntity? day = dailyRepository.findByDate(meal.dateKey);
+    final ProfileNutritionTargets? dailyTargets = profile == null
+        ? null
+        : day == null
+            ? const ProfileNutritionCalculator().calculateFixedTargets(profile)
+            : analytics.macroTargetsForDay(day: day, profile: profile);
+    final double dailyKcal = profile == null || dailyTargets == null
+        ? 0
+        : day == null
+            ? dailyTargets.targetKcal
+            : analytics
+                .targetResultForDay(
+                  day: day,
+                  allDays: dailyRepository.getAllActive(),
+                  profile: profile,
+                )
+                .targetKcal;
+    final MealNutrientTarget mealTarget =
+        profile == null || dailyTargets == null
+            ? MealNutrientTarget.empty
+            : MealTargetSettings.fromProfile(profile).targetForSlot(
+                slotCode: meal.mealTypeCode,
+                dailyKcal: dailyKcal,
+                dailyProteinGrams: dailyTargets.proteinGrams,
+                dailyCarbsGrams: dailyTargets.carbsGrams,
+                dailyFatGrams: dailyTargets.fatGrams,
+                dailyFiberGrams: dailyTargets.fiberGrams,
+                dailySugarGrams: dailyTargets.sugarGrams,
+              );
     return Scaffold(
       appBar: AppBar(
         title: Text('${_slotEmoji(meal.mealTypeCode)} ${meal.title}'),
@@ -4395,243 +4425,50 @@ class _PersistentIngredientListScreenState
   }
 
   Future<void> _showManualIngredientDialog() async {
-    final TextEditingController name = TextEditingController();
-    final TextEditingController brand = TextEditingController();
-    final TextEditingController barcode = TextEditingController();
-    final TextEditingController image = TextEditingController();
-    final TextEditingController kcal = TextEditingController();
-    final TextEditingController protein = TextEditingController();
-    final TextEditingController carbs = TextEditingController();
-    final TextEditingController fat = TextEditingController();
-    final TextEditingController fiber = TextEditingController();
-    final TextEditingController sugar = TextEditingController();
-    final GlobalKey<FormState> formKey = GlobalKey<FormState>();
-
-    final bool? saved = await showModalBottomSheet<bool>(
+    final _ManualIngredientDraft? draft =
+        await showModalBottomSheet<_ManualIngredientDraft>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
       useSafeArea: true,
       builder: (BuildContext sheetContext) {
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.92,
-          minChildSize: 0.68,
-          maxChildSize: 0.96,
-          builder: (
-            BuildContext context,
-            ScrollController scrollController,
-          ) {
-            return Form(
-              key: formKey,
-              child: ListView(
-                controller: scrollController,
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg,
-                  0,
-                  AppSpacing.lg,
-                  AppSpacing.xxl,
-                ),
-                children: <Widget>[
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Icon(
-                          Icons.add_shopping_cart_rounded,
-                          color:
-                              Theme.of(context).colorScheme.onPrimaryContainer,
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Text(
-                              'Nuovo alimento',
-                              style: Theme.of(context).textTheme.headlineSmall,
-                            ),
-                            const SizedBox(height: AppSpacing.xxs),
-                            Text(
-                              'Compila le sezioni. Tutti i controlli occupano '
-                              'l’intera larghezza disponibile.',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Chiudi',
-                        onPressed: () => Navigator.of(sheetContext).pop(false),
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                  _IngredientFormSection(
-                    icon: Icons.badge_outlined,
-                    title: 'Informazioni principali',
-                    subtitle: 'Identità, marca e codice del prodotto.',
-                    children: <Widget>[
-                      _field(name, 'Nome alimento', isRequired: true),
-                      _field(brand, 'Brand o produttore'),
-                      _field(
-                        barcode,
-                        'Codice a barre',
-                        keyboardType: TextInputType.number,
-                        helperText: 'Facoltativo. Deve contenere solo cifre.',
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _IngredientFormSection(
-                    icon: Icons.image_outlined,
-                    title: 'Immagine',
-                    subtitle: 'Usa un file locale oppure un URL remoto.',
-                    children: <Widget>[
-                      _ImageSourcePickerField(
-                        controller: image,
-                        title: 'Immagine alimento',
-                        fallbackIcon: Icons.inventory_2_outlined,
-                        onPick: () => _pickAndStoreImage(
-                          controller: image,
-                          folderName: 'ingredient_images',
-                          fallbackBaseName: 'ingredient',
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _IngredientFormSection(
-                    icon: Icons.monitor_heart_outlined,
-                    title: 'Valori nutrizionali per 100 g',
-                    subtitle: 'Lascia vuoto ciò che non è disponibile.',
-                    children: <Widget>[
-                      _field(
-                        kcal,
-                        'Calorie',
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                      ),
-                      _field(
-                        protein,
-                        'Proteine (g)',
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                      ),
-                      _field(
-                        carbs,
-                        'Carboidrati (g)',
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                      ),
-                      _field(
-                        fat,
-                        'Grassi (g)',
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                      ),
-                      _field(
-                        fiber,
-                        'Fibre (g)',
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                      ),
-                      _field(
-                        sugar,
-                        'Zuccheri (g)',
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                  Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () =>
-                              Navigator.of(sheetContext).pop(false),
-                          child: const Text('Annulla'),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: () {
-                            if (formKey.currentState?.validate() ?? false) {
-                              Navigator.of(sheetContext).pop(true);
-                            }
-                          },
-                          icon: const Icon(Icons.save_outlined),
-                          label: const Text('Salva alimento'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
+        return _ManualIngredientSheet(
+          onPickImage: (TextEditingController controller) => _pickAndStoreImage(
+            controller: controller,
+            folderName: 'ingredient_images',
+            fallbackBaseName: 'ingredient',
+          ),
         );
       },
     );
 
-    if (saved == true) {
-      ref.read(ingredientRepositoryProvider).save(
-            IngredientEntity(
-              uuid: '',
-              name: name.text.trim(),
-              brand: brand.text.trim(),
-              barcode: barcode.text.trim(),
-              imageUrl: image.text.trim(),
-              kcalPerReference: _toDouble(kcal.text) ?? 0,
-              proteinPerReference: _toDouble(protein.text) ?? 0,
-              carbsPerReference: _toDouble(carbs.text) ?? 0,
-              fatPerReference: _toDouble(fat.text) ?? 0,
-              fiberPerReference: _toDouble(fiber.text) ?? 0,
-              sugarPerReference: _toDouble(sugar.text) ?? 0,
-              createdAtEpochMs: 0,
-              updatedAtEpochMs: 0,
-            ),
-          );
-      ref.invalidate(ingredientArchiveProvider);
-      _invalidateFood(ref);
-      if (mounted) {
-        _resetIngredientSearchState();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${name.text.trim()} salvato')),
-        );
-      }
+    if (draft == null || !mounted) {
+      return;
     }
 
-    for (final TextEditingController controller in <TextEditingController>[
-      name,
-      brand,
-      barcode,
-      image,
-      kcal,
-      protein,
-      carbs,
-      fat,
-      fiber,
-      sugar,
-    ]) {
-      controller.dispose();
-    }
+    ref.read(ingredientRepositoryProvider).save(
+          IngredientEntity(
+            uuid: '',
+            name: draft.name,
+            brand: draft.brand,
+            barcode: draft.barcode,
+            imageUrl: draft.imageUrl,
+            kcalPerReference: draft.kcalPerReference,
+            proteinPerReference: draft.proteinPerReference,
+            carbsPerReference: draft.carbsPerReference,
+            fatPerReference: draft.fatPerReference,
+            fiberPerReference: draft.fiberPerReference,
+            sugarPerReference: draft.sugarPerReference,
+            createdAtEpochMs: 0,
+            updatedAtEpochMs: 0,
+          ),
+        );
+    ref.invalidate(ingredientArchiveProvider);
+    _invalidateFood(ref);
+    _resetIngredientSearchState();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${draft.name} salvato')),
+    );
   }
 
   void _resetIngredientSearchState() {
@@ -4643,6 +4480,262 @@ class _PersistentIngredientListScreenState
       _onlineAttempt = 0;
       _searchingOnline = false;
     });
+  }
+}
+
+class _ManualIngredientDraft {
+  const _ManualIngredientDraft({
+    required this.name,
+    required this.brand,
+    required this.barcode,
+    required this.imageUrl,
+    required this.kcalPerReference,
+    required this.proteinPerReference,
+    required this.carbsPerReference,
+    required this.fatPerReference,
+    required this.fiberPerReference,
+    required this.sugarPerReference,
+  });
+
+  final String name;
+  final String brand;
+  final String barcode;
+  final String imageUrl;
+  final double kcalPerReference;
+  final double proteinPerReference;
+  final double carbsPerReference;
+  final double fatPerReference;
+  final double fiberPerReference;
+  final double sugarPerReference;
+}
+
+class _ManualIngredientSheet extends StatefulWidget {
+  const _ManualIngredientSheet({required this.onPickImage});
+
+  final Future<void> Function(TextEditingController controller) onPickImage;
+
+  @override
+  State<_ManualIngredientSheet> createState() => _ManualIngredientSheetState();
+}
+
+class _ManualIngredientSheetState extends State<_ManualIngredientSheet> {
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final TextEditingController _name = TextEditingController();
+  final TextEditingController _brand = TextEditingController();
+  final TextEditingController _barcode = TextEditingController();
+  final TextEditingController _image = TextEditingController();
+  final TextEditingController _kcal = TextEditingController();
+  final TextEditingController _protein = TextEditingController();
+  final TextEditingController _carbs = TextEditingController();
+  final TextEditingController _fat = TextEditingController();
+  final TextEditingController _fiber = TextEditingController();
+  final TextEditingController _sugar = TextEditingController();
+
+  @override
+  void dispose() {
+    for (final TextEditingController controller in <TextEditingController>[
+      _name,
+      _brand,
+      _barcode,
+      _image,
+      _kcal,
+      _protein,
+      _carbs,
+      _fat,
+      _fiber,
+      _sugar,
+    ]) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _submit() {
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
+
+    Navigator.of(context).pop(
+      _ManualIngredientDraft(
+        name: _name.text.trim(),
+        brand: _brand.text.trim(),
+        barcode: _barcode.text.trim(),
+        imageUrl: _image.text.trim(),
+        kcalPerReference: _toDouble(_kcal.text) ?? 0,
+        proteinPerReference: _toDouble(_protein.text) ?? 0,
+        carbsPerReference: _toDouble(_carbs.text) ?? 0,
+        fatPerReference: _toDouble(_fat.text) ?? 0,
+        fiberPerReference: _toDouble(_fiber.text) ?? 0,
+        sugarPerReference: _toDouble(_sugar.text) ?? 0,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.92,
+      minChildSize: 0.68,
+      maxChildSize: 0.96,
+      builder: (
+        BuildContext context,
+        ScrollController scrollController,
+      ) {
+        return Form(
+          key: _formKey,
+          child: ListView(
+            controller: scrollController,
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              0,
+              AppSpacing.lg,
+              AppSpacing.xxl,
+            ),
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Icon(
+                      Icons.add_shopping_cart_rounded,
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'Nuovo alimento',
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(
+                          'Aggiunta manuale: compila le sezioni',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Chiudi',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              _IngredientFormSection(
+                icon: Icons.badge_outlined,
+                title: 'Informazioni principali',
+                subtitle: 'Identità, marca e codice del prodotto.',
+                children: <Widget>[
+                  _field(_name, 'Nome alimento', isRequired: true),
+                  _field(_brand, 'Brand o produttore'),
+                  _field(
+                    _barcode,
+                    'Codice a barre',
+                    keyboardType: TextInputType.number,
+                    helperText: 'Facoltativo. Deve contenere solo cifre.',
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _IngredientFormSection(
+                icon: Icons.image_outlined,
+                title: 'Immagine',
+                subtitle: 'Usa un file locale oppure un URL remoto.',
+                children: <Widget>[
+                  _ImageSourcePickerField(
+                    controller: _image,
+                    title: 'Immagine alimento',
+                    fallbackIcon: Icons.inventory_2_outlined,
+                    onPick: () => widget.onPickImage(_image),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _IngredientFormSection(
+                icon: Icons.monitor_heart_outlined,
+                title: 'Valori nutrizionali per 100 g',
+                subtitle: 'Lascia vuoto ciò che non è disponibile.',
+                children: <Widget>[
+                  _field(
+                    _kcal,
+                    'Calorie',
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                  ),
+                  _field(
+                    _protein,
+                    'Proteine (g)',
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                  ),
+                  _field(
+                    _carbs,
+                    'Carboidrati (g)',
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                  ),
+                  _field(
+                    _fat,
+                    'Grassi (g)',
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                  ),
+                  _field(
+                    _fiber,
+                    'Fibre (g)',
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                  ),
+                  _field(
+                    _sugar,
+                    'Zuccheri (g)',
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Annulla'),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _submit,
+                      icon: const Icon(Icons.save_outlined),
+                      label: const Text('Salva alimento'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -5729,6 +5822,127 @@ Future<bool> _showIngredientEditDialog(
 }
 
 */
+class _ManualBarcodeSearchSheet extends StatefulWidget {
+  const _ManualBarcodeSearchSheet();
+
+  @override
+  State<_ManualBarcodeSearchSheet> createState() =>
+      _ManualBarcodeSearchSheetState();
+}
+
+class _ManualBarcodeSearchSheetState extends State<_ManualBarcodeSearchSheet> {
+  final TextEditingController _controller = TextEditingController();
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_formKey.currentState?.validate() ?? false) {
+      Navigator.of(context).pop(_controller.text.trim());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.sm,
+        AppSpacing.lg,
+        MediaQuery.viewInsetsOf(context).bottom + AppSpacing.lg,
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Icon(
+                    Icons.search_rounded,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'Cerca tramite barcode',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      Text(
+                        'Inserisci manualmente il codice numerico.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            TextFormField(
+              controller: _controller,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.search,
+              inputFormatters: <TextInputFormatter>[
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(18),
+              ],
+              decoration: const InputDecoration(
+                labelText: 'Codice a barre',
+                prefixIcon: Icon(Icons.qr_code_2_rounded),
+                helperText: 'Da 6 a 18 cifre',
+              ),
+              validator: (String? value) {
+                final String clean = value?.trim() ?? '';
+                if (!RegExp(r'^\d{6,18}$').hasMatch(clean)) {
+                  return 'Inserisci un codice numerico valido';
+                }
+                return null;
+              },
+              onFieldSubmitted: (_) => _submit(),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Annulla'),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _submit,
+                    icon: const Icon(Icons.search_rounded),
+                    label: const Text('Cerca'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class IngredientScannerScreen extends ConsumerStatefulWidget {
   const IngredientScannerScreen({super.key});
 
@@ -5836,122 +6050,15 @@ class _IngredientScannerScreenState
     if (!mounted) {
       return;
     }
-    final TextEditingController controller = TextEditingController();
-    final GlobalKey<FormState> formKey = GlobalKey<FormState>();
     final String? barcode = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
       useSafeArea: true,
       builder: (BuildContext sheetContext) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(
-            AppSpacing.lg,
-            AppSpacing.sm,
-            AppSpacing.lg,
-            MediaQuery.viewInsetsOf(sheetContext).bottom + AppSpacing.lg,
-          ),
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Container(
-                      width: 46,
-                      height: 46,
-                      decoration: BoxDecoration(
-                        color:
-                            Theme.of(sheetContext).colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      child: Icon(
-                        Icons.search_rounded,
-                        color: Theme.of(sheetContext)
-                            .colorScheme
-                            .onPrimaryContainer,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            'Cerca tramite barcode',
-                            style:
-                                Theme.of(sheetContext).textTheme.headlineSmall,
-                          ),
-                          Text(
-                            'Inserisci manualmente il codice numerico.',
-                            style: Theme.of(sheetContext).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                TextFormField(
-                  controller: controller,
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.search,
-                  inputFormatters: <TextInputFormatter>[
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(18),
-                  ],
-                  decoration: const InputDecoration(
-                    labelText: 'Codice a barre',
-                    prefixIcon: Icon(Icons.qr_code_2_rounded),
-                    helperText: 'Da 6 a 18 cifre',
-                  ),
-                  validator: (String? value) {
-                    final String clean = value?.trim() ?? '';
-                    if (!RegExp(r'^\d{6,18}$').hasMatch(clean)) {
-                      return 'Inserisci un codice numerico valido';
-                    }
-                    return null;
-                  },
-                  onFieldSubmitted: (String value) {
-                    if (formKey.currentState?.validate() ?? false) {
-                      Navigator.of(sheetContext).pop(value.trim());
-                    }
-                  },
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.of(sheetContext).pop(),
-                        child: const Text('Annulla'),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: () {
-                          if (formKey.currentState?.validate() ?? false) {
-                            Navigator.of(sheetContext)
-                                .pop(controller.text.trim());
-                          }
-                        },
-                        icon: const Icon(Icons.search_rounded),
-                        label: const Text('Cerca'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
+        return const _ManualBarcodeSearchSheet();
       },
     );
-    controller.dispose();
     if (!mounted) {
       return;
     }
@@ -8108,7 +8215,7 @@ class _MealNutritionRecap extends StatelessWidget {
             children: <Widget>[
               Expanded(
                 child: Text(
-                  'Calorie',
+                  'Calorie${_mealPercentSuffix(target.percentages.kcalPercent)}',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
@@ -8139,23 +8246,46 @@ class _MealNutritionRecap extends StatelessWidget {
             label: 'Proteine',
             value: totals.proteinGrams,
             target: target.proteinGrams,
+            percent: target.percentages.proteinPercent,
           ),
           _MealMacroRow(
             label: 'Carboidrati',
             value: totals.carbsGrams,
             target: target.carbsGrams,
+            percent: target.percentages.carbsPercent,
           ),
           _MealMacroRow(
             label: 'Grassi',
             value: totals.fatGrams,
             target: target.fatGrams,
+            percent: target.percentages.fatPercent,
           ),
-          _MealMacroRow(label: 'Fibre', value: totals.fiberGrams),
-          _MealMacroRow(label: 'Zuccheri', value: totals.sugarGrams),
+          _MealMacroRow(
+            label: 'Fibre',
+            value: totals.fiberGrams,
+            target: target.fiberGrams,
+            percent: target.percentages.fiberPercent,
+          ),
+          _MealMacroRow(
+            label: 'Zuccheri',
+            value: totals.sugarGrams,
+            target: target.sugarGrams,
+            percent: target.percentages.sugarPercent,
+          ),
         ],
       ),
     );
   }
+}
+
+String _mealPercentSuffix(double? value) {
+  if (value == null) {
+    return '';
+  }
+  final String formatted = value == value.roundToDouble()
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1);
+  return ' · $formatted%';
 }
 
 class _MealMacroRow extends StatelessWidget {
@@ -8163,11 +8293,13 @@ class _MealMacroRow extends StatelessWidget {
     required this.label,
     required this.value,
     this.target,
+    this.percent,
   });
 
   final String label;
   final double value;
   final double? target;
+  final double? percent;
 
   @override
   Widget build(BuildContext context) {
@@ -8181,7 +8313,7 @@ class _MealMacroRow extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Expanded(child: Text(label)),
+              Expanded(child: Text('$label${_mealPercentSuffix(percent)}')),
               Text(
                 cleanTarget == null
                     ? '${_fmt(value)} g'

@@ -18,6 +18,10 @@ void main() {
       workoutActivityTypeCode: WorkoutActivityTypeCodes.weights,
       initialWeightKg: 64,
       heightCm: 160,
+      proteinGramsPerKg: 2,
+      fatGramsPerKg: 1,
+      fiberGramsPerKg: 0.5,
+      sugarCarbsPercent: 20,
       birthDateEpochDay: DateTime(2004, 1, 1).millisecondsSinceEpoch ~/
           Duration.millisecondsPerDay,
       createdAtEpochMs: 1,
@@ -52,5 +56,23 @@ void main() {
     );
 
     expect(result.targetKcal, 2100);
+  });
+
+  test('macro grams reproduce the caloric target with 4 4 9 factors', () {
+    const ProfileNutritionCalculator calculator = ProfileNutritionCalculator();
+    final ProfileNutritionTargets result = calculator.calculateFixedTargets(
+      profile(targetMode: TargetModeCodes.fixedUser),
+      now: DateTime(2026, 7, 2),
+    );
+
+    final double macroKcal =
+        result.proteinGrams * 4 + result.carbsGrams * 4 + result.fatGrams * 9;
+
+    expect(macroKcal, closeTo(result.targetKcal, 0.0001));
+    expect(result.proteinGrams, 128);
+    expect(result.fatGrams, 64);
+    expect(result.carbsGrams, closeTo(253, 0.0001));
+    expect(result.fiberGrams, 32);
+    expect(result.sugarGrams, closeTo(50.6, 0.0001));
   });
 }
