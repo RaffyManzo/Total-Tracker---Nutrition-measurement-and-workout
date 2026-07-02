@@ -137,7 +137,7 @@
     },
     {
       "id": "3:6586254234657971059",
-      "lastPropertyId": "26:357034344079110440",
+      "lastPropertyId": "31:5168545562304295547",
       "name": "IngredientEntity",
       "properties": [
         {
@@ -276,6 +276,31 @@
           "id": "26:357034344079110440",
           "name": "deletedAtEpochMs",
           "type": 6
+        },
+        {
+          "id": "27:7362778610643337533",
+          "name": "sourceExternalId",
+          "type": 9
+        },
+        {
+          "id": "28:7482767297629872873",
+          "name": "sourceDatasetVersion",
+          "type": 9
+        },
+        {
+          "id": "29:6563709813098846514",
+          "name": "sourceLicenseCode",
+          "type": 9
+        },
+        {
+          "id": "30:3171649468355575672",
+          "name": "sourceAttribution",
+          "type": 9
+        },
+        {
+          "id": "31:5168545562304295547",
+          "name": "wasModifiedByUser",
+          "type": 1
         }
       ],
       "relations": []
@@ -2505,10 +2530,319 @@
         }
       ],
       "relations": []
+    },
+    {
+      "id": "24:2184321521372198058",
+      "lastPropertyId": "20:2763085742484905228",
+      "name": "OpenNutritionCatalogStateEntity",
+      "properties": [
+        {
+          "id": "1:8742619481549695741",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:1149719048941346153",
+          "name": "installedVersion",
+          "type": 9
+        },
+        {
+          "id": "3:2158286375282035204",
+          "name": "activeBatchId",
+          "type": 9
+        },
+        {
+          "id": "4:4760958158791842866",
+          "name": "sourceArchiveUrl",
+          "type": 9
+        },
+        {
+          "id": "5:4456143433640928723",
+          "name": "expectedSha256",
+          "type": 9
+        },
+        {
+          "id": "6:7856278552188562439",
+          "name": "actualSha256",
+          "type": 9
+        },
+        {
+          "id": "7:4968182220307475131",
+          "name": "archiveBytes",
+          "type": 6
+        },
+        {
+          "id": "8:4362089486526379272",
+          "name": "extractedBytes",
+          "type": 6
+        },
+        {
+          "id": "9:2837161657530868293",
+          "name": "parsedRows",
+          "type": 6
+        },
+        {
+          "id": "10:1586076365838037373",
+          "name": "importedRows",
+          "type": 6
+        },
+        {
+          "id": "11:5544048738805743474",
+          "name": "skippedRows",
+          "type": 6
+        },
+        {
+          "id": "12:6492100128790203666",
+          "name": "failedRows",
+          "type": 6
+        },
+        {
+          "id": "13:8606387487046083599",
+          "name": "importStatusCode",
+          "type": 9
+        },
+        {
+          "id": "14:8455246672238898147",
+          "name": "currentStageCode",
+          "type": 9
+        },
+        {
+          "id": "15:1214178860488102726",
+          "name": "lastError",
+          "type": 9
+        },
+        {
+          "id": "16:7243646739440633838",
+          "name": "schemaJson",
+          "type": 9
+        },
+        {
+          "id": "17:7025956586879024838",
+          "name": "attributionVersion",
+          "type": 9
+        },
+        {
+          "id": "18:4137900246507732568",
+          "name": "licenseAcceptedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "19:5167979463674227664",
+          "name": "startedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "20:2763085742484905228",
+          "name": "completedAtEpochMs",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "25:1938988888524376966",
+      "lastPropertyId": "35:3627344830725544412",
+      "name": "OpenNutritionFoodEntity",
+      "properties": [
+        {
+          "id": "1:3699130674889992915",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:5180194158612036614",
+          "name": "externalFoodId",
+          "indexId": "50:851504953996399127",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:424754518209580349",
+          "name": "importBatchId",
+          "indexId": "51:3656800446448404799",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "4:1708525373866761781",
+          "name": "datasetVersion",
+          "type": 9
+        },
+        {
+          "id": "5:8158694226581218714",
+          "name": "name",
+          "indexId": "52:4920021547930706352",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "6:7939343918498072525",
+          "name": "normalizedName",
+          "indexId": "53:4833991798983948106",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "7:4460364123763878281",
+          "name": "alternateNamesJson",
+          "type": 9
+        },
+        {
+          "id": "8:4689086410469981200",
+          "name": "description",
+          "type": 9
+        },
+        {
+          "id": "9:6553283138460044310",
+          "name": "typeCode",
+          "indexId": "54:8148133641390387194",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "10:2343592025678133622",
+          "name": "brand",
+          "type": 9
+        },
+        {
+          "id": "11:5580798783333772510",
+          "name": "normalizedBrand",
+          "indexId": "55:6682443783703020156",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "12:1665435646857629814",
+          "name": "barcode",
+          "indexId": "56:6549396528813434128",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "13:1782229576734826603",
+          "name": "labelsJson",
+          "type": 9
+        },
+        {
+          "id": "14:303084782587735534",
+          "name": "ingredientsText",
+          "type": 9
+        },
+        {
+          "id": "15:6754507664916314823",
+          "name": "ingredientAnalysisJson",
+          "type": 9
+        },
+        {
+          "id": "16:1763749618224028397",
+          "name": "sourceJson",
+          "type": 9
+        },
+        {
+          "id": "17:3108796777117091521",
+          "name": "servingJson",
+          "type": 9
+        },
+        {
+          "id": "18:8491283179811040346",
+          "name": "packageSizeJson",
+          "type": 9
+        },
+        {
+          "id": "19:341948605832987633",
+          "name": "nutrition100gJson",
+          "type": 9
+        },
+        {
+          "id": "20:8370242864821483517",
+          "name": "additionalFieldsJson",
+          "type": 9
+        },
+        {
+          "id": "21:1685011383467793199",
+          "name": "normalizedSearchText",
+          "indexId": "57:4217912142887605977",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "22:1530152076508805498",
+          "name": "kcalPer100g",
+          "type": 8
+        },
+        {
+          "id": "23:5375675360829177456",
+          "name": "proteinPer100g",
+          "type": 8
+        },
+        {
+          "id": "24:4836022550244107154",
+          "name": "carbsPer100g",
+          "type": 8
+        },
+        {
+          "id": "25:6393802344531164962",
+          "name": "fatPer100g",
+          "type": 8
+        },
+        {
+          "id": "26:3689246012790190101",
+          "name": "fiberPer100g",
+          "type": 8
+        },
+        {
+          "id": "27:4955608242378732250",
+          "name": "sugarPer100g",
+          "type": 8
+        },
+        {
+          "id": "28:120280370764085865",
+          "name": "saturatedFatPer100g",
+          "type": 8
+        },
+        {
+          "id": "29:3334685523326823483",
+          "name": "transFatPer100g",
+          "type": 8
+        },
+        {
+          "id": "30:3182247176825119326",
+          "name": "saltPer100g",
+          "type": 8
+        },
+        {
+          "id": "31:8862144073676084418",
+          "name": "sodiumPer100g",
+          "type": 8
+        },
+        {
+          "id": "32:6524990260924200166",
+          "name": "hasCompleteMacros",
+          "type": 1
+        },
+        {
+          "id": "33:5701010737978770100",
+          "name": "hasEstimatedValues",
+          "type": 1
+        },
+        {
+          "id": "34:5399048907552206923",
+          "name": "fromOpenFoodFacts",
+          "type": 1
+        },
+        {
+          "id": "35:3627344830725544412",
+          "name": "importedAtEpochMs",
+          "type": 6
+        }
+      ],
+      "relations": []
     }
   ],
-  "lastEntityId": "23:8179285214134796333",
-  "lastIndexId": "49:6838236636949618618",
+  "lastEntityId": "25:1938988888524376966",
+  "lastIndexId": "57:4217912142887605977",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

@@ -3,6 +3,7 @@ import 'package:objectbox/objectbox.dart';
 import '../../../../core/identifiers/uuid_generator.dart';
 import '../../../../core/time/clock.dart';
 import '../entities/nutrition_tracking_entities.dart';
+import '../entities/ingredient_entity.dart';
 import '../import/obsidian_food_seed.dart';
 import 'daily_record_repository.dart';
 
@@ -337,6 +338,53 @@ class MealRepository {
     );
     meal.dailyRecord.target = day;
     return meal;
+  }
+
+  MealWithItems addIngredientItem({
+    required int mealId,
+    required IngredientEntity ingredient,
+    required double grams,
+  }) {
+    if (grams <= 0) {
+      throw ArgumentError.value(grams, 'grams', 'Must be greater than zero.');
+    }
+    return _store.runInTransaction(TxMode.write, () {
+      final meal = getById(mealId);
+      if (meal == null) {
+        throw StateError('Meal not found: $mealId');
+      }
+      final items = getItemsForMeal(mealId);
+      final reference = ingredient.nutritionReferenceAmount <= 0
+          ? 100.0
+          : ingredient.nutritionReferenceAmount;
+      final factor = grams / reference;
+      final item = MealItemEntity(
+        uuid: '',
+        position: items.length,
+        kindCode: 'ingredient',
+        sourceUuid: ingredient.uuid,
+        itemNameSnapshot: ingredient.name,
+        quantityModeCode: 'grams',
+        grams: grams,
+        kcal: ingredient.kcalPerReference * factor,
+        proteinGrams: ingredient.proteinPerReference * factor,
+        carbsGrams: ingredient.carbsPerReference * factor,
+        fatGrams: ingredient.fatPerReference * factor,
+        fiberGrams: ingredient.fiberPerReference * factor,
+        sugarGrams: ingredient.sugarPerReference * factor,
+        notes: ingredient.sourceAttribution,
+        createdAtEpochMs: 0,
+        updatedAtEpochMs: 0,
+      );
+      _normalizeItem(item);
+      _validateItem(item);
+      _prepareItemForSave(item);
+      item.meal.target = meal;
+      item.id = _itemBox.put(item);
+      meal.updatedAtEpochMs = _clock.nowEpochMs();
+      _mealBox.put(meal);
+      return MealWithItems(meal: meal, items: <MealItemEntity>[...items, item]);
+    });
   }
 
   MealEntity softDelete(MealEntity meal) {

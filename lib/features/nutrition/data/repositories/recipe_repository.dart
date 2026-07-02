@@ -3,6 +3,7 @@ import 'package:objectbox/objectbox.dart';
 import '../../../../core/identifiers/uuid_generator.dart';
 import '../../../../core/time/clock.dart';
 import '../entities/nutrition_tracking_entities.dart';
+import '../entities/ingredient_entity.dart';
 
 class RecipeDetails {
   const RecipeDetails({
@@ -113,6 +114,77 @@ class RecipeRepository {
       ..sort((RecipeEntity a, RecipeEntity b) {
         return a.title.toLowerCase().compareTo(b.title.toLowerCase());
       });
+  }
+
+  RecipeDetails addIngredientItem({
+    required int recipeId,
+    required IngredientEntity ingredient,
+    required double grams,
+  }) {
+    if (grams <= 0) {
+      throw ArgumentError.value(grams, 'grams', 'Must be greater than zero.');
+    }
+    return _store.runInTransaction(TxMode.write, () {
+      final recipe = getById(recipeId);
+      if (recipe == null) {
+        throw StateError('Recipe not found: $recipeId');
+      }
+      final current = getIngredients(recipeId);
+      final reference = ingredient.nutritionReferenceAmount <= 0
+          ? 100.0
+          : ingredient.nutritionReferenceAmount;
+      final factor = grams / reference;
+      final value = RecipeIngredientEntity(
+        uuid: '',
+        position: current.length,
+        ingredientUuid: ingredient.uuid,
+        nameSnapshot: ingredient.name,
+        grams: grams,
+        calories: ingredient.kcalPerReference * factor,
+        proteinGrams: ingredient.proteinPerReference * factor,
+        carbsGrams: ingredient.carbsPerReference * factor,
+        fatGrams: ingredient.fatPerReference * factor,
+        fiberGrams: ingredient.fiberPerReference * factor,
+        sugarGrams: ingredient.sugarPerReference * factor,
+        preparationNote: ingredient.sourceAttribution,
+        createdAtEpochMs: 0,
+        updatedAtEpochMs: 0,
+      );
+      _prepareIngredientForSave(value);
+      value.recipe.target = recipe;
+      value.id = _ingredientBox.put(value);
+      final all = <RecipeIngredientEntity>[...current, value];
+      final totalWeight = all.fold<double>(0, (sum, item) => sum + item.grams);
+      final calories = all.fold<double>(0, (sum, item) => sum + item.calories);
+      final protein =
+          all.fold<double>(0, (sum, item) => sum + item.proteinGrams);
+      final carbs = all.fold<double>(0, (sum, item) => sum + item.carbsGrams);
+      final fat = all.fold<double>(0, (sum, item) => sum + item.fatGrams);
+      final fiber = all.fold<double>(0, (sum, item) => sum + item.fiberGrams);
+      final sugar = all.fold<double>(0, (sum, item) => sum + item.sugarGrams);
+      recipe
+        ..totalWeightGrams = totalWeight
+        ..caloriesTotal = calories
+        ..proteinTotalGrams = protein
+        ..carbsTotalGrams = carbs
+        ..fatTotalGrams = fat
+        ..fiberTotalGrams = fiber
+        ..sugarTotalGrams = sugar
+        ..kcalPerServing = calories / recipe.servings
+        ..kcalPer100Grams =
+            totalWeight <= 0 ? null : calories * 100 / totalWeight
+        ..proteinPer100Grams =
+            totalWeight <= 0 ? null : protein * 100 / totalWeight
+        ..carbsPer100Grams = totalWeight <= 0 ? null : carbs * 100 / totalWeight
+        ..fatPer100Grams = totalWeight <= 0 ? null : fat * 100 / totalWeight
+        ..updatedAtEpochMs = _clock.nowEpochMs();
+      _recipeBox.put(recipe);
+      return RecipeDetails(
+        recipe: recipe,
+        ingredients: all,
+        steps: getSteps(recipeId),
+      );
+    });
   }
 
   void softDeleteAndDetachMealItems(RecipeEntity recipe) {

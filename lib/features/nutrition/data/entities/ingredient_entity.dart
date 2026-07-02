@@ -15,6 +15,11 @@ class IngredientEntity {
     this.sourceTypeCode = IngredientSourceTypeCodes.manual,
     this.sourceName = '',
     this.sourceUrl = '',
+    this.sourceExternalId = '',
+    this.sourceDatasetVersion = '',
+    this.sourceLicenseCode = '',
+    this.sourceAttribution = '',
+    this.wasModifiedByUser = false,
     this.imageUrl = '',
     this.categories = '',
     this.notes = '',
@@ -53,6 +58,11 @@ class IngredientEntity {
   String sourceTypeCode;
   String sourceName;
   String sourceUrl;
+  String sourceExternalId;
+  String sourceDatasetVersion;
+  String sourceLicenseCode;
+  String sourceAttribution;
+  bool wasModifiedByUser;
   String imageUrl;
   String categories;
   String notes;

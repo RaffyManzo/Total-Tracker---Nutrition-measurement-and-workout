@@ -89,7 +89,11 @@ final FutureProvider<List<MealWithItems>> foodMealsV01Provider =
 
 final FutureProvider<List<IngredientEntity>> ingredientArchiveProvider =
     FutureProvider<List<IngredientEntity>>((Ref ref) async {
-  return ref.watch(ingredientRepositoryProvider).getAllActive();
+  return ref
+      .watch(ingredientRepositoryProvider)
+      .getAllActive()
+      .take(25)
+      .toList();
 });
 
 final FutureProvider<List<RecipeEntity>> recipeArchiveProvider =
@@ -358,7 +362,7 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     Text(
-                      'Archivio locale e importazione da Open Food Facts.',
+                      'I tuoi ingredienti, Open Food Facts e catalogo OpenNutrition offline.',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],

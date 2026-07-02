@@ -4,11 +4,13 @@ class IngredientSourceTypeCodes {
   static const String manual = 'manual';
   static const String obsidianImport = 'obsidian_import';
   static const String openFoodFacts = 'open_food_facts';
+  static const String openNutrition = 'open_nutrition';
 
   static const Set<String> values = <String>{
     manual,
     obsidianImport,
     openFoodFacts,
+    openNutrition,
   };
 }
 

@@ -151,241 +151,266 @@ class ProfileTargetActivityBanner extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          Theme(
-            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              tilePadding: EdgeInsets.zero,
-              childrenPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.manage_search_rounded),
-              title: const Text('Mostra il dettaglio completo del calcolo'),
-              subtitle: Text(
-                '${activity.segments.length} segmenti · '
-                '${usedParameters.length} parametri usati · '
-                '${activity.impacts.length} analisi di variazione',
+          const SizedBox(height: AppSpacing.sm),
+          _CalculationEquationCard(
+            sedentaryKcal: targets.sedentaryKcal,
+            stepKcal: targets.stepDailyKcal,
+            activityKcal: activity.dailyKcal,
+            targetKcal: targets.targetKcal,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _AuditGroupCard(
+            icon: Icons.account_balance_outlined,
+            eyebrow: 'GRUPPO 1',
+            title: 'Come si forma il target giornaliero',
+            subtitle: 'Base sedentaria, passi attivi e somma finale.',
+            children: <Widget>[
+              _BreakdownSection(
+                icon: Icons.bedtime_outlined,
+                title: 'Base sedentaria',
+                subtitle: '${targets.sedentaryKcal.round()} kcal',
+                children: <Widget>[
+                  _DetailRow(
+                    label: 'RMR usato',
+                    value: '${targets.rmrKcal.toStringAsFixed(2)} kcal',
+                    detail:
+                        'Valore prodotto dal calcolatore metabolico del profilo.',
+                  ),
+                  _DetailRow(
+                    label: 'Moltiplicatore sedentario',
+                    value: targets.sedentaryMultiplier.toStringAsFixed(3),
+                    detail:
+                        'Include la base sedentaria; passi e allenamenti sono aggiunti solo come calorie attive.',
+                  ),
+                  _DetailRow(
+                    label: 'Formula',
+                    value:
+                        '${targets.rmrKcal.toStringAsFixed(2)} × ${targets.sedentaryMultiplier.toStringAsFixed(3)}',
+                    detail:
+                        '= ${targets.sedentaryKcal.toStringAsFixed(2)} kcal.',
+                  ),
+                  _DetailRow(
+                    label: 'Effetto di +1 kcal RMR',
+                    value:
+                        '+${targets.sedentaryMultiplier.toStringAsFixed(3)} kcal',
+                    detail:
+                        'Il RMR viene moltiplicato per il fattore sedentario.',
+                  ),
+                  _DetailRow(
+                    label: 'Effetto di +0,01 sul fattore',
+                    value:
+                        '+${(targets.rmrKcal * 0.01).toStringAsFixed(2)} kcal',
+                    detail: 'Con RMR invariato.',
+                  ),
+                ],
               ),
-              children: <Widget>[
-                _BreakdownSection(
-                  icon: Icons.bedtime_outlined,
-                  title: '1. Base sedentaria',
-                  subtitle: '${targets.sedentaryKcal.round()} kcal',
-                  children: <Widget>[
-                    _DetailRow(
-                      label: 'RMR usato',
-                      value: '${targets.rmrKcal.toStringAsFixed(2)} kcal',
-                      detail:
-                          'Valore prodotto dal calcolatore metabolico del profilo.',
-                    ),
-                    _DetailRow(
-                      label: 'Moltiplicatore sedentario',
-                      value: targets.sedentaryMultiplier.toStringAsFixed(3),
-                      detail:
-                          'Include la base sedentaria; passi e allenamenti vengono aggiunti solo come calorie attive.',
-                    ),
-                    _DetailRow(
-                      label: 'Formula',
-                      value:
-                          '${targets.rmrKcal.toStringAsFixed(2)} × ${targets.sedentaryMultiplier.toStringAsFixed(3)}',
-                      detail:
-                          '= ${targets.sedentaryKcal.toStringAsFixed(2)} kcal.',
-                    ),
-                    _DetailRow(
-                      label: 'Variazione locale: +1 kcal RMR',
-                      value:
-                          '+${targets.sedentaryMultiplier.toStringAsFixed(3)} kcal target',
-                      detail:
-                          'Il RMR viene moltiplicato per il fattore sedentario.',
-                    ),
-                    _DetailRow(
-                      label: 'Variazione locale: +0,01 fattore',
-                      value:
-                          '+${(targets.rmrKcal * 0.01).toStringAsFixed(2)} kcal target',
-                      detail: 'Con RMR invariato.',
-                    ),
-                  ],
-                ),
-                _BreakdownSection(
-                  icon: Icons.directions_walk_rounded,
-                  title: '2. Passi attivi',
-                  subtitle: '${targets.stepDailyKcal.round()} kcal/giorno',
-                  children: <Widget>[
-                    _DetailRow(
-                      label: 'Passi del profilo',
-                      value: '${profile.defaultStepGoal}',
-                      detail:
-                          'Valore medio/obiettivo usato nella previsione del profilo.',
-                    ),
-                    _DetailRow(
-                      label: 'Coefficiente attivo per passo',
-                      value:
-                          '${profile.stepKcalCoefficient.toStringAsFixed(4)} kcal/passo',
-                      detail: 'Non contiene la quota di riposo.',
-                    ),
-                    _DetailRow(
-                      label: 'Formula',
-                      value:
-                          '${profile.defaultStepGoal} × ${profile.stepKcalCoefficient.toStringAsFixed(4)}',
-                      detail:
-                          '= ${targets.stepDailyKcal.toStringAsFixed(2)} kcal attive.',
-                    ),
-                    _DetailRow(
-                      label: 'Variazione locale: +1.000 passi',
-                      value:
-                          '+${(1000 * profile.stepKcalCoefficient).toStringAsFixed(2)} kcal',
-                      detail: 'Con coefficiente invariato.',
-                    ),
-                    _DetailRow(
-                      label: 'Variazione locale: +0,001 kcal/passo',
-                      value:
-                          '+${(profile.defaultStepGoal * 0.001).toStringAsFixed(2)} kcal',
-                      detail: 'Con numero di passi invariato.',
-                    ),
-                  ],
-                ),
-                _BreakdownSection(
-                  icon: Icons.timeline_rounded,
-                  title: '3. Segmenti della sessione',
-                  subtitle:
-                      '${activity.perSessionKcal.toStringAsFixed(1)} kcal attive',
-                  children: <Widget>[
-                    for (final ActivityEstimateSegment segment
-                        in activity.segments)
-                      _SegmentAuditCard(segment: segment),
-                  ],
-                ),
-                _BreakdownSection(
-                  icon: Icons.fact_check_outlined,
-                  title: '4. Parametri effettivamente usati',
-                  subtitle:
-                      '${usedParameters.length} parametri e valori derivati',
-                  children: <Widget>[
-                    for (final ActivityParameterAudit parameter
-                        in usedParameters)
-                      _ParameterAuditCard(parameter: parameter),
-                  ],
-                ),
-                _BreakdownSection(
-                  icon: Icons.visibility_off_outlined,
-                  title: '5. Parametri memorizzati ma non attivi',
-                  subtitle:
-                      '${inactiveParameters.length} parametri senza effetto nel preset corrente',
-                  children: <Widget>[
-                    if (inactiveParameters.isEmpty)
-                      const _InfoBox(
-                        text:
-                            'Tutti i parametri memorizzati sono usati dal preset corrente.',
-                      )
-                    else
-                      for (final ActivityParameterAudit parameter
-                          in inactiveParameters)
-                        _ParameterAuditCard(parameter: parameter),
-                  ],
-                ),
-                _BreakdownSection(
-                  icon: Icons.tune_rounded,
-                  title: '6. Come cambia il risultato',
-                  subtitle:
-                      '${activity.impacts.length} parametri analizzati uno alla volta',
-                  children: <Widget>[
+              _BreakdownSection(
+                icon: Icons.directions_walk_rounded,
+                title: 'Passi attivi',
+                subtitle: '${targets.stepDailyKcal.round()} kcal/giorno',
+                children: <Widget>[
+                  _DetailRow(
+                    label: 'Passi del profilo',
+                    value: '${profile.defaultStepGoal}',
+                    detail: 'Valore medio o obiettivo usato nella previsione.',
+                  ),
+                  _DetailRow(
+                    label: 'Coefficiente attivo per passo',
+                    value:
+                        '${profile.stepKcalCoefficient.toStringAsFixed(4)} kcal/passo',
+                    detail: 'Non contiene la quota di riposo.',
+                  ),
+                  _DetailRow(
+                    label: 'Formula',
+                    value:
+                        '${profile.defaultStepGoal} × ${profile.stepKcalCoefficient.toStringAsFixed(4)}',
+                    detail:
+                        '= ${targets.stepDailyKcal.toStringAsFixed(2)} kcal attive.',
+                  ),
+                  _DetailRow(
+                    label: 'Effetto di +1.000 passi',
+                    value:
+                        '+${(1000 * profile.stepKcalCoefficient).toStringAsFixed(2)} kcal',
+                    detail: 'Con coefficiente invariato.',
+                  ),
+                  _DetailRow(
+                    label: 'Effetto di +0,001 kcal/passo',
+                    value:
+                        '+${(profile.defaultStepGoal * 0.001).toStringAsFixed(2)} kcal',
+                    detail: 'Con numero di passi invariato.',
+                  ),
+                ],
+              ),
+              _BreakdownSection(
+                icon: Icons.calculate_outlined,
+                title: 'Somma finale',
+                subtitle: '${targets.targetKcal.round()} kcal',
+                children: <Widget>[
+                  _DetailRow(
+                    label: 'Base sedentaria',
+                    value: '${targets.sedentaryKcal.toStringAsFixed(2)} kcal',
+                    detail: 'RMR × moltiplicatore sedentario.',
+                  ),
+                  _DetailRow(
+                    label: '+ passi attivi',
+                    value: '${targets.stepDailyKcal.toStringAsFixed(2)} kcal',
+                    detail: 'Passi × coefficiente attivo per passo.',
+                  ),
+                  _DetailRow(
+                    label: '+ allenamenti attivi',
+                    value: '${activity.dailyKcal.toStringAsFixed(2)} kcal',
+                    detail: 'Sessione × frequenza settimanale ÷ 7.',
+                  ),
+                  _DetailRow(
+                    label: 'Totale prima di limiti e arrotondamenti',
+                    value: '${beforeLimits.toStringAsFixed(2)} kcal',
+                    detail: 'Somma aritmetica delle tre componenti.',
+                  ),
+                  _DetailRow(
+                    label: 'Correzione finale applicata',
+                    value: '${_signed(targetAdjustment)} kcal',
+                    detail: targetAdjustment.abs() < 0.01
+                        ? 'Nessuna correzione ulteriore.'
+                        : 'Differenza dovuta ai limiti o alle regole del calcolatore target.',
+                  ),
+                  _DetailRow(
+                    label: 'Target mostrato',
+                    value: '${targets.targetKcal.toStringAsFixed(2)} kcal',
+                    detail: 'Valore finale usato dall’app.',
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          _AuditGroupCard(
+            icon: Icons.fitness_center_rounded,
+            eyebrow: 'GRUPPO 2',
+            title: 'Come viene stimato l’allenamento',
+            subtitle:
+                '${activity.segments.length} segmenti · ${activity.perSessionKcal.round()} kcal/sessione.',
+            children: <Widget>[
+              _BreakdownSection(
+                icon: Icons.timeline_rounded,
+                title: 'Segmenti della sessione',
+                subtitle:
+                    '${activity.perSessionKcal.toStringAsFixed(1)} kcal attive',
+                children: <Widget>[
+                  for (final ActivityEstimateSegment segment
+                      in activity.segments)
+                    _SegmentAuditCard(segment: segment),
+                ],
+              ),
+              _BreakdownSection(
+                icon: Icons.functions_rounded,
+                title: 'Formule eseguite',
+                subtitle: '${activity.calculationLines.length} passaggi',
+                children: <Widget>[
+                  for (final ActivityCalculationLine line
+                      in activity.calculationLines)
+                    _FormulaCard(line: line),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          _AuditGroupCard(
+            icon: Icons.fact_check_outlined,
+            eyebrow: 'GRUPPO 3',
+            title: 'Dati usati, esclusi e stimati',
+            subtitle:
+                '${usedParameters.length} usati · ${inactiveParameters.length} inattivi · ${activity.assumptions.length} assunzioni.',
+            children: <Widget>[
+              _BreakdownSection(
+                icon: Icons.check_circle_outline_rounded,
+                title: 'Parametri effettivamente usati',
+                subtitle:
+                    '${usedParameters.length} parametri e valori derivati',
+                children: <Widget>[
+                  for (final ActivityParameterAudit parameter in usedParameters)
+                    _ParameterAuditCard(parameter: parameter),
+                ],
+              ),
+              _BreakdownSection(
+                icon: Icons.visibility_off_outlined,
+                title: 'Parametri memorizzati ma non attivi',
+                subtitle:
+                    '${inactiveParameters.length} parametri senza effetto nel preset corrente',
+                children: <Widget>[
+                  if (inactiveParameters.isEmpty)
                     const _InfoBox(
                       text:
-                          'Ogni scenario modifica un solo parametro e lascia invariati gli altri. '
-                          'Le variazioni non vanno sommate tra loro: il modello è in parte non lineare e applica limiti temporali.',
-                    ),
-                    for (final ActivityParameterImpact impact
-                        in activity.impacts)
-                      _ImpactAuditCard(impact: impact),
-                  ],
-                ),
-                _BreakdownSection(
-                  icon: Icons.functions_rounded,
-                  title: '7. Formule eseguite',
-                  subtitle: '${activity.calculationLines.length} passaggi',
-                  children: <Widget>[
-                    for (final ActivityCalculationLine line
-                        in activity.calculationLines)
-                      _FormulaCard(line: line),
-                  ],
-                ),
-                _BreakdownSection(
-                  icon: Icons.verified_user_outlined,
-                  title: '8. Costruzione dell’affidabilità',
-                  subtitle:
-                      '${activity.confidenceScore}/100 · ${activity.confidenceLabel}',
-                  children: <Widget>[
-                    for (final ActivityConfidenceEntry entry
-                        in activity.confidenceEntries)
-                      _ConfidenceRow(entry: entry),
-                    _DetailRow(
-                      label: 'Intervallo associato',
-                      value:
-                          '${activity.lowEstimateKcal.round()}–${activity.highEstimateKcal.round()} kcal',
-                      detail:
-                          'Intervallo prudenziale derivato dal livello di confidenza; non è una misura clinica.',
-                    ),
-                  ],
-                ),
-                _BreakdownSection(
-                  icon: Icons.info_outline_rounded,
-                  title: '9. Assunzioni, fallback e dati mancanti',
-                  subtitle: '${activity.assumptions.length} elementi',
-                  children: <Widget>[
-                    if (activity.assumptions.isEmpty)
-                      const _InfoBox(
-                        text:
-                            'Nessun fallback aggiuntivo segnalato dal modello.',
-                      )
-                    else
-                      for (final String item in activity.assumptions)
-                        _BulletText(text: item),
-                  ],
-                ),
-                _BreakdownSection(
-                  icon: Icons.calculate_outlined,
-                  title: '10. Somma finale del target',
-                  subtitle: '${targets.targetKcal.round()} kcal',
-                  children: <Widget>[
-                    _DetailRow(
-                      label: 'Base sedentaria',
-                      value: '${targets.sedentaryKcal.toStringAsFixed(2)} kcal',
-                      detail: 'RMR × moltiplicatore sedentario.',
-                    ),
-                    _DetailRow(
-                      label: '+ passi attivi',
-                      value: '${targets.stepDailyKcal.toStringAsFixed(2)} kcal',
-                      detail: 'Passi × coefficiente attivo per passo.',
-                    ),
-                    _DetailRow(
-                      label: '+ allenamenti attivi',
-                      value: '${activity.dailyKcal.toStringAsFixed(2)} kcal',
-                      detail: 'Sessione × frequenza settimanale ÷ 7.',
-                    ),
-                    _DetailRow(
-                      label: 'Totale prima di limiti/arrotondamenti',
-                      value: '${beforeLimits.toStringAsFixed(2)} kcal',
-                      detail: 'Somma aritmetica delle tre componenti.',
-                    ),
-                    _DetailRow(
-                      label: 'Correzione finale applicata',
-                      value: '${_signed(targetAdjustment)} kcal',
-                      detail: targetAdjustment.abs() < 0.01
-                          ? 'Nessuna correzione ulteriore.'
-                          : 'Differenza dovuta ai limiti o alle regole del calcolatore target.',
-                    ),
-                    _DetailRow(
-                      label: 'Target mostrato',
-                      value: '${targets.targetKcal.toStringAsFixed(2)} kcal',
-                      detail: 'Valore finale usato dall’app.',
-                    ),
-                    const _DetailRow(
-                      label: 'Versione motore attività',
-                      value: '2',
-                      detail:
-                          'Calorie attive, segmentazione e audit completo dei parametri.',
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                          'Tutti i parametri memorizzati sono usati dal preset corrente.',
+                    )
+                  else
+                    for (final ActivityParameterAudit parameter
+                        in inactiveParameters)
+                      _ParameterAuditCard(parameter: parameter),
+                ],
+              ),
+              _BreakdownSection(
+                icon: Icons.info_outline_rounded,
+                title: 'Assunzioni, fallback e dati mancanti',
+                subtitle: '${activity.assumptions.length} elementi',
+                children: <Widget>[
+                  if (activity.assumptions.isEmpty)
+                    const _InfoBox(
+                      text: 'Nessun fallback aggiuntivo segnalato dal modello.',
+                    )
+                  else
+                    for (final String item in activity.assumptions)
+                      _BulletText(text: item),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          _AuditGroupCard(
+            icon: Icons.insights_rounded,
+            eyebrow: 'GRUPPO 4',
+            title: 'Quanto può cambiare la stima',
+            subtitle:
+                '${activity.impacts.length} analisi · affidabilità ${activity.confidenceScore}/100.',
+            children: <Widget>[
+              _BreakdownSection(
+                icon: Icons.tune_rounded,
+                title: 'Sensibilità ai singoli parametri',
+                subtitle:
+                    '${activity.impacts.length} parametri analizzati uno alla volta',
+                children: <Widget>[
+                  const _InfoBox(
+                    text:
+                        'Ogni scenario modifica un solo parametro e lascia invariati gli altri. Le variazioni non vanno sommate: il modello applica limiti e relazioni non lineari.',
+                  ),
+                  for (final ActivityParameterImpact impact in activity.impacts)
+                    _ImpactAuditCard(impact: impact),
+                ],
+              ),
+              _BreakdownSection(
+                icon: Icons.verified_user_outlined,
+                title: 'Affidabilità e intervallo',
+                subtitle:
+                    '${activity.confidenceScore}/100 · ${activity.confidenceLabel}',
+                children: <Widget>[
+                  for (final ActivityConfidenceEntry entry
+                      in activity.confidenceEntries)
+                    _ConfidenceRow(entry: entry),
+                  _DetailRow(
+                    label: 'Intervallo associato',
+                    value:
+                        '${activity.lowEstimateKcal.round()}–${activity.highEstimateKcal.round()} kcal',
+                    detail:
+                        'Intervallo prudenziale derivato dal livello di confidenza; non è una misura clinica.',
+                  ),
+                  const _DetailRow(
+                    label: 'Versione motore attività',
+                    value: '2',
+                    detail:
+                        'Calorie attive, segmentazione e audit completo dei parametri.',
+                  ),
+                ],
+              ),
+            ],
           ),
         ],
       ),
@@ -577,7 +602,7 @@ class _ActivityEditorSheetState extends State<_ActivityEditorSheet> {
     _machine = i.cardioMachineCode;
     _intensity = i.cardioIntensityCode;
     _freeIntensity = i.freeIntensityCode;
-    _rir = i.averageRir;
+    _rir = _normalizeRir(i.averageRir);
     _c = <String, TextEditingController>{
       'sessions': _controller(i.sessionsPerWeek),
       'weightsDuration': _controller(i.weightsDurationMinutes),
@@ -606,6 +631,13 @@ class _ActivityEditorSheetState extends State<_ActivityEditorSheet> {
       'freePause': _controllerOptional(i.freePauseMinutes),
       'freeHr': _controllerOptional(i.freeAvgHeartRate),
     };
+  }
+
+  int _normalizeRir(int value) {
+    if (value >= 4) return 5;
+    if (value >= 2) return 3;
+    if (value == 1) return 1;
+    return 0;
   }
 
   TextEditingController _controller(num value) =>
@@ -1236,6 +1268,169 @@ class _MetricChip extends StatelessWidget {
           const SizedBox(width: AppSpacing.xs),
           Text('$label · $value'),
         ],
+      ),
+    );
+  }
+}
+
+class _CalculationEquationCard extends StatelessWidget {
+  const _CalculationEquationCard({
+    required this.sedentaryKcal,
+    required this.stepKcal,
+    required this.activityKcal,
+    required this.targetKcal,
+  });
+
+  final double sedentaryKcal;
+  final double stepKcal;
+  final double activityKcal;
+  final double targetKcal;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: scheme.secondaryContainer.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Equazione del target',
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              _EquationToken(label: 'Base', value: '${sedentaryKcal.round()}'),
+              const Text('+', style: TextStyle(fontWeight: FontWeight.w900)),
+              _EquationToken(label: 'Passi', value: '${stepKcal.round()}'),
+              const Text('+', style: TextStyle(fontWeight: FontWeight.w900)),
+              _EquationToken(
+                label: 'Allenamenti',
+                value: '${activityKcal.round()}',
+              ),
+              const Text('=', style: TextStyle(fontWeight: FontWeight.w900)),
+              _EquationToken(
+                label: 'Target',
+                value: '${targetKcal.round()} kcal',
+                emphasized: true,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EquationToken extends StatelessWidget {
+  const _EquationToken({
+    required this.label,
+    required this.value,
+    this.emphasized = false,
+  });
+
+  final String label;
+  final String value;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.xs,
+      ),
+      decoration: BoxDecoration(
+        color: emphasized ? scheme.primaryContainer : scheme.surface,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        '$label: $value',
+        style: TextStyle(
+          fontWeight: emphasized ? FontWeight.w900 : FontWeight.w700,
+          color: emphasized ? scheme.onPrimaryContainer : null,
+        ),
+      ),
+    );
+  }
+}
+
+class _AuditGroupCard extends StatelessWidget {
+  const _AuditGroupCard({
+    required this.icon,
+    required this.eyebrow,
+    required this.title,
+    required this.subtitle,
+    required this.children,
+  });
+
+  final IconData icon;
+  final String eyebrow;
+  final String title;
+  final String subtitle;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          leading: Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: scheme.onPrimaryContainer),
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                eyebrow,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8,
+                    ),
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+            ],
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.xxs),
+            child: Text(subtitle),
+          ),
+          childrenPadding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            0,
+            AppSpacing.md,
+            AppSpacing.md,
+          ),
+          children: children,
+        ),
       ),
     );
   }

@@ -5,6 +5,8 @@ import '../../features/nutrition/mock/presentation/ingredient_list_screen.dart'
     as mock_nutrition;
 import '../../features/nutrition/presentation/food_v01_screens.dart';
 import '../../features/nutrition/presentation/measurement_screens.dart';
+import '../../features/nutrition/presentation/open_nutrition_settings_screen.dart';
+import '../../features/nutrition/presentation/unified_ingredient_search_screen.dart';
 import '../../features/profile/presentation/profile_settings_hub_screen.dart';
 import '../../features/profile/presentation/profile_settings_screen.dart';
 import '../../features/transfer/presentation/transfer_center_screen.dart';
@@ -57,17 +59,29 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/food/meals/:id',
       builder: (BuildContext context, GoRouterState state) {
-        return FoodMealDetailScreen(
-          id: state.pathParameters['id']!,
-          initialDate: state.uri.queryParameters['date'],
-          initialSlot: state.uri.queryParameters['slot'],
+        return OpenNutritionImportOverlay(
+          targetType: 'meal',
+          targetId: state.pathParameters['id']!,
+          child: FoodMealDetailScreen(
+            id: state.pathParameters['id']!,
+            initialDate: state.uri.queryParameters['date'],
+            initialSlot: state.uri.queryParameters['slot'],
+          ),
         );
       },
     ),
     GoRoute(
       path: '/food/ingredients',
       builder: (BuildContext context, GoRouterState state) {
-        return const PersistentIngredientListScreen();
+        return const UnifiedIngredientSearchScreen();
+      },
+    ),
+    GoRoute(
+      path: '/food/ingredients/search',
+      builder: (BuildContext context, GoRouterState state) {
+        return UnifiedIngredientSearchScreen(
+          selectionMode: state.uri.queryParameters['select'] == '1',
+        );
       },
     ),
     GoRoute(
@@ -91,7 +105,11 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/food/recipes/:id',
       builder: (BuildContext context, GoRouterState state) {
-        return RecipeDetailScreen(id: state.pathParameters['id']!);
+        return OpenNutritionImportOverlay(
+          targetType: 'recipe',
+          targetId: state.pathParameters['id']!,
+          child: RecipeDetailScreen(id: state.pathParameters['id']!),
+        );
       },
     ),
     GoRoute(
@@ -112,6 +130,12 @@ final GoRouter appRouter = GoRouter(
       path: '/settings/legacy',
       builder: (BuildContext context, GoRouterState state) {
         return const ProfileSettingsScreen();
+      },
+    ),
+    GoRoute(
+      path: '/settings/opennutrition',
+      builder: (BuildContext context, GoRouterState state) {
+        return const OpenNutritionSettingsScreen();
       },
     ),
     GoRoute(

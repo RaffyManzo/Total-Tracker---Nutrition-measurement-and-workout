@@ -86,6 +86,41 @@ class IngredientRepository {
       ..sort(_sortByName);
   }
 
+  List<IngredientEntity> searchByNameLimited(
+    String query, {
+    int offset = 0,
+    int limit = 25,
+  }) {
+    final normalizedQuery = query.trim().toLowerCase();
+    final values = getAllActive()
+        .where(
+          (ingredient) =>
+              normalizedQuery.isEmpty ||
+              ingredient.name.toLowerCase().contains(normalizedQuery) ||
+              ingredient.brand.toLowerCase().contains(normalizedQuery) ||
+              ingredient.barcode.contains(normalizedQuery),
+        )
+        .toList()
+      ..sort(_sortByName);
+    return values.skip(offset).take(limit).toList();
+  }
+
+  IngredientEntity? findByExternalSource(
+    String sourceTypeCode,
+    String sourceExternalId,
+  ) {
+    final normalizedId = sourceExternalId.trim();
+    if (normalizedId.isEmpty) return null;
+    for (final ingredient in _box.getAll()) {
+      if (ingredient.deletedAtEpochMs == null &&
+          ingredient.sourceTypeCode == sourceTypeCode &&
+          ingredient.sourceExternalId == normalizedId) {
+        return ingredient;
+      }
+    }
+    return null;
+  }
+
   IngredientEntity archive(IngredientEntity ingredient) {
     _ensureExists(ingredient);
     ingredient.isArchived = true;
@@ -128,6 +163,10 @@ class IngredientRepository {
     ingredient.baseUnit = ingredient.baseUnit.trim();
     ingredient.barcode = ingredient.barcode.trim();
     ingredient.sourceTypeCode = ingredient.sourceTypeCode.trim();
+    ingredient.sourceExternalId = ingredient.sourceExternalId.trim();
+    ingredient.sourceDatasetVersion = ingredient.sourceDatasetVersion.trim();
+    ingredient.sourceLicenseCode = ingredient.sourceLicenseCode.trim();
+    ingredient.sourceAttribution = ingredient.sourceAttribution.trim();
     ingredient.nutritionReferenceUnitCode =
         ingredient.nutritionReferenceUnitCode.trim();
   }

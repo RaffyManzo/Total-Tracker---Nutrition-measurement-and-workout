@@ -16,6 +16,8 @@ import 'package:objectbox_flutter_libs/objectbox_flutter_libs.dart';
 
 import 'features/nutrition/data/entities/ingredient_entity.dart';
 import 'features/nutrition/data/entities/nutrition_tracking_entities.dart';
+import 'features/nutrition/data/entities/open_nutrition_catalog_state_entity.dart';
+import 'features/nutrition/data/entities/open_nutrition_food_entity.dart';
 import 'features/profile/data/entities/user_profile_entity.dart';
 import 'features/workout/data/entities/exercise_entity.dart';
 import 'features/workout/data/entities/exercise_muscle_link_entity.dart';
@@ -178,7 +180,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(3, 6586254234657971059),
     name: 'IngredientEntity',
-    lastPropertyId: const obx_int.IdUid(26, 357034344079110440),
+    lastPropertyId: const obx_int.IdUid(31, 5168545562304295547),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -338,6 +340,36 @@ final _entities = <obx_int.ModelEntity>[
         id: const obx_int.IdUid(26, 357034344079110440),
         name: 'deletedAtEpochMs',
         type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(27, 7362778610643337533),
+        name: 'sourceExternalId',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(28, 7482767297629872873),
+        name: 'sourceDatasetVersion',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(29, 6563709813098846514),
+        name: 'sourceLicenseCode',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(30, 3171649468355575672),
+        name: 'sourceAttribution',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(31, 5168545562304295547),
+        name: 'wasModifiedByUser',
+        type: 1,
         flags: 0,
       ),
     ],
@@ -2952,6 +2984,364 @@ final _entities = <obx_int.ModelEntity>[
     relations: <obx_int.ModelRelation>[],
     backlinks: <obx_int.ModelBacklink>[],
   ),
+  obx_int.ModelEntity(
+    id: const obx_int.IdUid(24, 2184321521372198058),
+    name: 'OpenNutritionCatalogStateEntity',
+    lastPropertyId: const obx_int.IdUid(20, 2763085742484905228),
+    flags: 0,
+    properties: <obx_int.ModelProperty>[
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(1, 8742619481549695741),
+        name: 'id',
+        type: 6,
+        flags: 1,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(2, 1149719048941346153),
+        name: 'installedVersion',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(3, 2158286375282035204),
+        name: 'activeBatchId',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(4, 4760958158791842866),
+        name: 'sourceArchiveUrl',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(5, 4456143433640928723),
+        name: 'expectedSha256',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(6, 7856278552188562439),
+        name: 'actualSha256',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(7, 4968182220307475131),
+        name: 'archiveBytes',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(8, 4362089486526379272),
+        name: 'extractedBytes',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(9, 2837161657530868293),
+        name: 'parsedRows',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(10, 1586076365838037373),
+        name: 'importedRows',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(11, 5544048738805743474),
+        name: 'skippedRows',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(12, 6492100128790203666),
+        name: 'failedRows',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(13, 8606387487046083599),
+        name: 'importStatusCode',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(14, 8455246672238898147),
+        name: 'currentStageCode',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(15, 1214178860488102726),
+        name: 'lastError',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(16, 7243646739440633838),
+        name: 'schemaJson',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(17, 7025956586879024838),
+        name: 'attributionVersion',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(18, 4137900246507732568),
+        name: 'licenseAcceptedAtEpochMs',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(19, 5167979463674227664),
+        name: 'startedAtEpochMs',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(20, 2763085742484905228),
+        name: 'completedAtEpochMs',
+        type: 6,
+        flags: 0,
+      ),
+    ],
+    relations: <obx_int.ModelRelation>[],
+    backlinks: <obx_int.ModelBacklink>[],
+  ),
+  obx_int.ModelEntity(
+    id: const obx_int.IdUid(25, 1938988888524376966),
+    name: 'OpenNutritionFoodEntity',
+    lastPropertyId: const obx_int.IdUid(35, 3627344830725544412),
+    flags: 0,
+    properties: <obx_int.ModelProperty>[
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(1, 3699130674889992915),
+        name: 'id',
+        type: 6,
+        flags: 1,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(2, 5180194158612036614),
+        name: 'externalFoodId',
+        type: 9,
+        flags: 2048,
+        indexId: const obx_int.IdUid(50, 851504953996399127),
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(3, 424754518209580349),
+        name: 'importBatchId',
+        type: 9,
+        flags: 2048,
+        indexId: const obx_int.IdUid(51, 3656800446448404799),
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(4, 1708525373866761781),
+        name: 'datasetVersion',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(5, 8158694226581218714),
+        name: 'name',
+        type: 9,
+        flags: 2048,
+        indexId: const obx_int.IdUid(52, 4920021547930706352),
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(6, 7939343918498072525),
+        name: 'normalizedName',
+        type: 9,
+        flags: 2048,
+        indexId: const obx_int.IdUid(53, 4833991798983948106),
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(7, 4460364123763878281),
+        name: 'alternateNamesJson',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(8, 4689086410469981200),
+        name: 'description',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(9, 6553283138460044310),
+        name: 'typeCode',
+        type: 9,
+        flags: 2048,
+        indexId: const obx_int.IdUid(54, 8148133641390387194),
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(10, 2343592025678133622),
+        name: 'brand',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(11, 5580798783333772510),
+        name: 'normalizedBrand',
+        type: 9,
+        flags: 2048,
+        indexId: const obx_int.IdUid(55, 6682443783703020156),
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(12, 1665435646857629814),
+        name: 'barcode',
+        type: 9,
+        flags: 2048,
+        indexId: const obx_int.IdUid(56, 6549396528813434128),
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(13, 1782229576734826603),
+        name: 'labelsJson',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(14, 303084782587735534),
+        name: 'ingredientsText',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(15, 6754507664916314823),
+        name: 'ingredientAnalysisJson',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(16, 1763749618224028397),
+        name: 'sourceJson',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(17, 3108796777117091521),
+        name: 'servingJson',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(18, 8491283179811040346),
+        name: 'packageSizeJson',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(19, 341948605832987633),
+        name: 'nutrition100gJson',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(20, 8370242864821483517),
+        name: 'additionalFieldsJson',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(21, 1685011383467793199),
+        name: 'normalizedSearchText',
+        type: 9,
+        flags: 2048,
+        indexId: const obx_int.IdUid(57, 4217912142887605977),
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(22, 1530152076508805498),
+        name: 'kcalPer100g',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(23, 5375675360829177456),
+        name: 'proteinPer100g',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(24, 4836022550244107154),
+        name: 'carbsPer100g',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(25, 6393802344531164962),
+        name: 'fatPer100g',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(26, 3689246012790190101),
+        name: 'fiberPer100g',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(27, 4955608242378732250),
+        name: 'sugarPer100g',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(28, 120280370764085865),
+        name: 'saturatedFatPer100g',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(29, 3334685523326823483),
+        name: 'transFatPer100g',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(30, 3182247176825119326),
+        name: 'saltPer100g',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(31, 8862144073676084418),
+        name: 'sodiumPer100g',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(32, 6524990260924200166),
+        name: 'hasCompleteMacros',
+        type: 1,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(33, 5701010737978770100),
+        name: 'hasEstimatedValues',
+        type: 1,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(34, 5399048907552206923),
+        name: 'fromOpenFoodFacts',
+        type: 1,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(35, 3627344830725544412),
+        name: 'importedAtEpochMs',
+        type: 6,
+        flags: 0,
+      ),
+    ],
+    relations: <obx_int.ModelRelation>[],
+    backlinks: <obx_int.ModelBacklink>[],
+  ),
 ];
 
 /// Shortcut for [obx.Store.new] that passes [getObjectBoxModel] and for Flutter
@@ -2997,8 +3387,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
     // Typically, this is done with `dart run build_runner build`.
     generatorVersion: obx_int.GeneratorVersion.v2025_12_16,
     entities: _entities,
-    lastEntityId: const obx_int.IdUid(23, 8179285214134796333),
-    lastIndexId: const obx_int.IdUid(49, 6838236636949618618),
+    lastEntityId: const obx_int.IdUid(25, 1938988888524376966),
+    lastIndexId: const obx_int.IdUid(57, 4217912142887605977),
     lastRelationId: const obx_int.IdUid(0, 0),
     lastSequenceId: const obx_int.IdUid(0, 0),
     retiredEntityUids: const [],
@@ -3221,7 +3611,17 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final nutritionReferenceUnitCodeOffset = fbb.writeString(
           object.nutritionReferenceUnitCode,
         );
-        fbb.startTable(27);
+        final sourceExternalIdOffset = fbb.writeString(object.sourceExternalId);
+        final sourceDatasetVersionOffset = fbb.writeString(
+          object.sourceDatasetVersion,
+        );
+        final sourceLicenseCodeOffset = fbb.writeString(
+          object.sourceLicenseCode,
+        );
+        final sourceAttributionOffset = fbb.writeString(
+          object.sourceAttribution,
+        );
+        fbb.startTable(32);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, uuidOffset);
         fbb.addOffset(2, nameOffset);
@@ -3248,6 +3648,11 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addInt64(23, object.createdAtEpochMs);
         fbb.addInt64(24, object.updatedAtEpochMs);
         fbb.addInt64(25, object.deletedAtEpochMs);
+        fbb.addOffset(26, sourceExternalIdOffset);
+        fbb.addOffset(27, sourceDatasetVersionOffset);
+        fbb.addOffset(28, sourceLicenseCodeOffset);
+        fbb.addOffset(29, sourceAttributionOffset);
+        fbb.addBool(30, object.wasModifiedByUser);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -3289,6 +3694,24 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final sourceUrlParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 22, '');
+        final sourceExternalIdParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 56, '');
+        final sourceDatasetVersionParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 58, '');
+        final sourceLicenseCodeParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 60, '');
+        final sourceAttributionParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 62, '');
+        final wasModifiedByUserParam = const fb.BoolReader().vTableGet(
+          buffer,
+          rootOffset,
+          64,
+          false,
+        );
         final imageUrlParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 24, '');
@@ -3379,6 +3802,11 @@ obx_int.ModelDefinition getObjectBoxModel() {
           sourceTypeCode: sourceTypeCodeParam,
           sourceName: sourceNameParam,
           sourceUrl: sourceUrlParam,
+          sourceExternalId: sourceExternalIdParam,
+          sourceDatasetVersion: sourceDatasetVersionParam,
+          sourceLicenseCode: sourceLicenseCodeParam,
+          sourceAttribution: sourceAttributionParam,
+          wasModifiedByUser: wasModifiedByUserParam,
           imageUrl: imageUrlParam,
           categories: categoriesParam,
           notes: notesParam,
@@ -6461,6 +6889,439 @@ obx_int.ModelDefinition getObjectBoxModel() {
         return object;
       },
     ),
+    OpenNutritionCatalogStateEntity:
+        obx_int.EntityDefinition<OpenNutritionCatalogStateEntity>(
+          model: _entities[23],
+          toOneRelations: (OpenNutritionCatalogStateEntity object) => [],
+          toManyRelations: (OpenNutritionCatalogStateEntity object) => {},
+          getId: (OpenNutritionCatalogStateEntity object) => object.id,
+          setId: (OpenNutritionCatalogStateEntity object, int id) {
+            object.id = id;
+          },
+          objectToFB: (OpenNutritionCatalogStateEntity object, fb.Builder fbb) {
+            final installedVersionOffset = fbb.writeString(
+              object.installedVersion,
+            );
+            final activeBatchIdOffset = fbb.writeString(object.activeBatchId);
+            final sourceArchiveUrlOffset = fbb.writeString(
+              object.sourceArchiveUrl,
+            );
+            final expectedSha256Offset = fbb.writeString(object.expectedSha256);
+            final actualSha256Offset = fbb.writeString(object.actualSha256);
+            final importStatusCodeOffset = fbb.writeString(
+              object.importStatusCode,
+            );
+            final currentStageCodeOffset = fbb.writeString(
+              object.currentStageCode,
+            );
+            final lastErrorOffset = fbb.writeString(object.lastError);
+            final schemaJsonOffset = fbb.writeString(object.schemaJson);
+            final attributionVersionOffset = fbb.writeString(
+              object.attributionVersion,
+            );
+            fbb.startTable(21);
+            fbb.addInt64(0, object.id);
+            fbb.addOffset(1, installedVersionOffset);
+            fbb.addOffset(2, activeBatchIdOffset);
+            fbb.addOffset(3, sourceArchiveUrlOffset);
+            fbb.addOffset(4, expectedSha256Offset);
+            fbb.addOffset(5, actualSha256Offset);
+            fbb.addInt64(6, object.archiveBytes);
+            fbb.addInt64(7, object.extractedBytes);
+            fbb.addInt64(8, object.parsedRows);
+            fbb.addInt64(9, object.importedRows);
+            fbb.addInt64(10, object.skippedRows);
+            fbb.addInt64(11, object.failedRows);
+            fbb.addOffset(12, importStatusCodeOffset);
+            fbb.addOffset(13, currentStageCodeOffset);
+            fbb.addOffset(14, lastErrorOffset);
+            fbb.addOffset(15, schemaJsonOffset);
+            fbb.addOffset(16, attributionVersionOffset);
+            fbb.addInt64(17, object.licenseAcceptedAtEpochMs);
+            fbb.addInt64(18, object.startedAtEpochMs);
+            fbb.addInt64(19, object.completedAtEpochMs);
+            fbb.finish(fbb.endTable());
+            return object.id;
+          },
+          objectFromFB: (obx.Store store, ByteData fbData) {
+            final buffer = fb.BufferContext(fbData);
+            final rootOffset = buffer.derefObject(0);
+            final idParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              4,
+              0,
+            );
+            final installedVersionParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 6, '');
+            final activeBatchIdParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 8, '');
+            final sourceArchiveUrlParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 10, '');
+            final expectedSha256Param = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 12, '');
+            final actualSha256Param = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 14, '');
+            final archiveBytesParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              16,
+              0,
+            );
+            final extractedBytesParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              18,
+              0,
+            );
+            final parsedRowsParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              20,
+              0,
+            );
+            final importedRowsParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              22,
+              0,
+            );
+            final skippedRowsParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              24,
+              0,
+            );
+            final failedRowsParam = const fb.Int64Reader().vTableGet(
+              buffer,
+              rootOffset,
+              26,
+              0,
+            );
+            final importStatusCodeParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 28, '');
+            final currentStageCodeParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 30, '');
+            final lastErrorParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 32, '');
+            final schemaJsonParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 34, '');
+            final attributionVersionParam = const fb.StringReader(
+              asciiOptimization: true,
+            ).vTableGet(buffer, rootOffset, 36, '');
+            final licenseAcceptedAtEpochMsParam = const fb.Int64Reader()
+                .vTableGetNullable(buffer, rootOffset, 38);
+            final startedAtEpochMsParam = const fb.Int64Reader()
+                .vTableGetNullable(buffer, rootOffset, 40);
+            final completedAtEpochMsParam = const fb.Int64Reader()
+                .vTableGetNullable(buffer, rootOffset, 42);
+            final object = OpenNutritionCatalogStateEntity(
+              id: idParam,
+              installedVersion: installedVersionParam,
+              activeBatchId: activeBatchIdParam,
+              sourceArchiveUrl: sourceArchiveUrlParam,
+              expectedSha256: expectedSha256Param,
+              actualSha256: actualSha256Param,
+              archiveBytes: archiveBytesParam,
+              extractedBytes: extractedBytesParam,
+              parsedRows: parsedRowsParam,
+              importedRows: importedRowsParam,
+              skippedRows: skippedRowsParam,
+              failedRows: failedRowsParam,
+              importStatusCode: importStatusCodeParam,
+              currentStageCode: currentStageCodeParam,
+              lastError: lastErrorParam,
+              schemaJson: schemaJsonParam,
+              attributionVersion: attributionVersionParam,
+              licenseAcceptedAtEpochMs: licenseAcceptedAtEpochMsParam,
+              startedAtEpochMs: startedAtEpochMsParam,
+              completedAtEpochMs: completedAtEpochMsParam,
+            );
+
+            return object;
+          },
+        ),
+    OpenNutritionFoodEntity: obx_int.EntityDefinition<OpenNutritionFoodEntity>(
+      model: _entities[24],
+      toOneRelations: (OpenNutritionFoodEntity object) => [],
+      toManyRelations: (OpenNutritionFoodEntity object) => {},
+      getId: (OpenNutritionFoodEntity object) => object.id,
+      setId: (OpenNutritionFoodEntity object, int id) {
+        object.id = id;
+      },
+      objectToFB: (OpenNutritionFoodEntity object, fb.Builder fbb) {
+        final externalFoodIdOffset = fbb.writeString(object.externalFoodId);
+        final importBatchIdOffset = fbb.writeString(object.importBatchId);
+        final datasetVersionOffset = fbb.writeString(object.datasetVersion);
+        final nameOffset = fbb.writeString(object.name);
+        final normalizedNameOffset = fbb.writeString(object.normalizedName);
+        final alternateNamesJsonOffset = fbb.writeString(
+          object.alternateNamesJson,
+        );
+        final descriptionOffset = fbb.writeString(object.description);
+        final typeCodeOffset = fbb.writeString(object.typeCode);
+        final brandOffset = fbb.writeString(object.brand);
+        final normalizedBrandOffset = fbb.writeString(object.normalizedBrand);
+        final barcodeOffset = fbb.writeString(object.barcode);
+        final labelsJsonOffset = fbb.writeString(object.labelsJson);
+        final ingredientsTextOffset = fbb.writeString(object.ingredientsText);
+        final ingredientAnalysisJsonOffset = fbb.writeString(
+          object.ingredientAnalysisJson,
+        );
+        final sourceJsonOffset = fbb.writeString(object.sourceJson);
+        final servingJsonOffset = fbb.writeString(object.servingJson);
+        final packageSizeJsonOffset = fbb.writeString(object.packageSizeJson);
+        final nutrition100gJsonOffset = fbb.writeString(
+          object.nutrition100gJson,
+        );
+        final additionalFieldsJsonOffset = fbb.writeString(
+          object.additionalFieldsJson,
+        );
+        final normalizedSearchTextOffset = fbb.writeString(
+          object.normalizedSearchText,
+        );
+        fbb.startTable(36);
+        fbb.addInt64(0, object.id);
+        fbb.addOffset(1, externalFoodIdOffset);
+        fbb.addOffset(2, importBatchIdOffset);
+        fbb.addOffset(3, datasetVersionOffset);
+        fbb.addOffset(4, nameOffset);
+        fbb.addOffset(5, normalizedNameOffset);
+        fbb.addOffset(6, alternateNamesJsonOffset);
+        fbb.addOffset(7, descriptionOffset);
+        fbb.addOffset(8, typeCodeOffset);
+        fbb.addOffset(9, brandOffset);
+        fbb.addOffset(10, normalizedBrandOffset);
+        fbb.addOffset(11, barcodeOffset);
+        fbb.addOffset(12, labelsJsonOffset);
+        fbb.addOffset(13, ingredientsTextOffset);
+        fbb.addOffset(14, ingredientAnalysisJsonOffset);
+        fbb.addOffset(15, sourceJsonOffset);
+        fbb.addOffset(16, servingJsonOffset);
+        fbb.addOffset(17, packageSizeJsonOffset);
+        fbb.addOffset(18, nutrition100gJsonOffset);
+        fbb.addOffset(19, additionalFieldsJsonOffset);
+        fbb.addOffset(20, normalizedSearchTextOffset);
+        fbb.addFloat64(21, object.kcalPer100g);
+        fbb.addFloat64(22, object.proteinPer100g);
+        fbb.addFloat64(23, object.carbsPer100g);
+        fbb.addFloat64(24, object.fatPer100g);
+        fbb.addFloat64(25, object.fiberPer100g);
+        fbb.addFloat64(26, object.sugarPer100g);
+        fbb.addFloat64(27, object.saturatedFatPer100g);
+        fbb.addFloat64(28, object.transFatPer100g);
+        fbb.addFloat64(29, object.saltPer100g);
+        fbb.addFloat64(30, object.sodiumPer100g);
+        fbb.addBool(31, object.hasCompleteMacros);
+        fbb.addBool(32, object.hasEstimatedValues);
+        fbb.addBool(33, object.fromOpenFoodFacts);
+        fbb.addInt64(34, object.importedAtEpochMs);
+        fbb.finish(fbb.endTable());
+        return object.id;
+      },
+      objectFromFB: (obx.Store store, ByteData fbData) {
+        final buffer = fb.BufferContext(fbData);
+        final rootOffset = buffer.derefObject(0);
+        final idParam = const fb.Int64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          4,
+          0,
+        );
+        final externalFoodIdParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 6, '');
+        final importBatchIdParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 8, '');
+        final datasetVersionParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 10, '');
+        final nameParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 12, '');
+        final normalizedNameParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 14, '');
+        final alternateNamesJsonParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 16, '');
+        final descriptionParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 18, '');
+        final typeCodeParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 20, '');
+        final brandParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 22, '');
+        final normalizedBrandParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 24, '');
+        final barcodeParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 26, '');
+        final labelsJsonParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 28, '');
+        final ingredientsTextParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 30, '');
+        final ingredientAnalysisJsonParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 32, '');
+        final sourceJsonParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 34, '');
+        final servingJsonParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 36, '');
+        final packageSizeJsonParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 38, '');
+        final nutrition100gJsonParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 40, '');
+        final additionalFieldsJsonParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 42, '');
+        final normalizedSearchTextParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 44, '');
+        final kcalPer100gParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          46,
+          0,
+        );
+        final proteinPer100gParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          48,
+          0,
+        );
+        final carbsPer100gParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          50,
+          0,
+        );
+        final fatPer100gParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          52,
+          0,
+        );
+        final fiberPer100gParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          54,
+          0,
+        );
+        final sugarPer100gParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          56,
+          0,
+        );
+        final saturatedFatPer100gParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          58,
+          0,
+        );
+        final transFatPer100gParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          60,
+          0,
+        );
+        final saltPer100gParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          62,
+          0,
+        );
+        final sodiumPer100gParam = const fb.Float64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          64,
+          0,
+        );
+        final hasCompleteMacrosParam = const fb.BoolReader().vTableGet(
+          buffer,
+          rootOffset,
+          66,
+          false,
+        );
+        final hasEstimatedValuesParam = const fb.BoolReader().vTableGet(
+          buffer,
+          rootOffset,
+          68,
+          false,
+        );
+        final fromOpenFoodFactsParam = const fb.BoolReader().vTableGet(
+          buffer,
+          rootOffset,
+          70,
+          false,
+        );
+        final importedAtEpochMsParam = const fb.Int64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          72,
+          0,
+        );
+        final object = OpenNutritionFoodEntity(
+          id: idParam,
+          externalFoodId: externalFoodIdParam,
+          importBatchId: importBatchIdParam,
+          datasetVersion: datasetVersionParam,
+          name: nameParam,
+          normalizedName: normalizedNameParam,
+          alternateNamesJson: alternateNamesJsonParam,
+          description: descriptionParam,
+          typeCode: typeCodeParam,
+          brand: brandParam,
+          normalizedBrand: normalizedBrandParam,
+          barcode: barcodeParam,
+          labelsJson: labelsJsonParam,
+          ingredientsText: ingredientsTextParam,
+          ingredientAnalysisJson: ingredientAnalysisJsonParam,
+          sourceJson: sourceJsonParam,
+          servingJson: servingJsonParam,
+          packageSizeJson: packageSizeJsonParam,
+          nutrition100gJson: nutrition100gJsonParam,
+          additionalFieldsJson: additionalFieldsJsonParam,
+          normalizedSearchText: normalizedSearchTextParam,
+          kcalPer100g: kcalPer100gParam,
+          proteinPer100g: proteinPer100gParam,
+          carbsPer100g: carbsPer100gParam,
+          fatPer100g: fatPer100gParam,
+          fiberPer100g: fiberPer100gParam,
+          sugarPer100g: sugarPer100gParam,
+          saturatedFatPer100g: saturatedFatPer100gParam,
+          transFatPer100g: transFatPer100gParam,
+          saltPer100g: saltPer100gParam,
+          sodiumPer100g: sodiumPer100gParam,
+          hasCompleteMacros: hasCompleteMacrosParam,
+          hasEstimatedValues: hasEstimatedValuesParam,
+          fromOpenFoodFacts: fromOpenFoodFactsParam,
+          importedAtEpochMs: importedAtEpochMsParam,
+        );
+
+        return object;
+      },
+    ),
   };
 
   return obx_int.ModelDefinition(model, bindings);
@@ -6705,6 +7566,31 @@ class IngredientEntity_ {
   /// See [IngredientEntity.deletedAtEpochMs].
   static final deletedAtEpochMs = obx.QueryIntegerProperty<IngredientEntity>(
     _entities[2].properties[25],
+  );
+
+  /// See [IngredientEntity.sourceExternalId].
+  static final sourceExternalId = obx.QueryStringProperty<IngredientEntity>(
+    _entities[2].properties[26],
+  );
+
+  /// See [IngredientEntity.sourceDatasetVersion].
+  static final sourceDatasetVersion = obx.QueryStringProperty<IngredientEntity>(
+    _entities[2].properties[27],
+  );
+
+  /// See [IngredientEntity.sourceLicenseCode].
+  static final sourceLicenseCode = obx.QueryStringProperty<IngredientEntity>(
+    _entities[2].properties[28],
+  );
+
+  /// See [IngredientEntity.sourceAttribution].
+  static final sourceAttribution = obx.QueryStringProperty<IngredientEntity>(
+    _entities[2].properties[29],
+  );
+
+  /// See [IngredientEntity.wasModifiedByUser].
+  static final wasModifiedByUser = obx.QueryBooleanProperty<IngredientEntity>(
+    _entities[2].properties[30],
   );
 }
 
@@ -8787,5 +9673,323 @@ class WorkoutSessionEntity_ {
   static final deletedAtEpochMs =
       obx.QueryIntegerProperty<WorkoutSessionEntity>(
         _entities[22].properties[15],
+      );
+}
+
+/// [OpenNutritionCatalogStateEntity] entity fields to define ObjectBox queries.
+class OpenNutritionCatalogStateEntity_ {
+  /// See [OpenNutritionCatalogStateEntity.id].
+  static final id = obx.QueryIntegerProperty<OpenNutritionCatalogStateEntity>(
+    _entities[23].properties[0],
+  );
+
+  /// See [OpenNutritionCatalogStateEntity.installedVersion].
+  static final installedVersion =
+      obx.QueryStringProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[1],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.activeBatchId].
+  static final activeBatchId =
+      obx.QueryStringProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[2],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.sourceArchiveUrl].
+  static final sourceArchiveUrl =
+      obx.QueryStringProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[3],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.expectedSha256].
+  static final expectedSha256 =
+      obx.QueryStringProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[4],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.actualSha256].
+  static final actualSha256 =
+      obx.QueryStringProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[5],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.archiveBytes].
+  static final archiveBytes =
+      obx.QueryIntegerProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[6],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.extractedBytes].
+  static final extractedBytes =
+      obx.QueryIntegerProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[7],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.parsedRows].
+  static final parsedRows =
+      obx.QueryIntegerProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[8],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.importedRows].
+  static final importedRows =
+      obx.QueryIntegerProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[9],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.skippedRows].
+  static final skippedRows =
+      obx.QueryIntegerProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[10],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.failedRows].
+  static final failedRows =
+      obx.QueryIntegerProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[11],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.importStatusCode].
+  static final importStatusCode =
+      obx.QueryStringProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[12],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.currentStageCode].
+  static final currentStageCode =
+      obx.QueryStringProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[13],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.lastError].
+  static final lastError =
+      obx.QueryStringProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[14],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.schemaJson].
+  static final schemaJson =
+      obx.QueryStringProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[15],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.attributionVersion].
+  static final attributionVersion =
+      obx.QueryStringProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[16],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.licenseAcceptedAtEpochMs].
+  static final licenseAcceptedAtEpochMs =
+      obx.QueryIntegerProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[17],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.startedAtEpochMs].
+  static final startedAtEpochMs =
+      obx.QueryIntegerProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[18],
+      );
+
+  /// See [OpenNutritionCatalogStateEntity.completedAtEpochMs].
+  static final completedAtEpochMs =
+      obx.QueryIntegerProperty<OpenNutritionCatalogStateEntity>(
+        _entities[23].properties[19],
+      );
+}
+
+/// [OpenNutritionFoodEntity] entity fields to define ObjectBox queries.
+class OpenNutritionFoodEntity_ {
+  /// See [OpenNutritionFoodEntity.id].
+  static final id = obx.QueryIntegerProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[0],
+  );
+
+  /// See [OpenNutritionFoodEntity.externalFoodId].
+  static final externalFoodId =
+      obx.QueryStringProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[1],
+      );
+
+  /// See [OpenNutritionFoodEntity.importBatchId].
+  static final importBatchId = obx.QueryStringProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[2],
+  );
+
+  /// See [OpenNutritionFoodEntity.datasetVersion].
+  static final datasetVersion =
+      obx.QueryStringProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[3],
+      );
+
+  /// See [OpenNutritionFoodEntity.name].
+  static final name = obx.QueryStringProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[4],
+  );
+
+  /// See [OpenNutritionFoodEntity.normalizedName].
+  static final normalizedName =
+      obx.QueryStringProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[5],
+      );
+
+  /// See [OpenNutritionFoodEntity.alternateNamesJson].
+  static final alternateNamesJson =
+      obx.QueryStringProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[6],
+      );
+
+  /// See [OpenNutritionFoodEntity.description].
+  static final description = obx.QueryStringProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[7],
+  );
+
+  /// See [OpenNutritionFoodEntity.typeCode].
+  static final typeCode = obx.QueryStringProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[8],
+  );
+
+  /// See [OpenNutritionFoodEntity.brand].
+  static final brand = obx.QueryStringProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[9],
+  );
+
+  /// See [OpenNutritionFoodEntity.normalizedBrand].
+  static final normalizedBrand =
+      obx.QueryStringProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[10],
+      );
+
+  /// See [OpenNutritionFoodEntity.barcode].
+  static final barcode = obx.QueryStringProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[11],
+  );
+
+  /// See [OpenNutritionFoodEntity.labelsJson].
+  static final labelsJson = obx.QueryStringProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[12],
+  );
+
+  /// See [OpenNutritionFoodEntity.ingredientsText].
+  static final ingredientsText =
+      obx.QueryStringProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[13],
+      );
+
+  /// See [OpenNutritionFoodEntity.ingredientAnalysisJson].
+  static final ingredientAnalysisJson =
+      obx.QueryStringProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[14],
+      );
+
+  /// See [OpenNutritionFoodEntity.sourceJson].
+  static final sourceJson = obx.QueryStringProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[15],
+  );
+
+  /// See [OpenNutritionFoodEntity.servingJson].
+  static final servingJson = obx.QueryStringProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[16],
+  );
+
+  /// See [OpenNutritionFoodEntity.packageSizeJson].
+  static final packageSizeJson =
+      obx.QueryStringProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[17],
+      );
+
+  /// See [OpenNutritionFoodEntity.nutrition100gJson].
+  static final nutrition100gJson =
+      obx.QueryStringProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[18],
+      );
+
+  /// See [OpenNutritionFoodEntity.additionalFieldsJson].
+  static final additionalFieldsJson =
+      obx.QueryStringProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[19],
+      );
+
+  /// See [OpenNutritionFoodEntity.normalizedSearchText].
+  static final normalizedSearchText =
+      obx.QueryStringProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[20],
+      );
+
+  /// See [OpenNutritionFoodEntity.kcalPer100g].
+  static final kcalPer100g = obx.QueryDoubleProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[21],
+  );
+
+  /// See [OpenNutritionFoodEntity.proteinPer100g].
+  static final proteinPer100g =
+      obx.QueryDoubleProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[22],
+      );
+
+  /// See [OpenNutritionFoodEntity.carbsPer100g].
+  static final carbsPer100g = obx.QueryDoubleProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[23],
+  );
+
+  /// See [OpenNutritionFoodEntity.fatPer100g].
+  static final fatPer100g = obx.QueryDoubleProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[24],
+  );
+
+  /// See [OpenNutritionFoodEntity.fiberPer100g].
+  static final fiberPer100g = obx.QueryDoubleProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[25],
+  );
+
+  /// See [OpenNutritionFoodEntity.sugarPer100g].
+  static final sugarPer100g = obx.QueryDoubleProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[26],
+  );
+
+  /// See [OpenNutritionFoodEntity.saturatedFatPer100g].
+  static final saturatedFatPer100g =
+      obx.QueryDoubleProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[27],
+      );
+
+  /// See [OpenNutritionFoodEntity.transFatPer100g].
+  static final transFatPer100g =
+      obx.QueryDoubleProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[28],
+      );
+
+  /// See [OpenNutritionFoodEntity.saltPer100g].
+  static final saltPer100g = obx.QueryDoubleProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[29],
+  );
+
+  /// See [OpenNutritionFoodEntity.sodiumPer100g].
+  static final sodiumPer100g = obx.QueryDoubleProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[30],
+  );
+
+  /// See [OpenNutritionFoodEntity.hasCompleteMacros].
+  static final hasCompleteMacros =
+      obx.QueryBooleanProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[31],
+      );
+
+  /// See [OpenNutritionFoodEntity.hasEstimatedValues].
+  static final hasEstimatedValues =
+      obx.QueryBooleanProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[32],
+      );
+
+  /// See [OpenNutritionFoodEntity.fromOpenFoodFacts].
+  static final fromOpenFoodFacts =
+      obx.QueryBooleanProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[33],
+      );
+
+  /// See [OpenNutritionFoodEntity.importedAtEpochMs].
+  static final importedAtEpochMs =
+      obx.QueryIntegerProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[34],
       );
 }
