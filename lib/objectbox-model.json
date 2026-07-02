@@ -355,7 +355,7 @@
     },
     {
       "id": "5:8645411654677832403",
-      "lastPropertyId": "34:8192332974309952111",
+      "lastPropertyId": "36:2329870446313036275",
       "name": "UserProfileEntity",
       "properties": [
         {
@@ -530,6 +530,16 @@
           "id": "34:8192332974309952111",
           "name": "sugarCarbsPercent",
           "type": 8
+        },
+        {
+          "id": "35:7617631344985078611",
+          "name": "mealTargetModeCode",
+          "type": 9
+        },
+        {
+          "id": "36:2329870446313036275",
+          "name": "mealTargetsJson",
+          "type": 9
         }
       ],
       "relations": []

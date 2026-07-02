@@ -26,6 +26,7 @@ import '../data/repositories/recipe_repository.dart';
 import '../data/services/food_analytics_service.dart';
 import '../data/services/food_planning_service.dart';
 import '../data/services/open_food_facts_service.dart';
+import '../domain/meal_target_settings.dart';
 import 'measurement_screens.dart' show measurementHubProvider;
 
 final FutureProvider<FoodHubV01Data> foodHubV01Provider =
@@ -237,6 +238,9 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
   @override
   Widget build(BuildContext context) {
     final FoodHubV01Data data = widget.data;
+    final String profileName = data.profile?.displayName.trim() ?? '';
+    final String dashboardTitle =
+        profileName.isEmpty ? 'Dashboard' : 'Dashboard di $profileName';
     final DailyRecordEntity? latest = data.latest;
     final MealNutritionTotals totals = data.latestTotals;
     final double latestTarget = latest == null
@@ -276,7 +280,7 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
       children: <Widget>[
         const SizedBox(height: AppSpacing.lg),
         Text(
-          'Dashboard',
+          dashboardTitle,
           style: Theme.of(context).textTheme.headlineLarge,
         ),
         const SizedBox(height: AppSpacing.sectionGap),
@@ -2952,8 +2956,15 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(profileSettingsRevisionProvider);
     final MealEntity meal = _details.meal;
     final MealNutritionTotals totals = _details.totals;
+    final UserProfileEntity? profile =
+        ref.watch(userProfileRepositoryProvider).getActiveProfile();
+    final MealNutrientTarget mealTarget = profile == null
+        ? MealNutrientTarget.empty
+        : MealTargetSettings.fromProfile(profile)
+            .effectiveTargetForSlot(meal.mealTypeCode);
     return Scaffold(
       appBar: AppBar(
         title: Text('${_slotEmoji(meal.mealTypeCode)} ${meal.title}'),
@@ -2970,7 +2981,11 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
       body: ListView(
         padding: _screenPadding,
         children: <Widget>[
-          _MealNutritionRecap(meal: meal, totals: totals),
+          _MealNutritionRecap(
+            meal: meal,
+            totals: totals,
+            target: mealTarget,
+          ),
           if (_details.isNutritionPartial) ...<Widget>[
             const SizedBox(height: AppSpacing.md),
             const TtAppCard(
@@ -7538,49 +7553,37 @@ class _MealNutritionRecap extends StatelessWidget {
   const _MealNutritionRecap({
     required this.meal,
     required this.totals,
+    required this.target,
   });
 
   final MealEntity meal;
   final MealNutritionTotals totals;
+  final MealNutrientTarget target;
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
+    final double? kcalTarget = target.kcal;
+    final double kcalProgress = kcalTarget == null || kcalTarget <= 0
+        ? 0
+        : (totals.kcal / kcalTarget).clamp(0, 1).toDouble();
     return TtAppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              SizedBox.square(
-                dimension: 0,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: <Widget>[
-                    CircularProgressIndicator(
-                      value: totals.kcal <= 0 ? 0 : 1,
-                      strokeWidth: 8,
-                      backgroundColor:
-                          Theme.of(context).colorScheme.surfaceContainerHighest,
-                    ),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        const Text('🔥'),
-                        Text(
-                          totals.kcal.round().toString(),
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        Text(
-                          'kcal',
-                          style: Theme.of(context).textTheme.labelSmall,
-                        ),
-                      ],
-                    ),
-                  ],
+              CircleAvatar(
+                radius: 25,
+                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                foregroundColor:
+                    Theme.of(context).colorScheme.onPrimaryContainer,
+                child: Text(
+                  _slotEmoji(meal.mealTypeCode),
+                  style: const TextStyle(fontSize: 24),
                 ),
               ),
-              const SizedBox(width: AppSpacing.lg),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -7606,6 +7609,11 @@ class _MealNutritionRecap extends StatelessWidget {
                               : 'Standard',
                           isWarning: meal.mealModeCode == 'free',
                         ),
+                        if (target.hasAny)
+                          const _StatusPill(
+                            label: 'Target attivo',
+                            isWarning: false,
+                          ),
                         if (meal.mealModeCode == 'free')
                           _StatusPill(
                             label: meal.freeMealTrackingCode.isEmpty
@@ -7618,40 +7626,55 @@ class _MealNutritionRecap extends StatelessWidget {
                   ],
                 ),
               ),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  color: colors.surfaceContainerHighest,
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  'Calorie',
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md,
-                    vertical: AppSpacing.sm,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(
-                        totals.kcal.round().toString(),
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.w800),
-                      ),
-                      Text('kcal',
-                          style: Theme.of(context).textTheme.labelSmall),
-                    ],
-                  ),
-                ),
+              ),
+              Text(
+                kcalTarget == null
+                    ? '${totals.kcal.round()} kcal'
+                    : '${totals.kcal.round()} / ${kcalTarget.round()} kcal',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
               ),
             ],
           ),
+          if (kcalTarget != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: kcalProgress,
+                minHeight: 10,
+              ),
+            ),
+          ],
           const SizedBox(height: AppSpacing.md),
           const _SummaryDivider(),
           const SizedBox(height: AppSpacing.md),
-          _MealMacroRow(label: 'Proteine', value: totals.proteinGrams),
-          _MealMacroRow(label: 'Carboidrati', value: totals.carbsGrams),
-          _MealMacroRow(label: 'Grassi', value: totals.fatGrams),
+          _MealMacroRow(
+            label: 'Proteine',
+            value: totals.proteinGrams,
+            target: target.proteinGrams,
+          ),
+          _MealMacroRow(
+            label: 'Carboidrati',
+            value: totals.carbsGrams,
+            target: target.carbsGrams,
+          ),
+          _MealMacroRow(
+            label: 'Grassi',
+            value: totals.fatGrams,
+            target: target.fatGrams,
+          ),
           _MealMacroRow(label: 'Fibre', value: totals.fiberGrams),
           _MealMacroRow(label: 'Zuccheri', value: totals.sugarGrams),
         ],
@@ -7664,22 +7687,44 @@ class _MealMacroRow extends StatelessWidget {
   const _MealMacroRow({
     required this.label,
     required this.value,
+    this.target,
   });
 
   final String label;
   final double value;
+  final double? target;
 
   @override
   Widget build(BuildContext context) {
+    final double? cleanTarget = target != null && target! > 0 ? target : null;
+    final double progress =
+        cleanTarget == null ? 0 : (value / cleanTarget).clamp(0, 1).toDouble();
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-      child: Row(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Expanded(child: Text(label)),
-          Text(
-            '${_fmt(value)} g',
-            style: const TextStyle(fontWeight: FontWeight.w700),
+          Row(
+            children: <Widget>[
+              Expanded(child: Text(label)),
+              Text(
+                cleanTarget == null
+                    ? '${_fmt(value)} g'
+                    : '${_fmt(value)} / ${_fmt(cleanTarget)} g',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ],
           ),
+          if (cleanTarget != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.xs),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 7,
+              ),
+            ),
+          ],
         ],
       ),
     );

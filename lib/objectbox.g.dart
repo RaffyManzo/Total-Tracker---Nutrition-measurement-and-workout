@@ -431,7 +431,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(5, 8645411654677832403),
     name: 'UserProfileEntity',
-    lastPropertyId: const obx_int.IdUid(34, 8192332974309952111),
+    lastPropertyId: const obx_int.IdUid(36, 2329870446313036275),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -637,6 +637,18 @@ final _entities = <obx_int.ModelEntity>[
         id: const obx_int.IdUid(34, 8192332974309952111),
         name: 'sugarCarbsPercent',
         type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(35, 7617631344985078611),
+        name: 'mealTargetModeCode',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(36, 2329870446313036275),
+        name: 'mealTargetsJson',
+        type: 9,
         flags: 0,
       ),
     ],
@@ -3496,7 +3508,11 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final macroModeCodeOffset = fbb.writeString(object.macroModeCode);
         final themeModeCodeOffset = fbb.writeString(object.themeModeCode);
         final languageCodeOffset = fbb.writeString(object.languageCode);
-        fbb.startTable(35);
+        final mealTargetModeCodeOffset = fbb.writeString(
+          object.mealTargetModeCode,
+        );
+        final mealTargetsJsonOffset = fbb.writeString(object.mealTargetsJson);
+        fbb.startTable(37);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, uuidOffset);
         fbb.addOffset(2, displayNameOffset);
@@ -3531,6 +3547,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addOffset(31, themeModeCodeOffset);
         fbb.addOffset(32, languageCodeOffset);
         fbb.addFloat64(33, object.sugarCarbsPercent);
+        fbb.addOffset(34, mealTargetModeCodeOffset);
+        fbb.addOffset(35, mealTargetsJsonOffset);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -3602,6 +3620,12 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final macroModeCodeParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 56, '');
+        final mealTargetModeCodeParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 72, '');
+        final mealTargetsJsonParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 74, '');
         final proteinGramsPerKgParam = const fb.Float64Reader().vTableGet(
           buffer,
           rootOffset,
@@ -3721,6 +3745,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
           averageWorkoutDurationMinutes: averageWorkoutDurationMinutesParam,
           workoutActivityTypeCode: workoutActivityTypeCodeParam,
           macroModeCode: macroModeCodeParam,
+          mealTargetModeCode: mealTargetModeCodeParam,
+          mealTargetsJson: mealTargetsJsonParam,
           proteinGramsPerKg: proteinGramsPerKgParam,
           fatGramsPerKg: fatGramsPerKgParam,
           fiberGramsPerKg: fiberGramsPerKgParam,
@@ -6868,6 +6894,16 @@ class UserProfileEntity_ {
   /// See [UserProfileEntity.sugarCarbsPercent].
   static final sugarCarbsPercent = obx.QueryDoubleProperty<UserProfileEntity>(
     _entities[4].properties[33],
+  );
+
+  /// See [UserProfileEntity.mealTargetModeCode].
+  static final mealTargetModeCode = obx.QueryStringProperty<UserProfileEntity>(
+    _entities[4].properties[34],
+  );
+
+  /// See [UserProfileEntity.mealTargetsJson].
+  static final mealTargetsJson = obx.QueryStringProperty<UserProfileEntity>(
+    _entities[4].properties[35],
   );
 }
 

@@ -28,6 +28,20 @@ class TargetModeCodes {
   };
 }
 
+class MealTargetModeCodes {
+  const MealTargetModeCodes._();
+
+  static const String none = 'none';
+  static const String shared = 'shared';
+  static const String custom = 'custom';
+
+  static const Set<String> values = <String>{
+    none,
+    shared,
+    custom,
+  };
+}
+
 class MacroModeCodes {
   const MacroModeCodes._();
 

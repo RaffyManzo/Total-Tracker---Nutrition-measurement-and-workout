@@ -164,6 +164,13 @@ class UserProfileRepository {
         'Unsupported macro mode code.',
       );
     }
+    if (!MealTargetModeCodes.values.contains(profile.mealTargetModeCode)) {
+      throw ArgumentError.value(
+        profile.mealTargetModeCode,
+        'mealTargetModeCode',
+        'Unsupported meal target mode code.',
+      );
+    }
     if (!WorkoutActivityTypeCodes.values
         .contains(profile.workoutActivityTypeCode)) {
       throw ArgumentError.value(

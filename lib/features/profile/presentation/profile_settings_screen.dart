@@ -5,11 +5,13 @@ import 'package:objectbox/objectbox.dart';
 
 import '../../../app/theme/app_spacing.dart';
 import '../../../core/database/objectbox_providers.dart';
+import '../../../core/services/app_info_service.dart';
 import '../../../shared/widgets/tt_app_card.dart';
 import '../../../shared/widgets/tt_global_nav_fab.dart';
 import '../../../shared/widgets/tt_section_header.dart';
 import '../../nutrition/data/entities/ingredient_entity.dart';
 import '../../nutrition/data/entities/nutrition_tracking_entities.dart';
+import '../../nutrition/domain/meal_target_settings.dart';
 import '../../nutrition/presentation/food_v01_screens.dart';
 import '../../nutrition/presentation/measurement_screens.dart';
 import '../data/entities/user_profile_entity.dart';
@@ -97,6 +99,9 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     );
     final String dataPath =
         ref.watch(objectBoxDatabaseProvider).directory ?? 'Store non aperto';
+    final MealTargetSettings mealTargetSettings =
+        MealTargetSettings.fromProfile(profile);
+    final AsyncValue<AppInfoSnapshot> appInfo = ref.watch(appInfoProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Profilo e impostazioni')),
@@ -213,6 +218,22 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
                       'Zuccheri max', '${estimate.sugarGrams.round()} g'),
                 ],
               ),
+              const SizedBox(height: AppSpacing.md),
+              _SummaryCard(
+                title: 'Target per pasto',
+                icon: Icons.lunch_dining_outlined,
+                onEdit: () => _showMealTargetsSheet(profile),
+                rows: <_SettingRowData>[
+                  _SettingRowData(
+                    'Modalita',
+                    _mealTargetModeLabel(mealTargetSettings.modeCode),
+                  ),
+                  _SettingRowData(
+                    'Configurazione',
+                    _mealTargetSettingsSummary(mealTargetSettings),
+                  ),
+                ],
+              ),
               const SizedBox(height: AppSpacing.sectionGap),
               const TtSectionHeader(title: 'App e dati'),
               const SizedBox(height: AppSpacing.md),
@@ -229,6 +250,11 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
                     'Food Plan',
                   ),
                 ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _AppInformationCard(
+                appInfo: appInfo,
+                onRefresh: () => ref.invalidate(appInfoProvider),
               ),
               const SizedBox(height: AppSpacing.md),
               _SummaryCard(
@@ -733,6 +759,27 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       },
     );
     _finishSheet(profile, saved);
+  }
+
+  Future<void> _showMealTargetsSheet(UserProfileEntity profile) async {
+    final MealTargetSettings? settings =
+        await showModalBottomSheet<MealTargetSettings>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) {
+        return _MealTargetEditorSheet(
+          initial: MealTargetSettings.fromProfile(profile),
+        );
+      },
+    );
+    if (settings == null) {
+      return;
+    }
+    profile.mealTargetModeCode = settings.modeCode;
+    profile.mealTargetsJson = settings.toJsonString();
+    await _save(profile);
   }
 
   Future<void> _showAppSheet(UserProfileEntity profile) async {
@@ -1422,6 +1469,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     ref.invalidate(measurementHubProvider);
     ref.invalidate(ingredientArchiveProvider);
     ref.invalidate(recipeArchiveProvider);
+    ref.invalidate(appInfoProvider);
     setState(() {});
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Dati selezionati eliminati.')),
@@ -1465,7 +1513,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       profile.fiberGramsPerKg = _toDouble(_fiberKg.text) ?? 0.5;
       profile.carbsGramsPerKg = _toDouble(_carbsKg.text) ?? 3;
       profile.sugarCarbsPercent =
-          (_toDouble(_sugarCarbsPercent.text) ?? 15).clamp(0, 100).toDouble();
+          (_toDouble(_sugarCarbsPercent.text) ?? 25).clamp(0, 100).toDouble();
       profile.themeModeCode = _themeMode;
       profile.languageCode = _language;
       profile.kcalPerKg = _kcalPerKgForWeightLossResponse(_weightLossResponse);
@@ -1505,6 +1553,450 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       dailyRepository.save(day);
     }
   }
+}
+
+class _AppInformationCard extends StatelessWidget {
+  const _AppInformationCard({
+    required this.appInfo,
+    required this.onRefresh,
+  });
+
+  final AsyncValue<AppInfoSnapshot> appInfo;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    return appInfo.when(
+      loading: () => const TtAppCard(
+        child: Row(
+          children: <Widget>[
+            SizedBox.square(
+              dimension: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: AppSpacing.md),
+            Expanded(child: Text('Caricamento informazioni app...')),
+          ],
+        ),
+      ),
+      error: (Object error, StackTrace stackTrace) => TtAppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              'Informazioni app non disponibili',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(error.toString(),
+                style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: AppSpacing.md),
+            OutlinedButton.icon(
+              onPressed: onRefresh,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Riprova'),
+            ),
+          ],
+        ),
+      ),
+      data: (AppInfoSnapshot info) => _SummaryCard(
+        title: 'Informazioni app',
+        icon: Icons.info_outline_rounded,
+        onEdit: onRefresh,
+        actionIcon: Icons.refresh_rounded,
+        actionTooltip: 'Aggiorna',
+        rows: <_SettingRowData>[
+          _SettingRowData('Versione', info.versionLabel),
+          _SettingRowData(
+            'Spazio dati locali',
+            formatAppByteSize(info.localDataBytes),
+          ),
+          _SettingRowData(
+            'Spazio ObjectBox',
+            formatAppByteSize(info.objectBoxBytes),
+          ),
+          _SettingRowData('Directory file', info.filesDirectory),
+          _SettingRowData(
+            'Directory ObjectBox',
+            info.objectBoxDirectory.isEmpty
+                ? 'Store non aperto'
+                : info.objectBoxDirectory,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MealTargetEditorSheet extends StatefulWidget {
+  const _MealTargetEditorSheet({required this.initial});
+
+  final MealTargetSettings initial;
+
+  @override
+  State<_MealTargetEditorSheet> createState() => _MealTargetEditorSheetState();
+}
+
+class _MealTargetEditorSheetState extends State<_MealTargetEditorSheet> {
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final Map<String, TextEditingController> _controllers =
+      <String, TextEditingController>{};
+  late String _modeCode;
+
+  static const List<String> _fields = <String>[
+    'kcal',
+    'protein',
+    'carbs',
+    'fat',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _modeCode = MealTargetModeCodes.values.contains(widget.initial.modeCode)
+        ? widget.initial.modeCode
+        : MealTargetModeCodes.none;
+    _seedControllers('shared', widget.initial.sharedTarget);
+    for (final String slot in MealTargetSettings.supportedSlots) {
+      _seedControllers(
+        slot,
+        widget.initial.slotTargets[slot] ?? MealNutrientTarget.empty,
+      );
+    }
+  }
+
+  void _seedControllers(String group, MealNutrientTarget target) {
+    final Map<String, double?> values = <String, double?>{
+      'kcal': target.kcal,
+      'protein': target.proteinGrams,
+      'carbs': target.carbsGrams,
+      'fat': target.fatGrams,
+    };
+    for (final String field in _fields) {
+      _controllers['${group}_$field'] = TextEditingController(
+        text: _optionalNumber(values[field]),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final TextEditingController controller in _controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  TextEditingController _controller(String group, String field) {
+    return _controllers['${group}_$field']!;
+  }
+
+  MealNutrientTarget _targetFor(String group) {
+    return MealNutrientTarget(
+      kcal: _toDouble(_controller(group, 'kcal').text),
+      proteinGrams: _toDouble(_controller(group, 'protein').text),
+      carbsGrams: _toDouble(_controller(group, 'carbs').text),
+      fatGrams: _toDouble(_controller(group, 'fat').text),
+    ).normalized();
+  }
+
+  MealTargetSettings _settings() {
+    return MealTargetSettings(
+      modeCode: _modeCode,
+      sharedTarget: _targetFor('shared'),
+      slotTargets: <String, MealNutrientTarget>{
+        for (final String slot in MealTargetSettings.supportedSlots)
+          slot: _targetFor(slot),
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FractionallySizedBox(
+      heightFactor: 0.92,
+      child: Form(
+        key: _formKey,
+        child: Column(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.sm,
+                AppSpacing.sm,
+                AppSpacing.md,
+              ),
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'Target per pasto',
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                        Text(
+                          'Ogni valore e facoltativo. Le barre compaiono solo per i target compilati.',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Chiudi',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  0,
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                ),
+                children: <Widget>[
+                  DropdownButtonFormField<String>(
+                    initialValue: _modeCode,
+                    decoration: const InputDecoration(
+                      labelText: 'Modalita target',
+                    ),
+                    items: const <DropdownMenuItem<String>>[
+                      DropdownMenuItem<String>(
+                        value: MealTargetModeCodes.none,
+                        child: Text('Nessun target per pasto'),
+                      ),
+                      DropdownMenuItem<String>(
+                        value: MealTargetModeCodes.shared,
+                        child: Text('Stesso target per tutti i pasti'),
+                      ),
+                      DropdownMenuItem<String>(
+                        value: MealTargetModeCodes.custom,
+                        child: Text('Target personalizzati per slot'),
+                      ),
+                    ],
+                    onChanged: (String? value) {
+                      if (value != null) {
+                        setState(() => _modeCode = value);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  if (_modeCode == MealTargetModeCodes.none)
+                    const TtAppCard(
+                      child: Text(
+                        'I pasti continueranno a mostrare i valori consumati, senza barre di avanzamento.',
+                      ),
+                    ),
+                  if (_modeCode == MealTargetModeCodes.shared)
+                    _targetCard(
+                      group: 'shared',
+                      title: 'Target condiviso',
+                      subtitle:
+                          'Applicato a colazione, spuntino, pranzo e cena.',
+                    ),
+                  if (_modeCode == MealTargetModeCodes.custom)
+                    for (final String slot
+                        in MealTargetSettings.supportedSlots) ...<Widget>[
+                      _targetCard(
+                        group: slot,
+                        title: _mealSlotLabel(slot),
+                        subtitle: 'Target facoltativi per questo slot.',
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                    ],
+                ],
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Annulla'),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () {
+                          if (!_formKey.currentState!.validate()) {
+                            return;
+                          }
+                          Navigator.of(context).pop(_settings());
+                        },
+                        child: const Text('Salva'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _targetCard({
+    required String group,
+    required String title,
+    required String subtitle,
+  }) {
+    return TtAppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: _targetField(
+                  controller: _controller(group, 'kcal'),
+                  label: 'Calorie',
+                  suffix: 'kcal',
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: _targetField(
+                  controller: _controller(group, 'protein'),
+                  label: 'Proteine',
+                  suffix: 'g',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: _targetField(
+                  controller: _controller(group, 'carbs'),
+                  label: 'Carboidrati',
+                  suffix: 'g',
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: _targetField(
+                  controller: _controller(group, 'fat'),
+                  label: 'Grassi',
+                  suffix: 'g',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _targetField({
+    required TextEditingController controller,
+    required String label,
+    required String suffix,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: <TextInputFormatter>[
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9,.]')),
+      ],
+      decoration: InputDecoration(
+        labelText: label,
+        suffixText: suffix,
+        helperText: 'Facoltativo',
+      ),
+      validator: (String? value) {
+        final String clean = value?.trim() ?? '';
+        if (clean.isEmpty) {
+          return null;
+        }
+        final double? parsed = _toDouble(clean);
+        if (parsed == null || parsed <= 0) {
+          return 'Inserisci un valore positivo';
+        }
+        return null;
+      },
+    );
+  }
+}
+
+String _mealTargetModeLabel(String code) {
+  return switch (code) {
+    MealTargetModeCodes.shared => 'Unico per tutti i pasti',
+    MealTargetModeCodes.custom => 'Personalizzato per slot',
+    _ => 'Disattivato',
+  };
+}
+
+String _mealTargetSettingsSummary(MealTargetSettings settings) {
+  if (settings.modeCode == MealTargetModeCodes.shared) {
+    return settings.sharedTarget.hasAny
+        ? _mealTargetCompactLabel(settings.sharedTarget)
+        : 'Nessun valore compilato';
+  }
+  if (settings.modeCode == MealTargetModeCodes.custom) {
+    final int configured = MealTargetSettings.supportedSlots
+        .where(
+          (String slot) =>
+              (settings.slotTargets[slot] ?? MealNutrientTarget.empty).hasAny,
+        )
+        .length;
+    return '$configured/4 slot configurati';
+  }
+  return 'Nessun target configurato';
+}
+
+String _mealTargetCompactLabel(MealNutrientTarget target) {
+  final List<String> values = <String>[
+    if (target.kcal != null) '${_optionalNumber(target.kcal)} kcal',
+    if (target.proteinGrams != null)
+      'P ${_optionalNumber(target.proteinGrams)} g',
+    if (target.carbsGrams != null) 'C ${_optionalNumber(target.carbsGrams)} g',
+    if (target.fatGrams != null) 'G ${_optionalNumber(target.fatGrams)} g',
+  ];
+  return values.isEmpty ? 'Nessun valore compilato' : values.join(' · ');
+}
+
+String _mealSlotLabel(String slot) {
+  return switch (slot) {
+    'colazione' => 'Colazione',
+    'spuntino' => 'Spuntino',
+    'pranzo' => 'Pranzo',
+    'cena' => 'Cena',
+    _ => slot,
+  };
+}
+
+String _optionalNumber(double? value) {
+  if (value == null) {
+    return '';
+  }
+  if (value == value.roundToDouble()) {
+    return value.toStringAsFixed(0);
+  }
+  return value
+      .toStringAsFixed(2)
+      .replaceFirst(RegExp(r'0+$'), '')
+      .replaceFirst(RegExp(r'\.$'), '');
 }
 
 enum _TransferDirection { export, import }
@@ -1599,6 +2091,8 @@ class _SummaryCard extends StatelessWidget {
     required this.rows,
     this.onEdit,
     this.onTap,
+    this.actionIcon = Icons.edit_rounded,
+    this.actionTooltip = 'Modifica',
   });
 
   final String title;
@@ -1606,6 +2100,8 @@ class _SummaryCard extends StatelessWidget {
   final List<_SettingRowData> rows;
   final VoidCallback? onEdit;
   final VoidCallback? onTap;
+  final IconData actionIcon;
+  final String actionTooltip;
 
   @override
   Widget build(BuildContext context) {
@@ -1627,9 +2123,9 @@ class _SummaryCard extends StatelessWidget {
               ),
               if (onEdit != null)
                 IconButton(
-                  tooltip: 'Modifica',
+                  tooltip: actionTooltip,
                   onPressed: onEdit,
-                  icon: const Icon(Icons.edit_rounded),
+                  icon: Icon(actionIcon),
                 ),
             ],
           ),
