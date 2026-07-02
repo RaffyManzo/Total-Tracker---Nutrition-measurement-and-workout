@@ -210,39 +210,45 @@ class OpenNutritionImportService {
         importBatchId: batchId,
         importedAtEpochMs: started,
       );
-      final lines = tsv
-          .openRead()
-          .transform(utf8.decoder)
-          .transform(const LineSplitter());
+      final records = const OpenNutritionTsvRecordDecoder().bind(
+        tsv.openRead().transform(utf8.decoder),
+      );
       var first = true;
       var consumedBytes = 0;
       var parsed = 0;
       var imported = 0;
       var skipped = 0;
       var failed = 0;
+      var nutritionRows = 0;
+      var imageRows = 0;
       final buffer = <OpenNutritionFoodEntity>[];
       final totalBytes = await tsv.length();
 
       state.currentStageCode = OpenNutritionImportStatusCodes.converting;
       state.importStatusCode = OpenNutritionImportStatusCodes.converting;
       await repository.saveState(state);
-      await for (final line in lines) {
+      await for (final record in records) {
         cancellation.throwIfCancelled();
-        consumedBytes += utf8.encode(line).length + 1;
+        consumedBytes += utf8.encode(record.join('	')).length + 1;
         if (first) {
-          parser.readHeader(line);
+          parser.readHeaderRecord(record);
           state.schemaJson = jsonEncode(parser.headers);
           first = false;
           continue;
         }
-        if (line.trim().isEmpty) continue;
+        if (record.every((String value) => value.trim().isEmpty)) continue;
         parsed += 1;
         try {
-          final result = parser.parseRow(line);
+          final result = parser.parseRecord(record);
           if (result.entity == null) {
             skipped += 1;
           } else {
-            buffer.add(result.entity!);
+            final entity = result.entity!;
+            if (entity.hasNutritionData) nutritionRows += 1;
+            if (entity.imageUrl.isNotEmpty || entity.imageSmallUrl.isNotEmpty) {
+              imageRows += 1;
+            }
+            buffer.add(entity);
           }
         } catch (_) {
           failed += 1;
@@ -276,7 +282,19 @@ class OpenNutritionImportService {
         imported += buffer.length;
       }
       if (imported == 0) throw StateError('Nessun record valido importato.');
-
+      final nutritionRatio = nutritionRows / imported;
+      if (imported >= 100 && nutritionRatio < 0.01) {
+        throw StateError(
+          'Importazione rifiutata: soltanto $nutritionRows record su $imported '
+          'contengono dati nutrizionali. Il catalogo precedente resta attivo.',
+        );
+      }
+      state.schemaJson = jsonEncode(<String, Object?>{
+        'headers': parser.headers,
+        'nutritionRows': nutritionRows,
+        'imageRows': imageRows,
+        'nutritionRatio': nutritionRatio,
+      });
       cancellation.throwIfCancelled();
       state.currentStageCode = OpenNutritionImportStatusCodes.activating;
       state.importStatusCode = OpenNutritionImportStatusCodes.activating;

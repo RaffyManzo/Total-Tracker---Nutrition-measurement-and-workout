@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../app/theme/app_spacing.dart';
 import '../../../core/database/objectbox_providers.dart';
+import '../../../core/preferences/food_service_preferences.dart';
 import '../../../shared/widgets/tt_app_card.dart';
 import '../../../shared/widgets/tt_global_nav_fab.dart';
 import '../../../shared/widgets/tt_mini_charts.dart';
@@ -5391,10 +5392,14 @@ Future<bool> _showIngredientEditSheet(
                         'Barcode',
                         suffixIcon: IconButton(
                           tooltip: 'Apri scanner',
-                          onPressed: () {
-                            Navigator.of(sheetContext).pop(false);
-                            parentContext.push('/food/ingredients/scan');
-                          },
+                          onPressed: ref
+                                  .read(foodServicePreferencesProvider)
+                                  .openFoodFactsEnabled
+                              ? () {
+                                  Navigator.of(sheetContext).pop(false);
+                                  parentContext.push('/food/ingredients/scan');
+                                }
+                              : null,
                           icon: const Icon(Icons.qr_code_scanner_rounded),
                         ),
                       ),
@@ -6075,6 +6080,25 @@ class _IngredientScannerScreenState
 
   @override
   Widget build(BuildContext context) {
+    final servicePreferences = ref.watch(foodServicePreferencesProvider);
+    if (!servicePreferences.openFoodFactsEnabled) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Scanner barcode')),
+        bottomNavigationBar:
+            const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(AppSpacing.lg),
+            child: TtAppCard(
+              child: Text(
+                'Open Food Facts Ã¨ disabilitato nelle impostazioni. '
+                'Riabilitalo per usare scanner e ricerca barcode.',
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Scanner barcode'),

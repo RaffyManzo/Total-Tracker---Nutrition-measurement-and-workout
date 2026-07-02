@@ -2642,7 +2642,7 @@
     },
     {
       "id": "25:1938988888524376966",
-      "lastPropertyId": "35:3627344830725544412",
+      "lastPropertyId": "38:2945107848718850742",
       "name": "OpenNutritionFoodEntity",
       "properties": [
         {
@@ -2836,6 +2836,21 @@
           "id": "35:3627344830725544412",
           "name": "importedAtEpochMs",
           "type": 6
+        },
+        {
+          "id": "36:8355169615590212509",
+          "name": "imageUrl",
+          "type": 9
+        },
+        {
+          "id": "37:6833142271033484840",
+          "name": "imageSmallUrl",
+          "type": 9
+        },
+        {
+          "id": "38:2945107848718850742",
+          "name": "hasNutritionData",
+          "type": 1
         }
       ],
       "relations": []

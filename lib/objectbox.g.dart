@@ -3117,7 +3117,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(25, 1938988888524376966),
     name: 'OpenNutritionFoodEntity',
-    lastPropertyId: const obx_int.IdUid(35, 3627344830725544412),
+    lastPropertyId: const obx_int.IdUid(38, 2945107848718850742),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -3336,6 +3336,24 @@ final _entities = <obx_int.ModelEntity>[
         id: const obx_int.IdUid(35, 3627344830725544412),
         name: 'importedAtEpochMs',
         type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(36, 8355169615590212509),
+        name: 'imageUrl',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(37, 6833142271033484840),
+        name: 'imageSmallUrl',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(38, 2945107848718850742),
+        name: 'hasNutritionData',
+        type: 1,
         flags: 0,
       ),
     ],
@@ -7089,7 +7107,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final normalizedSearchTextOffset = fbb.writeString(
           object.normalizedSearchText,
         );
-        fbb.startTable(36);
+        final imageUrlOffset = fbb.writeString(object.imageUrl);
+        final imageSmallUrlOffset = fbb.writeString(object.imageSmallUrl);
+        fbb.startTable(39);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, externalFoodIdOffset);
         fbb.addOffset(2, importBatchIdOffset);
@@ -7125,6 +7145,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addBool(32, object.hasEstimatedValues);
         fbb.addBool(33, object.fromOpenFoodFacts);
         fbb.addInt64(34, object.importedAtEpochMs);
+        fbb.addOffset(35, imageUrlOffset);
+        fbb.addOffset(36, imageSmallUrlOffset);
+        fbb.addBool(37, object.hasNutritionData);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -7170,6 +7193,12 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final barcodeParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 26, '');
+        final imageUrlParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 74, '');
+        final imageSmallUrlParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 76, '');
         final labelsJsonParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 28, '');
@@ -7257,6 +7286,12 @@ obx_int.ModelDefinition getObjectBoxModel() {
           64,
           0,
         );
+        final hasNutritionDataParam = const fb.BoolReader().vTableGet(
+          buffer,
+          rootOffset,
+          78,
+          false,
+        );
         final hasCompleteMacrosParam = const fb.BoolReader().vTableGet(
           buffer,
           rootOffset,
@@ -7294,6 +7329,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
           brand: brandParam,
           normalizedBrand: normalizedBrandParam,
           barcode: barcodeParam,
+          imageUrl: imageUrlParam,
+          imageSmallUrl: imageSmallUrlParam,
           labelsJson: labelsJsonParam,
           ingredientsText: ingredientsTextParam,
           ingredientAnalysisJson: ingredientAnalysisJsonParam,
@@ -7313,6 +7350,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
           transFatPer100g: transFatPer100gParam,
           saltPer100g: saltPer100gParam,
           sodiumPer100g: sodiumPer100gParam,
+          hasNutritionData: hasNutritionDataParam,
           hasCompleteMacros: hasCompleteMacrosParam,
           hasEstimatedValues: hasEstimatedValuesParam,
           fromOpenFoodFacts: fromOpenFoodFactsParam,
@@ -9991,5 +10029,21 @@ class OpenNutritionFoodEntity_ {
   static final importedAtEpochMs =
       obx.QueryIntegerProperty<OpenNutritionFoodEntity>(
         _entities[24].properties[34],
+      );
+
+  /// See [OpenNutritionFoodEntity.imageUrl].
+  static final imageUrl = obx.QueryStringProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[35],
+  );
+
+  /// See [OpenNutritionFoodEntity.imageSmallUrl].
+  static final imageSmallUrl = obx.QueryStringProperty<OpenNutritionFoodEntity>(
+    _entities[24].properties[36],
+  );
+
+  /// See [OpenNutritionFoodEntity.hasNutritionData].
+  static final hasNutritionData =
+      obx.QueryBooleanProperty<OpenNutritionFoodEntity>(
+        _entities[24].properties[37],
       );
 }

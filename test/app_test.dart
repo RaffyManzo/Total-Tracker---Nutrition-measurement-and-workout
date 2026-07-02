@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:total_tracker/app/app.dart';
@@ -13,7 +14,7 @@ import 'helpers/objectbox_test_helper.dart';
 
 void main() {
   testWidgets('shows the Food Plan dashboard', (WidgetTester tester) async {
-    final database = await openTestDatabase();
+    final database = (await tester.runAsync(() => openTestDatabase()))!;
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -53,5 +54,7 @@ void main() {
 
     expect(find.text('Dashboard'), findsWidgets);
     expect(find.text('Riepilogo giornaliero'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
   });
 }

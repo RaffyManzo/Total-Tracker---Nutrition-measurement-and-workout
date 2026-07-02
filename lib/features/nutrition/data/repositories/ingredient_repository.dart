@@ -86,6 +86,23 @@ class IngredientRepository {
       ..sort(_sortByName);
   }
 
+  List<IngredientEntity> getRecentActive({int limit = 50}) {
+    final safeLimit = limit < 0 ? 0 : limit;
+    final values = _box
+        .getAll()
+        .where(
+          (IngredientEntity ingredient) =>
+              !ingredient.isArchived && ingredient.deletedAtEpochMs == null,
+        )
+        .toList()
+      ..sort((IngredientEntity a, IngredientEntity b) {
+        final createdCompare = b.createdAtEpochMs.compareTo(a.createdAtEpochMs);
+        if (createdCompare != 0) return createdCompare;
+        return b.id.compareTo(a.id);
+      });
+    return values.take(safeLimit).toList();
+  }
+
   List<IngredientEntity> searchByNameLimited(
     String query, {
     int offset = 0,

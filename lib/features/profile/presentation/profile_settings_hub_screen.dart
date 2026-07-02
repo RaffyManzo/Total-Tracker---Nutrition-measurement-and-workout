@@ -40,6 +40,23 @@ class ProfileSettingsHubScreen extends StatelessWidget {
         directRoute: '/settings/opennutrition',
       ),
       const _SettingsSectionCardData(
+        code: 'notifications',
+        title: 'Notifiche',
+        subtitle:
+            'Reminder pasti, peso, misurazioni e operazioni in background.',
+        icon: Icons.notifications_outlined,
+        accent: Color(0xFFB45309),
+        directRoute: '/settings/notifications',
+      ),
+      const _SettingsSectionCardData(
+        code: 'food_services',
+        title: 'Servizi alimentari online',
+        subtitle: 'Abilita o disabilita Open Food Facts e i relativi pulsanti.',
+        icon: Icons.cloud_outlined,
+        accent: Color(0xFF2563EB),
+        directRoute: '/settings/food-services',
+      ),
+      const _SettingsSectionCardData(
         code: 'transfer',
         title: 'Import / Export',
         subtitle: 'Archivi .totaltracker, cartella export e import selettivo.',

@@ -41,5 +41,14 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>processing</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.raffymanzo.totaltracker.opennutrition.import</string>
+		<string>com.raffymanzo.totaltracker.reminders.reconcile</string>
+	</array>
 </dict>
 </plist>

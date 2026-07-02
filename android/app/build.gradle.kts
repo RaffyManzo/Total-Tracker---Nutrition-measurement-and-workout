@@ -6,10 +6,11 @@ plugins {
 
 android {
     namespace = "com.raffymanzo.totaltracker"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = maxOf(flutter.compileSdkVersion, 35)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
@@ -19,6 +20,7 @@ android {
     }
 
     defaultConfig {
+        multiDexEnabled = true
         applicationId = "com.raffymanzo.totaltracker"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
@@ -29,4 +31,8 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

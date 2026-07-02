@@ -15,6 +15,8 @@ class OpenNutritionFoodEntity {
     this.brand = '',
     this.normalizedBrand = '',
     this.barcode = '',
+    this.imageUrl = '',
+    this.imageSmallUrl = '',
     this.labelsJson = '[]',
     this.ingredientsText = '',
     this.ingredientAnalysisJson = '{}',
@@ -34,6 +36,7 @@ class OpenNutritionFoodEntity {
     this.transFatPer100g = 0,
     this.saltPer100g = 0,
     this.sodiumPer100g = 0,
+    this.hasNutritionData = false,
     this.hasCompleteMacros = false,
     this.hasEstimatedValues = false,
     this.fromOpenFoodFacts = false,
@@ -71,6 +74,8 @@ class OpenNutritionFoodEntity {
   @Index()
   String barcode;
 
+  String imageUrl;
+  String imageSmallUrl;
   String labelsJson;
   String ingredientsText;
   String ingredientAnalysisJson;
@@ -93,6 +98,7 @@ class OpenNutritionFoodEntity {
   double transFatPer100g;
   double saltPer100g;
   double sodiumPer100g;
+  bool hasNutritionData;
   bool hasCompleteMacros;
   bool hasEstimatedValues;
   bool fromOpenFoodFacts;

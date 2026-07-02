@@ -1,18 +1,22 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/database/objectbox_providers.dart';
-import '../../../shared/widgets/tt_global_nav_fab.dart';
+import '../../../core/preferences/food_service_preferences.dart';
 import '../data/entities/ingredient_entity.dart';
 import '../data/providers/open_nutrition_providers.dart';
 import '../data/services/unified_ingredient_search_service.dart';
+import '../domain/nutrition_codes.dart';
 
 class UnifiedIngredientSearchScreen extends ConsumerStatefulWidget {
-  const UnifiedIngredientSearchScreen({this.selectionMode = false, super.key});
+  const UnifiedIngredientSearchScreen({
+    super.key,
+    this.selectionMode = false,
+  });
 
   final bool selectionMode;
 
@@ -24,247 +28,569 @@ class UnifiedIngredientSearchScreen extends ConsumerStatefulWidget {
 class _UnifiedIngredientSearchScreenState
     extends ConsumerState<UnifiedIngredientSearchScreen> {
   final TextEditingController _controller = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   Timer? _debounce;
-  String _scope = UnifiedIngredientSearchScopeCodes.all;
-  int _page = 0;
-  bool _loading = false;
-  String _error = '';
-  UnifiedIngredientSearchPage _result = const UnifiedIngredientSearchPage(
+  String _query = '';
+  int _localPage = 0;
+  int _catalogPage = 0;
+  bool _localExpanded = true;
+  bool _catalogExpanded = true;
+  bool _loading = true;
+  Object? _localError;
+  Object? _catalogError;
+  UnifiedIngredientSearchPage _local = const UnifiedIngredientSearchPage(
     items: <UnifiedIngredientSearchItem>[],
     page: 0,
     hasNext: false,
     hasPrevious: false,
   );
+  UnifiedIngredientSearchPage _catalog = const UnifiedIngredientSearchPage(
+    items: <UnifiedIngredientSearchItem>[],
+    page: 0,
+    hasNext: false,
+    hasPrevious: false,
+  );
+  bool _catalogAvailable = false;
 
   @override
   void initState() {
     super.initState();
-    scheduleMicrotask(_search);
+    Future<void>.microtask(_reload);
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
     _controller.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  Future<void> _reload() async {
+    if (!mounted) return;
+    setState(() {
+      _loading = true;
+      _localError = null;
+      _catalogError = null;
+    });
+    final service = ref.read(unifiedIngredientSearchServiceProvider);
+    UnifiedIngredientSearchPage local = _local;
+    UnifiedIngredientSearchPage catalog = _catalog;
+    Object? localError;
+    Object? catalogError;
+    var available = false;
+
+    try {
+      local = await service.searchPersonal(query: _query, page: _localPage);
+    } catch (error) {
+      localError = error;
+    }
+
+    try {
+      available = await service.isOpenNutritionAvailable();
+      if (_query.trim().isNotEmpty && available) {
+        catalog = await service.searchOpenNutrition(
+          query: _query,
+          page: _catalogPage,
+        );
+      } else {
+        catalog = const UnifiedIngredientSearchPage(
+          items: <UnifiedIngredientSearchItem>[],
+          page: 0,
+          hasNext: false,
+          hasPrevious: false,
+        );
+      }
+    } catch (error) {
+      catalogError = error;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _local = local;
+      _catalog = catalog;
+      _catalogAvailable = available;
+      _localError = localError;
+      _catalogError = catalogError;
+      _loading = false;
+    });
+  }
+
+  void _onQueryChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 280), () {
+      if (!mounted) return;
+      setState(() {
+        _query = value.trim();
+        _localPage = 0;
+        _catalogPage = 0;
+      });
+      _reload();
+    });
+  }
+
+  Future<void> _select(UnifiedIngredientSearchItem item) async {
+    final service = ref.read(unifiedIngredientSearchServiceProvider);
+    final IngredientEntity ingredient = item.personalIngredient ??
+        service.promote(item.openNutritionFood!);
+    ref.invalidate(openNutritionCatalogCountProvider);
+    if (!mounted) return;
+    if (widget.selectionMode) {
+      context.pop(ingredient);
+    } else {
+      await context.push('/food/ingredients/${ingredient.id}');
+      await _reload();
+    }
+  }
+
+  Future<void> _showCreateSheet() async {
+    final preferences = ref.read(foodServicePreferencesProvider);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                const Text(
+                  'Nuovo ingrediente',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Scegli come aggiungere l’alimento. Il catalogo '
+                  'OpenNutrition viene interrogato soltanto durante una ricerca.',
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: const Icon(Icons.person_outline),
+                  title: const Text('Inserimento manuale'),
+                  subtitle: const Text('Crea un alimento personale.'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    context.push('/food/ingredients/new').then((_) => _reload());
+                  },
+                ),
+                ListTile(
+                  enabled: preferences.openFoodFactsEnabled,
+                  leading: const Icon(Icons.qr_code_scanner_outlined),
+                  title: const Text('Open Food Facts'),
+                  subtitle: Text(
+                    preferences.openFoodFactsEnabled
+                        ? 'Scansiona il barcode o cerca online.'
+                        : 'Servizio disabilitato nelle impostazioni.',
+                  ),
+                  onTap: preferences.openFoodFactsEnabled
+                      ? () {
+                          Navigator.of(sheetContext).pop();
+                          context.push('/food/ingredients/scan').then((_) => _reload());
+                        }
+                      : null,
+                ),
+                if (_catalogAvailable)
+                  ListTile(
+                    leading: const Icon(Icons.storage_outlined),
+                    title: const Text('Catalogo OpenNutrition'),
+                    subtitle: const Text(
+                      'Digita almeno due caratteri nella barra di ricerca.',
+                    ),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _searchFocusNode.requestFocus();
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final searching = _query.isNotEmpty;
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          widget.selectionMode ? 'Scegli ingrediente' : 'Ingredienti',
-        ),
-        actions: <Widget>[
-          IconButton(
-            tooltip: 'Impostazioni OpenNutrition',
-            onPressed: () => context.push('/settings/opennutrition'),
-            icon: const Icon(Icons.storage),
-          ),
-          if (!widget.selectionMode)
-            IconButton(
-              tooltip: 'Scanner barcode',
-              onPressed: () => context.push('/food/ingredients/scan'),
-              icon: const Icon(Icons.qr_code_scanner_rounded),
-            ),
-        ],
+        title: Text(widget.selectionMode ? 'Seleziona alimento' : 'Ingredienti'),
       ),
-      bottomNavigationBar: widget.selectionMode
-          ? null
-          : const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          16,
-          16,
-          widget.selectionMode ? 24 : 120,
-        ),
-        children: <Widget>[
-          TextField(
-            controller: _controller,
-            decoration: const InputDecoration(
-              labelText: 'Cerca alimento',
-              prefixIcon: Icon(Icons.search_rounded),
-              helperText:
-                  'OpenNutrition si attiva da 2 caratteri. Massimo 25 risultati per pagina.',
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showCreateSheet,
+        icon: const Icon(Icons.add),
+        label: const Text('Nuovo'),
+      ),
+      body: RefreshIndicator(
+        onRefresh: _reload,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+          children: <Widget>[
+            TextField(
+              controller: _controller,
+              focusNode: _searchFocusNode,
+              onChanged: _onQueryChanged,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Cerca alimento, marca o barcode',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _controller.text.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () {
+                          _controller.clear();
+                          _onQueryChanged('');
+                          setState(() {});
+                        },
+                        icon: const Icon(Icons.clear),
+                      ),
+                border: const OutlineInputBorder(),
+              ),
             ),
-            onChanged: (_) {
-              _debounce?.cancel();
-              _debounce = Timer(const Duration(milliseconds: 300), () {
-                _page = 0;
-                _search();
-              });
-            },
-          ),
-          const SizedBox(height: 12),
-          SegmentedButton<String>(
-            segments: const <ButtonSegment<String>>[
-              ButtonSegment<String>(
-                value: UnifiedIngredientSearchScopeCodes.all,
-                label: Text('Tutti'),
+            const SizedBox(height: 16),
+            if (_loading) const LinearProgressIndicator(),
+            if (!searching) ...<Widget>[
+              _SectionHeader(
+                title: 'Ingredienti recenti',
+                subtitle: 'Massimo 50 elementi già importati o personali.',
+                expanded: true,
+                onToggle: null,
               ),
-              ButtonSegment<String>(
-                value: UnifiedIngredientSearchScopeCodes.personal,
-                label: Text('I miei'),
-              ),
-              ButtonSegment<String>(
-                value: UnifiedIngredientSearchScopeCodes.openNutrition,
-                label: Text('OpenNutrition'),
-              ),
-            ],
-            selected: <String>{_scope},
-            onSelectionChanged: (selection) {
-              setState(() {
-                _scope = selection.first;
-                _page = 0;
-              });
-              _search();
-            },
-          ),
-          const SizedBox(height: 12),
-          if (_scope == UnifiedIngredientSearchScopeCodes.all)
-            const _PriorityInfoCard(),
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.all(24),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_error.isNotEmpty)
-            Card(
-              color: Theme.of(context).colorScheme.errorContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(_error),
-              ),
-            )
-          else if (_result.items.isEmpty)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(20),
-                child: Text(
-                  'Nessun risultato. Installa OpenNutrition dalle impostazioni '
-                  'oppure crea un ingrediente personale.',
-                ),
-              ),
-            )
-          else
-            ..._buildResults(context),
-          if (!_loading && _result.items.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 12),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _result.hasPrevious
-                        ? () {
-                            _page -= 1;
-                            _search();
-                          }
-                        : null,
-                    icon: const Icon(Icons.chevron_left_rounded),
-                    label: const Text('Precedenti 25'),
+              const SizedBox(height: 8),
+              if (_localError != null)
+                _ErrorCard(error: _localError!, onRetry: _reload)
+              else if (_local.items.isEmpty && !_loading)
+                const _EmptyCard(
+                  message: 'Nessun ingrediente presente. Usa “Nuovo”.',
+                )
+              else
+                ..._local.items.map(
+                  (UnifiedIngredientSearchItem item) => _IngredientCard(
+                    item: item,
+                    onTap: () => _select(item),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text('Pagina ${_result.page + 1}'),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _result.hasNext
-                        ? () {
-                            _page += 1;
-                            _search();
-                          }
-                        : null,
-                    icon: const Icon(Icons.chevron_right_rounded),
-                    label: const Text('Successivi 25'),
+            ] else ...<Widget>[
+              _SectionHeader(
+                title: 'Importati da OpenFoodFacts e Personali',
+                subtitle: '${_local.items.length} risultati nella pagina',
+                expanded: _localExpanded,
+                onToggle: () => setState(() => _localExpanded = !_localExpanded),
+              ),
+              if (_localExpanded) ...<Widget>[
+                const SizedBox(height: 8),
+                if (_localError != null)
+                  _ErrorCard(error: _localError!, onRetry: _reload)
+                else if (_local.items.isEmpty && !_loading)
+                  const _EmptyCard(message: 'Nessun risultato locale.')
+                else
+                  ..._local.items.map(
+                    (UnifiedIngredientSearchItem item) => _IngredientCard(
+                      item: item,
+                      onTap: () => _select(item),
+                    ),
                   ),
+                _Pager(
+                  page: _local.page,
+                  hasPrevious: _local.hasPrevious,
+                  hasNext: _local.hasNext,
+                  onPrevious: () {
+                    setState(() => _localPage -= 1);
+                    _reload();
+                  },
+                  onNext: () {
+                    setState(() => _localPage += 1);
+                    _reload();
+                  },
                 ),
               ],
-            ),
+              const SizedBox(height: 12),
+              if (_catalogAvailable) ...<Widget>[
+                _SectionHeader(
+                  title: 'Catalogo OpenNutrition',
+                  subtitle: '${_catalog.items.length} risultati nella pagina',
+                  expanded: _catalogExpanded,
+                  onToggle: () =>
+                      setState(() => _catalogExpanded = !_catalogExpanded),
+                ),
+                if (_catalogExpanded) ...<Widget>[
+                  const SizedBox(height: 8),
+                  if (_query.length < 2)
+                    const _EmptyCard(
+                      message: 'Digita almeno due caratteri.',
+                    )
+                  else if (_catalogError != null)
+                    _ErrorCard(error: _catalogError!, onRetry: _reload)
+                  else if (_catalog.items.isEmpty && !_loading)
+                    const _EmptyCard(
+                      message: 'Nessun risultato nel catalogo OpenNutrition.',
+                    )
+                  else
+                    ..._catalog.items.map(
+                      (UnifiedIngredientSearchItem item) => _IngredientCard(
+                        item: item,
+                        onTap: () => _select(item),
+                      ),
+                    ),
+                  _Pager(
+                    page: _catalog.page,
+                    hasPrevious: _catalog.hasPrevious,
+                    hasNext: _catalog.hasNext,
+                    onPrevious: () {
+                      setState(() => _catalogPage -= 1);
+                      _reload();
+                    },
+                    onNext: () {
+                      setState(() => _catalogPage += 1);
+                      _reload();
+                    },
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Dati OpenNutrition: ODbL 1.0 / modified DbCL 1.0. '
+                      'I record derivati da Open Food Facts mantengono la relativa attribuzione.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ] else
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.storage_outlined),
+                    title: const Text('Catalogo OpenNutrition non disponibile'),
+                    subtitle: const Text(
+                      'Installalo e abilita la ricerca dalle impostazioni.',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push('/settings/opennutrition'),
+                  ),
+                ),
+            ],
           ],
-          if (_result.items.any((item) => !item.isPersonal)) ...<Widget>[
-            const SizedBox(height: 16),
-            const _AttributionCard(),
-          ],
-        ],
+        ),
       ),
-      floatingActionButton: widget.selectionMode
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: () => context.push('/food/ingredients/new'),
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Nuovo'),
-            ),
     );
   }
+}
 
-  List<Widget> _buildResults(BuildContext context) {
-    final widgets = <Widget>[];
-    var lastPersonal = false;
-    for (final item in _result.items) {
-      if (widgets.isEmpty || item.isPersonal != lastPersonal) {
-        widgets.add(
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
-            child: Text(
-              item.isPersonal ? 'I miei ingredienti' : 'Catalogo OpenNutrition',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({
+    required this.title,
+    required this.subtitle,
+    required this.expanded,
+    required this.onToggle,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool expanded;
+  final VoidCallback? onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        onTap: onToggle,
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: Text(subtitle),
+        trailing: onToggle == null
+            ? null
+            : Icon(expanded ? Icons.expand_less : Icons.expand_more),
+      ),
+    );
+  }
+}
+
+class _IngredientCard extends StatelessWidget {
+  const _IngredientCard({required this.item, required this.onTap});
+
+  final UnifiedIngredientSearchItem item;
+  final VoidCallback onTap;
+
+  IconData get _sourceIcon {
+    switch (item.sourceTypeCode) {
+      case IngredientSourceTypeCodes.openNutrition:
+        return Icons.storage_outlined;
+      case IngredientSourceTypeCodes.openFoodFacts:
+        return Icons.qr_code_2_outlined;
+      default:
+        return Icons.person_outline;
+    }
+  }
+
+  String get _sourceLabel {
+    switch (item.sourceTypeCode) {
+      case IngredientSourceTypeCodes.openNutrition:
+        return 'OpenNutrition';
+      case IngredientSourceTypeCodes.openFoodFacts:
+        return 'Open Food Facts';
+      default:
+        return 'Personale';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Row(
+            children: <Widget>[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 58,
+                  height: 58,
+                  child: _IngredientImage(source: item.imageUrl),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      item.displayName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    if (item.brand.isNotEmpty)
+                      Text(
+                        item.brand,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${item.kcalPer100g.toStringAsFixed(0)} kcal · '
+                      'P ${item.proteinPer100g.toStringAsFixed(1)} · '
+                      'C ${item.carbsPer100g.toStringAsFixed(1)} · '
+                      'G ${item.fatPer100g.toStringAsFixed(1)}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: _sourceLabel,
+                child: Semantics(
+                  label: _sourceLabel,
+                  child: Icon(_sourceIcon),
+                ),
+              ),
+            ],
           ),
-        );
-      }
-      lastPersonal = item.isPersonal;
-      widgets.add(
-        _IngredientResultCard(item: item, onTap: () => _select(item)),
+        ),
+      ),
+    );
+  }
+}
+
+class _IngredientImage extends StatelessWidget {
+  const _IngredientImage({required this.source});
+
+  final String source;
+
+  @override
+  Widget build(BuildContext context) {
+    const fallback = ColoredBox(
+      color: Color(0x11000000),
+      child: Icon(Icons.restaurant_outlined),
+    );
+    final value = source.trim();
+    if (value.isEmpty) return fallback;
+    final uri = Uri.tryParse(value);
+    if (uri != null && (uri.isScheme('http') || uri.isScheme('https'))) {
+      return Image.network(
+        value,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => fallback,
       );
-      widgets.add(const SizedBox(height: 8));
     }
-    return widgets;
+    if (value.startsWith('assets/')) {
+      return Image.asset(
+        value,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => fallback,
+      );
+    }
+    return Image.file(
+      File(value),
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => fallback,
+    );
   }
+}
 
-  Future<void> _search() async {
-    if (!mounted) return;
-    setState(() {
-      _loading = true;
-      _error = '';
-    });
-    try {
-      final result = await ref
-          .read(unifiedIngredientSearchServiceProvider)
-          .search(query: _controller.text, scopeCode: _scope, page: _page);
-      if (!mounted) return;
-      setState(() => _result = result);
-    } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+class _Pager extends StatelessWidget {
+  const _Pager({
+    required this.page,
+    required this.hasPrevious,
+    required this.hasNext,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final int page;
+  final bool hasPrevious;
+  final bool hasNext;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!hasPrevious && !hasNext) return const SizedBox.shrink();
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: <Widget>[
+        IconButton(
+          onPressed: hasPrevious ? onPrevious : null,
+          icon: const Icon(Icons.chevron_left),
+        ),
+        Text('${page + 1}'),
+        IconButton(
+          onPressed: hasNext ? onNext : null,
+          icon: const Icon(Icons.chevron_right),
+        ),
+      ],
+    );
   }
+}
 
-  Future<void> _select(UnifiedIngredientSearchItem item) async {
-    IngredientEntity ingredient;
-    if (item.isPersonal) {
-      ingredient = item.personalIngredient!;
-    } else {
-      ingredient = ref
-          .read(unifiedIngredientSearchServiceProvider)
-          .promote(item.openNutritionFood!);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Importato da OpenNutrition nei tuoi ingredienti.'),
-          ),
-        );
-      }
-    }
-    if (!mounted) return;
-    if (widget.selectionMode) {
-      context.pop<IngredientEntity>(ingredient);
-    } else {
-      context.push('/food/ingredients/${ingredient.id}');
-    }
+class _EmptyCard extends StatelessWidget {
+  const _EmptyCard({required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(child: Padding(padding: const EdgeInsets.all(16), child: Text(message)));
+  }
+}
+
+class _ErrorCard extends StatelessWidget {
+  const _ErrorCard({required this.error, required this.onRetry});
+  final Object error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.error_outline),
+        title: const Text('Ricerca non riuscita'),
+        subtitle: Text(error.toString()),
+        trailing: IconButton(onPressed: onRetry, icon: const Icon(Icons.refresh)),
+      ),
+    );
   }
 }
 
@@ -299,11 +625,12 @@ class _OpenNutritionImportOverlayState
           bottom: 104,
           child: SafeArea(
             child: FloatingActionButton.extended(
-              heroTag: 'opennutrition-${widget.targetType}-${widget.targetId}',
-              tooltip: 'Aggiungi dal catalogo OpenNutrition',
+              heroTag:
+                  'ingredient-search-${widget.targetType}-${widget.targetId}',
+              tooltip: 'Aggiungi alimento',
               onPressed: _selectAndAdd,
-              icon: const Icon(Icons.storage),
-              label: const Text('Catalogo'),
+              icon: const Icon(Icons.add),
+              label: const Text('Alimento'),
             ),
           ),
         ),
@@ -321,16 +648,16 @@ class _OpenNutritionImportOverlayState
     final id = int.tryParse(widget.targetId);
     if (id == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Identificativo destinazione non valido.'),
-        ),
+        const SnackBar(content: Text('Identificativo destinazione non valido.')),
       );
       return;
     }
     if (widget.targetType == 'meal') {
-      ref
-          .read(mealRepositoryProvider)
-          .addIngredientItem(mealId: id, ingredient: ingredient, grams: grams);
+      ref.read(mealRepositoryProvider).addIngredientItem(
+            mealId: id,
+            ingredient: ingredient,
+            grams: grams,
+          );
     } else if (widget.targetType == 'recipe') {
       ref.read(recipeRepositoryProvider).addIngredientItem(
             recipeId: id,
@@ -358,7 +685,7 @@ class _OpenNutritionImportOverlayState
     try {
       return await showDialog<double>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
+        builder: (BuildContext dialogContext) => AlertDialog(
           title: Text('Quantità di $name'),
           content: TextField(
             controller: controller,
@@ -390,107 +717,5 @@ class _OpenNutritionImportOverlayState
     } finally {
       controller.dispose();
     }
-  }
-}
-
-class _IngredientResultCard extends StatelessWidget {
-  const _IngredientResultCard({required this.item, required this.onTap});
-  final UnifiedIngredientSearchItem item;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final external = item.openNutritionFood;
-    return Card(
-      child: ListTile(
-        onTap: onTap,
-        leading: CircleAvatar(
-          child: Icon(item.isPersonal ? Icons.person_outline : Icons.public),
-        ),
-        title: Text(item.displayName),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            if (item.brand.isNotEmpty) Text(item.brand),
-            Text('${item.kcalPer100g.toStringAsFixed(0)} kcal / 100 g'),
-            if (external?.hasEstimatedValues == true)
-              const Text('Contiene valori stimati o derivati'),
-            if (external?.fromOpenFoodFacts == true)
-              const Text('Fonte parziale: © Open Food Facts contributors'),
-          ],
-        ),
-        trailing: Chip(label: Text(item.isPersonal ? 'MIO' : 'OPENNUTRITION')),
-      ),
-    );
-  }
-}
-
-class _PriorityInfoCard extends StatelessWidget {
-  const _PriorityInfoCard();
-  @override
-  Widget build(BuildContext context) => const Card(
-        child: Padding(
-          padding: EdgeInsets.all(12),
-          child: Text(
-            'I risultati personali sono sempre mostrati prima. OpenNutrition '
-            'riempie gli spazi rimanenti fino al limite di 25.',
-          ),
-        ),
-      );
-}
-
-class _AttributionCard extends StatelessWidget {
-  const _AttributionCard();
-
-  @override
-  Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              const Text(
-                'Dati forniti da OpenNutrition. Database ODbL e contenuti con '
-                'versione modificata della DbCL. Alcune voci: © Open Food '
-                'Facts contributors.',
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: <Widget>[
-                  TextButton.icon(
-                    onPressed: () => _launchAttributionUrl(
-                      context,
-                      'https://www.opennutrition.app',
-                    ),
-                    icon: const Icon(Icons.open_in_new_rounded),
-                    label: const Text('OpenNutrition'),
-                  ),
-                  TextButton.icon(
-                    onPressed: () => _launchAttributionUrl(
-                      context,
-                      'https://world.openfoodfacts.org',
-                    ),
-                    icon: const Icon(Icons.open_in_new_rounded),
-                    label: const Text('Open Food Facts'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      );
-}
-
-Future<void> _launchAttributionUrl(BuildContext context, String value) async {
-  final opened = await launchUrl(
-    Uri.parse(value),
-    mode: LaunchMode.externalApplication,
-  );
-  if (!opened && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Impossibile aprire il collegamento.')),
-    );
   }
 }
