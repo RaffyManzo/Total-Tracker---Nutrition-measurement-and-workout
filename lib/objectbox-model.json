@@ -355,7 +355,7 @@
     },
     {
       "id": "5:8645411654677832403",
-      "lastPropertyId": "38:3557396583143516158",
+      "lastPropertyId": "39:1815027779494729143",
       "name": "UserProfileEntity",
       "properties": [
         {
@@ -549,6 +549,11 @@
         {
           "id": "38:3557396583143516158",
           "name": "exportFolderPath",
+          "type": 9
+        },
+        {
+          "id": "39:1815027779494729143",
+          "name": "activityProfileJson",
           "type": 9
         }
       ],

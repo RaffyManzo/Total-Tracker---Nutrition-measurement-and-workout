@@ -19,6 +19,7 @@ class UserProfileEntity {
     this.averageWorkoutsPerWeek = 3,
     this.averageWorkoutDurationMinutes = 60,
     this.workoutActivityTypeCode = WorkoutActivityTypeCodes.weights,
+    this.activityProfileJson = '',
     this.activityFallbackModeCode =
         ActivityFallbackModeCodes.recordedWithProfileFallback,
     this.macroModeCode = MacroModeCodes.defaultByWeight,
@@ -65,6 +66,7 @@ class UserProfileEntity {
   int averageWorkoutsPerWeek;
   int averageWorkoutDurationMinutes;
   String workoutActivityTypeCode;
+  String activityProfileJson;
   String activityFallbackModeCode;
   String macroModeCode;
   String mealTargetModeCode;

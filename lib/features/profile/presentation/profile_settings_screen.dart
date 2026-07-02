@@ -19,6 +19,8 @@ import '../../nutrition/presentation/measurement_screens.dart';
 import '../data/entities/user_profile_entity.dart';
 import '../domain/profile_codes.dart';
 import '../domain/profile_nutrition_calculator.dart';
+import '../domain/profile_activity_estimator.dart';
+import 'profile_activity_settings_panel.dart';
 
 class ProfileSettingsScreen extends ConsumerStatefulWidget {
   const ProfileSettingsScreen({super.key, this.sectionCode});
@@ -159,14 +161,6 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     };
   }
 
-  double _profileWorkoutNetMet(String workoutTypeCode) {
-    return switch (workoutTypeCode) {
-      WorkoutActivityTypeCodes.mixed => 5.5,
-      WorkoutActivityTypeCodes.cardio => 7.0,
-      _ => 4.0,
-    };
-  }
-
   List<Widget> _buildSettingsSectionChildren({
     required UserProfileEntity profile,
     required ProfileNutritionTargets estimate,
@@ -212,224 +206,28 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
 
     if (sectionCode == 'target_activity') {
       final double weightKg = currentWeight ?? profile.initialWeightKg ?? 70.0;
-      final double netMet = _profileWorkoutNetMet(
-        profile.workoutActivityTypeCode,
-      );
-      final double grossEquivalentMet = netMet + 1.0;
-      final double workoutHours =
-          (profile.averageWorkoutDurationMinutes / 60).clamp(0, 8).toDouble();
-      final double workoutsPerWeek =
-          profile.averageWorkoutsPerWeek.clamp(0, 14).toDouble();
-      final double workoutPerSessionKcal = netMet * weightKg * workoutHours;
-      final double workoutWeeklyKcal = workoutPerSessionKcal * workoutsPerWeek;
-      final double unclampedProfileTarget = estimate.sedentaryKcal +
-          estimate.stepDailyKcal +
-          estimate.workoutDailyKcal;
-
       return <Widget>[
-        const _ProfileExplanationCard(
-          title: 'Sorgenti allenamento in preparazione',
-          body: 'Fino al completamento del motore calorie allenamenti, '
-              'il target usa esclusivamente la stima del profilo. Le modalit\u00E0 '
-              'basate sulle sessioni registrate restano visibili ma disabilitate.',
-          rows: <_SettingRowData>[
-            _SettingRowData('Modalit\u00E0 attiva', 'Sempre stima del profilo'),
-            _SettingRowData(
-              'Modalit\u00E0 bloccate',
-              'Solo dati registrati; registrati con fallback',
-            ),
-          ],
+        ProfileTargetActivityBanner(
+          profile: profile,
+          targets: estimate,
+          currentWeightKg: weightKg,
+          onEditTarget: () => _showTargetSheet(profile, estimate),
         ),
         const SizedBox(height: AppSpacing.md),
-        _SummaryCard(
-          title: 'Target di riferimento',
-          icon: Icons.local_fire_department_outlined,
-          onTap: () => _showTargetExplanationSheet(
-            profile: profile,
-            estimate: estimate,
-            currentWeight: currentWeight,
-            hasScaleMeasurement: hasScaleMeasurement,
-          ),
-          rows: <_SettingRowData>[
-            _SettingRowData('RMR', '${estimate.rmrKcal.round()} kcal'),
-            _SettingRowData(
-              'Moltiplicatore sedentario',
-              'x${estimate.sedentaryMultiplier.toStringAsFixed(2)}',
-            ),
-            _SettingRowData(
-              'Base sedentaria',
-              '${estimate.sedentaryKcal.round()} kcal',
-            ),
-            _SettingRowData(
-              'Passi medi',
-              '${estimate.stepDailyKcal.round()} kcal/giorno',
-            ),
-            _SettingRowData(
-              'Allenamenti medi',
-              '${estimate.workoutDailyKcal.round()} kcal/giorno',
-            ),
-            _SettingRowData(
-              'Target profilo',
-              '${estimate.targetKcal.round()} kcal',
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _SummaryCard(
-          title: 'Target e attivit\u00E0',
-          icon: Icons.tune_rounded,
-          onEdit: () => _showTargetSheet(profile, estimate),
-          rows: <_SettingRowData>[
-            _SettingRowData(
-              'Modalit\u00E0 target',
-              _targetModeLabel(profile.targetModeCode),
-            ),
-            _SettingRowData(
-              'Sorgente attivit\u00E0',
-              _activityFallbackModeLabel(
-                  ActivityFallbackModeCodes.profileEstimate),
-            ),
-            _SettingRowData('Target passi', '${profile.defaultStepGoal} passi'),
-            _SettingRowData(
-              'Kcal attive per passo',
-              _num(profile.stepKcalCoefficient),
-            ),
-            _SettingRowData(
-              'Allenamenti profilo',
-              '${profile.averageWorkoutsPerWeek}/settimana, '
-                  '${profile.averageWorkoutDurationMinutes} min',
-            ),
-            _SettingRowData(
-              'Tipo allenamento',
-              _workoutLabel(profile.workoutActivityTypeCode),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.sectionGap),
-        const TtSectionHeader(title: 'Dettaglio del calcolo'),
-        const SizedBox(height: AppSpacing.md),
-        _ProfileExplanationCard(
-          title: '1. Base sedentaria',
-          body: 'Il metabolismo di riposo viene moltiplicato per il fattore '
-              'sedentario. Passi e allenamenti vengono aggiunti separatamente '
-              'come calorie attive.',
-          rows: <_SettingRowData>[
-            _SettingRowData('RMR', '${estimate.rmrKcal.round()} kcal'),
-            _SettingRowData(
-              'Fattore sedentario',
-              'x${estimate.sedentaryMultiplier.toStringAsFixed(2)}',
-            ),
-            _SettingRowData(
-              'Risultato',
-              '${estimate.rmrKcal.round()} x '
-                  '${estimate.sedentaryMultiplier.toStringAsFixed(2)} = '
-                  '${estimate.sedentaryKcal.round()} kcal',
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _ProfileExplanationCard(
-          title: '2. Calorie attive dai passi',
-          body: 'Nel target di profilo viene usato il numero medio di passi '
-              'configurato. Nel giorno registrato deve essere usato il numero '
-              'reale di passi della giornata.',
-          rows: <_SettingRowData>[
-            _SettingRowData('Passi', '${profile.defaultStepGoal}'),
-            _SettingRowData(
-              'Coefficiente',
-              '${_num(profile.stepKcalCoefficient)} kcal/passo',
-            ),
-            _SettingRowData(
-              'Risultato',
-              '${profile.defaultStepGoal} x '
-                  '${_num(profile.stepKcalCoefficient)} = '
-                  '${estimate.stepDailyKcal.round()} kcal attive',
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _ProfileExplanationCard(
-          title: '3. Stima allenamenti del profilo',
-          body: 'La versione corrente usa un MET netto, cio\u00E8 il MET oltre '
-              'il riposo. Il motore futuro dovr\u00E0 ridurre il valore equivalente '
-              'in base a serie, recuperi e pause reali.',
-          rows: <_SettingRowData>[
-            _SettingRowData('Peso usato', '${_num(weightKg)} kg'),
-            _SettingRowData('MET attivo netto', netMet.toStringAsFixed(1)),
-            _SettingRowData(
-              'MET lordo equivalente',
-              grossEquivalentMet.toStringAsFixed(1),
-            ),
-            _SettingRowData(
-              'Durata',
-              '${profile.averageWorkoutDurationMinutes} min/sessione',
-            ),
-            _SettingRowData(
-              'Frequenza',
-              '${profile.averageWorkoutsPerWeek} sessioni/settimana',
-            ),
-            _SettingRowData(
-              'Per sessione',
-              '${workoutPerSessionKcal.round()} kcal attive',
-            ),
-            _SettingRowData(
-              'Per settimana',
-              '${workoutWeeklyKcal.round()} kcal attive',
-            ),
-            _SettingRowData(
-              'Media giornaliera',
-              '${estimate.workoutDailyKcal.round()} kcal attive',
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _ProfileExplanationCard(
-          title: '4. Somma finale',
-          body: profile.targetModeCode == TargetModeCodes.fixedUser
-              ? 'La modalit\u00E0 fissa usa direttamente il valore scelto '
-                  'dall\u2019utente.'
-              : 'La base sedentaria e le due quote attive vengono sommate. '
-                  'Il risultato viene poi limitato alle soglie di sicurezza '
-                  'configurate nel profilo.',
-          rows: <_SettingRowData>[
-            _SettingRowData(
-              'Base sedentaria',
-              '${estimate.sedentaryKcal.round()} kcal',
-            ),
-            _SettingRowData(
-              '+ passi attivi',
-              '${estimate.stepDailyKcal.round()} kcal',
-            ),
-            _SettingRowData(
-              '+ allenamenti attivi',
-              '${estimate.workoutDailyKcal.round()} kcal',
-            ),
-            _SettingRowData(
-              'Somma prima dei limiti',
-              '${unclampedProfileTarget.round()} kcal',
-            ),
-            _SettingRowData(
-              'Target mostrato',
-              '${estimate.targetKcal.round()} kcal',
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _ProfileExplanationCard(
-          title: 'Sorgente dei dati allenamento',
-          body: _activityFallbackDescription(
-              ActivityFallbackModeCodes.profileEstimate),
-          rows: <_SettingRowData>[
-            _SettingRowData(
-              'Modalit\u00E0',
-              _activityFallbackModeLabel(
-                  ActivityFallbackModeCodes.profileEstimate),
-            ),
-            const _SettingRowData(
-              'Regola',
-              'Non sommare stima profilo e calorie registrate per la stessa sessione',
-            ),
-          ],
+        ProfileActivitySettingsPanel(
+          profile: profile,
+          weightKg: weightKg,
+          onSave: (ProfileActivityConfig config) async {
+            profile.activityProfileJson = config.toJsonString();
+            _workoutsPerWeek.text = config.sessionsPerWeek.round().toString();
+            _workoutDuration.text = config.totalDurationMinutes.toString();
+            _workoutType = config.legacyWorkoutTypeCode;
+            _activityFallbackMode = ActivityFallbackModeCodes.profileEstimate;
+            await _save(profile);
+            if (mounted) {
+              setState(() {});
+            }
+          },
         ),
       ];
     }
@@ -1098,32 +896,20 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               keyboardType: TextInputType.number),
           _field(_stepCoeff, 'Kcal attive per passo',
               keyboardType: TextInputType.number),
-          _field(_workoutsPerWeek, 'Allenamenti medi a settimana',
-              keyboardType: TextInputType.number),
-          _field(_workoutDuration, 'Durata media allenamento min',
-              keyboardType: TextInputType.number),
-          DropdownButtonFormField<String>(
-            initialValue: _workoutType,
-            decoration: const InputDecoration(labelText: 'Tipo allenamento'),
-            items: const <DropdownMenuItem<String>>[
-              DropdownMenuItem<String>(
-                value: WorkoutActivityTypeCodes.weights,
-                child: Text('Solo sala pesi'),
-              ),
-              DropdownMenuItem<String>(
-                value: WorkoutActivityTypeCodes.mixed,
-                child: Text('Pesi + aerobico'),
-              ),
-              DropdownMenuItem<String>(
-                value: WorkoutActivityTypeCodes.cardio,
-                child: Text('Solo cardio/aerobico'),
-              ),
-            ],
-            onChanged: (String? value) {
-              if (value != null) {
-                setSheetState(() => _workoutType = value);
-              }
-            },
+          const TtAppCard(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Icon(Icons.fitness_center_rounded),
+                SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    'Frequenza, durata, serie, recuperi, battiti e cardio '
+                    'si configurano nel pannello Profilo allenamenti della pagina.',
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: AppSpacing.md),
           DropdownButtonFormField<String>(

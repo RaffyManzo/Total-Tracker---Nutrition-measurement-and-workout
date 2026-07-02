@@ -1,4 +1,5 @@
 import '../data/entities/user_profile_entity.dart';
+import 'profile_activity_estimator.dart';
 import 'profile_codes.dart';
 
 class ProfileNutritionTargets {
@@ -87,16 +88,16 @@ class ProfileNutritionCalculator {
   }
 
   double workoutDailyKcal(UserProfileEntity profile, double weightKg) {
-    final double metNet = switch (profile.workoutActivityTypeCode) {
-      WorkoutActivityTypeCodes.mixed => 5.5,
-      WorkoutActivityTypeCodes.cardio => 7.0,
-      _ => 4.0,
-    };
-    final double durationHours =
-        (profile.averageWorkoutDurationMinutes / 60).clamp(0, 8).toDouble();
-    final double workouts =
-        profile.averageWorkoutsPerWeek.clamp(0, 14).toDouble();
-    return metNet * weightKg * durationHours * workouts / 7;
+    final ProfileActivityConfig config = ProfileActivityConfig.fromJsonString(
+      profile.activityProfileJson,
+      legacyWorkoutTypeCode: profile.workoutActivityTypeCode,
+      legacyDurationMinutes: profile.averageWorkoutDurationMinutes,
+      legacySessionsPerWeek: profile.averageWorkoutsPerWeek,
+    );
+    return ProfileActivityEstimator.estimate(
+      config: config,
+      weightKg: weightKg,
+    ).dailyKcal;
   }
 
   double _rmrKcal(

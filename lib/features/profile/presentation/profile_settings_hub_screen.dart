@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../shared/widgets/tt_global_nav_fab.dart';
+
 class ProfileSettingsHubScreen extends StatelessWidget {
   const ProfileSettingsHubScreen({super.key});
 
@@ -48,6 +50,9 @@ class ProfileSettingsHubScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Impostazioni')),
+      bottomNavigationBar: const TtFoodBottomNavBar(
+        activeItem: TtFoodNavItem.settings,
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[

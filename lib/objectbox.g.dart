@@ -431,7 +431,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(5, 8645411654677832403),
     name: 'UserProfileEntity',
-    lastPropertyId: const obx_int.IdUid(38, 3557396583143516158),
+    lastPropertyId: const obx_int.IdUid(39, 1815027779494729143),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -660,6 +660,12 @@ final _entities = <obx_int.ModelEntity>[
       obx_int.ModelProperty(
         id: const obx_int.IdUid(38, 3557396583143516158),
         name: 'exportFolderPath',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(39, 1815027779494729143),
+        name: 'activityProfileJson',
         type: 9,
         flags: 0,
       ),
@@ -3528,7 +3534,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
           object.activityFallbackModeCode,
         );
         final exportFolderPathOffset = fbb.writeString(object.exportFolderPath);
-        fbb.startTable(39);
+        final activityProfileJsonOffset = fbb.writeString(
+          object.activityProfileJson,
+        );
+        fbb.startTable(40);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, uuidOffset);
         fbb.addOffset(2, displayNameOffset);
@@ -3567,6 +3576,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addOffset(35, mealTargetsJsonOffset);
         fbb.addOffset(36, activityFallbackModeCodeOffset);
         fbb.addOffset(37, exportFolderPathOffset);
+        fbb.addOffset(38, activityProfileJsonOffset);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -3635,6 +3645,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final workoutActivityTypeCodeParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 54, '');
+        final activityProfileJsonParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 80, '');
         final activityFallbackModeCodeParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 76, '');
@@ -3768,6 +3781,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
           averageWorkoutsPerWeek: averageWorkoutsPerWeekParam,
           averageWorkoutDurationMinutes: averageWorkoutDurationMinutesParam,
           workoutActivityTypeCode: workoutActivityTypeCodeParam,
+          activityProfileJson: activityProfileJsonParam,
           activityFallbackModeCode: activityFallbackModeCodeParam,
           macroModeCode: macroModeCodeParam,
           mealTargetModeCode: mealTargetModeCodeParam,
@@ -6939,6 +6953,11 @@ class UserProfileEntity_ {
   /// See [UserProfileEntity.exportFolderPath].
   static final exportFolderPath = obx.QueryStringProperty<UserProfileEntity>(
     _entities[4].properties[37],
+  );
+
+  /// See [UserProfileEntity.activityProfileJson].
+  static final activityProfileJson = obx.QueryStringProperty<UserProfileEntity>(
+    _entities[4].properties[38],
   );
 }
 
