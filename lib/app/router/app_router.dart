@@ -101,6 +101,14 @@ final GoRouter appRouter = GoRouter(
       },
     ),
     GoRoute(
+      path: '/settings/section',
+      builder: (BuildContext context, GoRouterState state) {
+        return ProfileSettingsScreen(
+          sectionCode: state.uri.queryParameters['section'],
+        );
+      },
+    ),
+    GoRoute(
       path: '/settings/legacy',
       builder: (BuildContext context, GoRouterState state) {
         return const ProfileSettingsScreen();

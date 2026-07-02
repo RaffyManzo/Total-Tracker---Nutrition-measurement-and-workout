@@ -8,40 +8,41 @@ class ProfileSettingsHubScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final sections = <_SettingsSectionCardData>[
       const _SettingsSectionCardData(
+        code: 'personal',
         title: 'Dati personali',
-        subtitle: 'Nome, etÃ , sesso, altezza e peso iniziale.',
+        subtitle: 'Nome, et\u00E0, sesso, altezza e peso iniziale.',
         icon: Icons.badge_outlined,
         accent: Color(0xFF4F46E5),
       ),
       const _SettingsSectionCardData(
-        title: 'Target e attivitÃ ',
-        subtitle: 'Target calorico, modalitÃ  adattiva e stime attivitÃ .',
+        code: 'target_activity',
+        title: 'Target e attivit\u00E0',
+        subtitle:
+            'Target calorico, sorgenti attivit\u00E0 e dettaglio dei calcoli.',
         icon: Icons.local_fire_department_outlined,
         accent: Color(0xFFEA580C),
       ),
       const _SettingsSectionCardData(
-        title: 'Pasti',
-        subtitle: 'Quote per pasto, macro, fibre e zuccheri.',
+        code: 'meals',
+        title: 'Pasti e macro',
+        subtitle: 'Quote per pasto, macronutrienti, fibre e zuccheri.',
         icon: Icons.restaurant_menu_outlined,
         accent: Color(0xFF059669),
       ),
       const _SettingsSectionCardData(
+        code: 'transfer',
         title: 'Import / Export',
         subtitle: 'Archivi .totaltracker, cartella export e import selettivo.',
         icon: Icons.import_export_rounded,
         accent: Color(0xFF0284C7),
+        directRoute: '/settings/transfer',
       ),
       const _SettingsSectionCardData(
-        title: 'App',
-        subtitle: 'Versione, spazio occupato e directory dati.',
-        icon: Icons.info_outline_rounded,
+        code: 'app',
+        title: 'App e dati',
+        subtitle: 'Tema, lingua, versione, directory e dati locali.',
+        icon: Icons.settings_outlined,
         accent: Color(0xFF7C3AED),
-      ),
-      const _SettingsSectionCardData(
-        title: 'Avvisi e promemoria',
-        subtitle: 'Banner informativi e consigli di registrazione.',
-        icon: Icons.notifications_active_outlined,
-        accent: Color(0xFFDC2626),
       ),
     ];
 
@@ -62,9 +63,8 @@ class ProfileSettingsHubScreen extends StatelessWidget {
                   ),
                   SizedBox(height: 8),
                   Text(
-                    'Apri una sezione per consultare o modificare le impostazioni del profilo. '
-                    'Le schermate di dettaglio restano quelle del progetto attuale, raggruppate '
-                    'da questa pagina introduttiva piÃ¹ ordinata.',
+                    'Ogni scheda apre una pagina dedicata. Le chiavi di navigazione '
+                    'sono codici ASCII stabili e non dipendono dal testo visualizzato.',
                   ),
                 ],
               ),
@@ -74,8 +74,18 @@ class ProfileSettingsHubScreen extends StatelessWidget {
           for (final section in sections) ...<Widget>[
             _SettingsSectionCard(
               data: section,
-              onTap: () =>
-                  context.push('/settings/legacy?section=${section.title}'),
+              onTap: () {
+                final directRoute = section.directRoute;
+                if (directRoute != null) {
+                  context.push(directRoute);
+                  return;
+                }
+                final location = Uri(
+                  path: '/settings/section',
+                  queryParameters: <String, String>{'section': section.code},
+                ).toString();
+                context.push(location);
+              },
             ),
             const SizedBox(height: 12),
           ],
@@ -87,16 +97,20 @@ class ProfileSettingsHubScreen extends StatelessWidget {
 
 class _SettingsSectionCardData {
   const _SettingsSectionCardData({
+    required this.code,
     required this.title,
     required this.subtitle,
     required this.icon,
     required this.accent,
+    this.directRoute,
   });
 
+  final String code;
   final String title;
   final String subtitle;
   final IconData icon;
   final Color accent;
+  final String? directRoute;
 }
 
 class _SettingsSectionCard extends StatelessWidget {

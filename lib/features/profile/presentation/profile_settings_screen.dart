@@ -21,7 +21,9 @@ import '../domain/profile_codes.dart';
 import '../domain/profile_nutrition_calculator.dart';
 
 class ProfileSettingsScreen extends ConsumerStatefulWidget {
-  const ProfileSettingsScreen({super.key});
+  const ProfileSettingsScreen({super.key, this.sectionCode});
+
+  final String? sectionCode;
 
   @override
   ConsumerState<ProfileSettingsScreen> createState() =>
@@ -49,8 +51,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
   String _sex = BiologicalSexCodes.unspecified;
   String _targetMode = TargetModeCodes.adaptiveWeekly;
   String _workoutType = WorkoutActivityTypeCodes.weights;
-  String _activityFallbackMode =
-      ActivityFallbackModeCodes.recordedWithProfileFallback;
+  String _activityFallbackMode = ActivityFallbackModeCodes.profileEstimate;
   String _macroMode = MacroModeCodes.defaultByWeight;
   String _themeMode = ThemePreferenceCodes.system;
   String _language = 'it';
@@ -99,7 +100,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     final AsyncValue<AppInfoSnapshot> appInfo = ref.watch(appInfoProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Profilo e impostazioni')),
+      appBar: AppBar(title: Text(_settingsSectionTitle(widget.sectionCode))),
       bottomNavigationBar:
           const TtFoodBottomNavBar(activeItem: TtFoodNavItem.settings),
       body: Stack(
@@ -111,212 +112,15 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               AppSpacing.lg,
               AppSpacing.xxl,
             ),
-            children: <Widget>[
-              _SummaryCard(
-                title: 'Target app',
-                icon: Icons.local_fire_department_outlined,
-                onTap: () => _showTargetExplanationSheet(
-                  profile: profile,
-                  estimate: estimate,
-                  currentWeight: currentWeight,
-                  hasScaleMeasurement: latestScale != null,
-                ),
-                rows: <_SettingRowData>[
-                  _SettingRowData('RMR', '${estimate.rmrKcal.round()} kcal'),
-                  _SettingRowData('Moltiplicatore sedentario',
-                      'x${estimate.sedentaryMultiplier.toStringAsFixed(2)}'),
-                  _SettingRowData('Base sedentaria',
-                      '${estimate.sedentaryKcal.round()} kcal'),
-                  _SettingRowData('Allenamenti medi',
-                      '${estimate.workoutDailyKcal.round()} kcal/giorno'),
-                  _SettingRowData('Target calcolato',
-                      '${estimate.targetKcal.round()} kcal'),
-                  _SettingRowData(
-                    'Peso attuale',
-                    currentWeight == null
-                        ? 'n/d'
-                        : '${currentWeight.toStringAsFixed(1)} kg',
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sectionGap),
-              const TtSectionHeader(title: 'Profilo'),
-              const SizedBox(height: AppSpacing.md),
-              _SummaryCard(
-                title: 'Dati personali',
-                icon: Icons.person_outline_rounded,
-                onEdit: () => _showProfileSheet(profile, currentWeight),
-                rows: <_SettingRowData>[
-                  _SettingRowData(
-                      'Nome',
-                      profile.displayName.isEmpty
-                          ? 'Non impostato'
-                          : profile.displayName),
-                  _SettingRowData('Eta', _age.text.isEmpty ? 'n/d' : _age.text),
-                  _SettingRowData(
-                      'Sesso', _sexLabel(profile.biologicalSexCode)),
-                  _SettingRowData(
-                      'Peso iniziale',
-                      profile.initialWeightKg == null
-                          ? 'n/d'
-                          : '${_num(profile.initialWeightKg)} kg'),
-                  _SettingRowData(
-                      'Altezza',
-                      profile.heightCm == null
-                          ? 'n/d'
-                          : '${_num(profile.heightCm)} cm'),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _SummaryCard(
-                title: 'Target e attivita',
-                icon: Icons.tune_rounded,
-                onEdit: () => _showTargetSheet(profile, estimate),
-                rows: <_SettingRowData>[
-                  _SettingRowData('Modalita target',
-                      _targetModeLabel(profile.targetModeCode)),
-                  _SettingRowData(
-                      'Target fisso', '${profile.defaultTargetKcal} kcal'),
-                  _SettingRowData(
-                      'Target passi', '${profile.defaultStepGoal} passi'),
-                  _SettingRowData(
-                      'Kcal per passo', _num(profile.stepKcalCoefficient)),
-                  _SettingRowData(
-                    'Allenamenti',
-                    '${profile.averageWorkoutsPerWeek}/settimana, ${profile.averageWorkoutDurationMinutes} min',
-                  ),
-                  _SettingRowData('Tipo allenamento',
-                      _workoutLabel(profile.workoutActivityTypeCode)),
-                  _SettingRowData('Risposta peso',
-                      _weightLossResponseLabel(_weightLossResponse)),
-                  _SettingRowData(
-                    'Finestra adattiva',
-                    '${profile.adaptiveReferenceDays} giorni',
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _SummaryCard(
-                title: 'Macro nutrienti',
-                icon: Icons.pie_chart_outline_rounded,
-                onEdit: () => _showMacroSheet(profile),
-                rows: <_SettingRowData>[
-                  _SettingRowData(
-                      'Modalita', _macroModeLabel(profile.macroModeCode)),
-                  _SettingRowData(
-                      'Proteine', '${estimate.proteinGrams.round()} g'),
-                  _SettingRowData('Grassi', '${estimate.fatGrams.round()} g'),
-                  _SettingRowData('Fibre', '${estimate.fiberGrams.round()} g'),
-                  _SettingRowData(
-                      'Carboidrati', '${estimate.carbsGrams.round()} g'),
-                  _SettingRowData(
-                      'Zuccheri max', '${estimate.sugarGrams.round()} g'),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _SummaryCard(
-                title: 'Target per pasto',
-                icon: Icons.lunch_dining_outlined,
-                onEdit: () => _showMealTargetsSheet(profile),
-                rows: <_SettingRowData>[
-                  _SettingRowData(
-                    'Modalita',
-                    _mealTargetModeLabel(mealTargetSettings.modeCode),
-                  ),
-                  _SettingRowData(
-                    'Configurazione',
-                    _mealTargetSettingsSummary(mealTargetSettings),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sectionGap),
-              const TtSectionHeader(title: 'App e dati'),
-              const SizedBox(height: AppSpacing.md),
-              _SummaryCard(
-                title: 'Preferenze',
-                icon: Icons.settings_outlined,
-                onEdit: () => _showAppSheet(profile),
-                rows: <_SettingRowData>[
-                  _SettingRowData('Tema', _themeLabel(profile.themeModeCode)),
-                  _SettingRowData('Lingua',
-                      profile.languageCode == 'en' ? 'English' : 'Italiano'),
-                  const _SettingRowData(
-                    'Dashboard iniziale',
-                    'Food Plan',
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _AppInformationCard(
-                appInfo: appInfo,
-                onRefresh: () => ref.invalidate(appInfoProvider),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _SummaryCard(
-                title: 'Import / Export',
-                icon: Icons.import_export_rounded,
-                onEdit: () => context.push('/settings/transfer'),
-                rows: <_SettingRowData>[
-                  _SettingRowData(
-                    'Export Folder',
-                    profile.exportFolderPath.trim().isEmpty
-                        ? 'Download/Total Tracker (predefinita)'
-                        : profile.exportFolderPath,
-                  ),
-                  const _SettingRowData(
-                    'Formato',
-                    '.totaltracker portabile',
-                  ),
-                  const _SettingRowData(
-                    'Importazione',
-                    'Analisi, conflitti e conferma pagina per pagina',
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              TtAppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        Icon(
-                          Icons.storage_rounded,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Text(
-                            'Dati locali',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      dataPath,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Theme.of(context).colorScheme.error,
-                          side: BorderSide(
-                            color: Theme.of(context).colorScheme.error,
-                          ),
-                        ),
-                        onPressed: () => _showDeleteDataSheet(dataPath),
-                        icon: const Icon(Icons.delete_outline_rounded),
-                        label: const Text('Cancella dati'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            children: _buildSettingsSectionChildren(
+              profile: profile,
+              estimate: estimate,
+              currentWeight: currentWeight,
+              hasScaleMeasurement: latestScale != null,
+              dataPath: dataPath,
+              mealTargetSettings: mealTargetSettings,
+              appInfo: appInfo,
+            ),
           ),
           if (_isApplying)
             Positioned.fill(
@@ -343,6 +147,593 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
         ],
       ),
     );
+  }
+
+  String _settingsSectionTitle(String? sectionCode) {
+    return switch (sectionCode) {
+      'personal' => 'Dati personali',
+      'target_activity' => 'Target e attivit\u00E0',
+      'meals' => 'Pasti e macro',
+      'app' => 'App e dati',
+      _ => 'Profilo e impostazioni',
+    };
+  }
+
+  double _profileWorkoutNetMet(String workoutTypeCode) {
+    return switch (workoutTypeCode) {
+      WorkoutActivityTypeCodes.mixed => 5.5,
+      WorkoutActivityTypeCodes.cardio => 7.0,
+      _ => 4.0,
+    };
+  }
+
+  List<Widget> _buildSettingsSectionChildren({
+    required UserProfileEntity profile,
+    required ProfileNutritionTargets estimate,
+    required double? currentWeight,
+    required bool hasScaleMeasurement,
+    required String dataPath,
+    required MealTargetSettings mealTargetSettings,
+    required AsyncValue<AppInfoSnapshot> appInfo,
+  }) {
+    final String? sectionCode = widget.sectionCode;
+
+    if (sectionCode == 'personal') {
+      return <Widget>[
+        const TtSectionHeader(title: 'Dati personali'),
+        const SizedBox(height: AppSpacing.md),
+        _SummaryCard(
+          title: 'Dati personali',
+          icon: Icons.person_outline_rounded,
+          onEdit: () => _showProfileSheet(profile, currentWeight),
+          rows: <_SettingRowData>[
+            _SettingRowData(
+              'Nome',
+              profile.displayName.isEmpty
+                  ? 'Non impostato'
+                  : profile.displayName,
+            ),
+            _SettingRowData('Et\u00E0', _age.text.isEmpty ? 'n/d' : _age.text),
+            _SettingRowData('Sesso', _sexLabel(profile.biologicalSexCode)),
+            _SettingRowData(
+              'Peso iniziale',
+              profile.initialWeightKg == null
+                  ? 'n/d'
+                  : '${_num(profile.initialWeightKg)} kg',
+            ),
+            _SettingRowData(
+              'Altezza',
+              profile.heightCm == null ? 'n/d' : '${_num(profile.heightCm)} cm',
+            ),
+          ],
+        ),
+      ];
+    }
+
+    if (sectionCode == 'target_activity') {
+      final double weightKg = currentWeight ?? profile.initialWeightKg ?? 70.0;
+      final double netMet = _profileWorkoutNetMet(
+        profile.workoutActivityTypeCode,
+      );
+      final double grossEquivalentMet = netMet + 1.0;
+      final double workoutHours =
+          (profile.averageWorkoutDurationMinutes / 60).clamp(0, 8).toDouble();
+      final double workoutsPerWeek =
+          profile.averageWorkoutsPerWeek.clamp(0, 14).toDouble();
+      final double workoutPerSessionKcal = netMet * weightKg * workoutHours;
+      final double workoutWeeklyKcal = workoutPerSessionKcal * workoutsPerWeek;
+      final double unclampedProfileTarget = estimate.sedentaryKcal +
+          estimate.stepDailyKcal +
+          estimate.workoutDailyKcal;
+
+      return <Widget>[
+        const _ProfileExplanationCard(
+          title: 'Sorgenti allenamento in preparazione',
+          body: 'Fino al completamento del motore calorie allenamenti, '
+              'il target usa esclusivamente la stima del profilo. Le modalit\u00E0 '
+              'basate sulle sessioni registrate restano visibili ma disabilitate.',
+          rows: <_SettingRowData>[
+            _SettingRowData('Modalit\u00E0 attiva', 'Sempre stima del profilo'),
+            _SettingRowData(
+              'Modalit\u00E0 bloccate',
+              'Solo dati registrati; registrati con fallback',
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _SummaryCard(
+          title: 'Target di riferimento',
+          icon: Icons.local_fire_department_outlined,
+          onTap: () => _showTargetExplanationSheet(
+            profile: profile,
+            estimate: estimate,
+            currentWeight: currentWeight,
+            hasScaleMeasurement: hasScaleMeasurement,
+          ),
+          rows: <_SettingRowData>[
+            _SettingRowData('RMR', '${estimate.rmrKcal.round()} kcal'),
+            _SettingRowData(
+              'Moltiplicatore sedentario',
+              'x${estimate.sedentaryMultiplier.toStringAsFixed(2)}',
+            ),
+            _SettingRowData(
+              'Base sedentaria',
+              '${estimate.sedentaryKcal.round()} kcal',
+            ),
+            _SettingRowData(
+              'Passi medi',
+              '${estimate.stepDailyKcal.round()} kcal/giorno',
+            ),
+            _SettingRowData(
+              'Allenamenti medi',
+              '${estimate.workoutDailyKcal.round()} kcal/giorno',
+            ),
+            _SettingRowData(
+              'Target profilo',
+              '${estimate.targetKcal.round()} kcal',
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _SummaryCard(
+          title: 'Target e attivit\u00E0',
+          icon: Icons.tune_rounded,
+          onEdit: () => _showTargetSheet(profile, estimate),
+          rows: <_SettingRowData>[
+            _SettingRowData(
+              'Modalit\u00E0 target',
+              _targetModeLabel(profile.targetModeCode),
+            ),
+            _SettingRowData(
+              'Sorgente attivit\u00E0',
+              _activityFallbackModeLabel(
+                  ActivityFallbackModeCodes.profileEstimate),
+            ),
+            _SettingRowData('Target passi', '${profile.defaultStepGoal} passi'),
+            _SettingRowData(
+              'Kcal attive per passo',
+              _num(profile.stepKcalCoefficient),
+            ),
+            _SettingRowData(
+              'Allenamenti profilo',
+              '${profile.averageWorkoutsPerWeek}/settimana, '
+                  '${profile.averageWorkoutDurationMinutes} min',
+            ),
+            _SettingRowData(
+              'Tipo allenamento',
+              _workoutLabel(profile.workoutActivityTypeCode),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sectionGap),
+        const TtSectionHeader(title: 'Dettaglio del calcolo'),
+        const SizedBox(height: AppSpacing.md),
+        _ProfileExplanationCard(
+          title: '1. Base sedentaria',
+          body: 'Il metabolismo di riposo viene moltiplicato per il fattore '
+              'sedentario. Passi e allenamenti vengono aggiunti separatamente '
+              'come calorie attive.',
+          rows: <_SettingRowData>[
+            _SettingRowData('RMR', '${estimate.rmrKcal.round()} kcal'),
+            _SettingRowData(
+              'Fattore sedentario',
+              'x${estimate.sedentaryMultiplier.toStringAsFixed(2)}',
+            ),
+            _SettingRowData(
+              'Risultato',
+              '${estimate.rmrKcal.round()} x '
+                  '${estimate.sedentaryMultiplier.toStringAsFixed(2)} = '
+                  '${estimate.sedentaryKcal.round()} kcal',
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _ProfileExplanationCard(
+          title: '2. Calorie attive dai passi',
+          body: 'Nel target di profilo viene usato il numero medio di passi '
+              'configurato. Nel giorno registrato deve essere usato il numero '
+              'reale di passi della giornata.',
+          rows: <_SettingRowData>[
+            _SettingRowData('Passi', '${profile.defaultStepGoal}'),
+            _SettingRowData(
+              'Coefficiente',
+              '${_num(profile.stepKcalCoefficient)} kcal/passo',
+            ),
+            _SettingRowData(
+              'Risultato',
+              '${profile.defaultStepGoal} x '
+                  '${_num(profile.stepKcalCoefficient)} = '
+                  '${estimate.stepDailyKcal.round()} kcal attive',
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _ProfileExplanationCard(
+          title: '3. Stima allenamenti del profilo',
+          body: 'La versione corrente usa un MET netto, cio\u00E8 il MET oltre '
+              'il riposo. Il motore futuro dovr\u00E0 ridurre il valore equivalente '
+              'in base a serie, recuperi e pause reali.',
+          rows: <_SettingRowData>[
+            _SettingRowData('Peso usato', '${_num(weightKg)} kg'),
+            _SettingRowData('MET attivo netto', netMet.toStringAsFixed(1)),
+            _SettingRowData(
+              'MET lordo equivalente',
+              grossEquivalentMet.toStringAsFixed(1),
+            ),
+            _SettingRowData(
+              'Durata',
+              '${profile.averageWorkoutDurationMinutes} min/sessione',
+            ),
+            _SettingRowData(
+              'Frequenza',
+              '${profile.averageWorkoutsPerWeek} sessioni/settimana',
+            ),
+            _SettingRowData(
+              'Per sessione',
+              '${workoutPerSessionKcal.round()} kcal attive',
+            ),
+            _SettingRowData(
+              'Per settimana',
+              '${workoutWeeklyKcal.round()} kcal attive',
+            ),
+            _SettingRowData(
+              'Media giornaliera',
+              '${estimate.workoutDailyKcal.round()} kcal attive',
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _ProfileExplanationCard(
+          title: '4. Somma finale',
+          body: profile.targetModeCode == TargetModeCodes.fixedUser
+              ? 'La modalit\u00E0 fissa usa direttamente il valore scelto '
+                  'dall\u2019utente.'
+              : 'La base sedentaria e le due quote attive vengono sommate. '
+                  'Il risultato viene poi limitato alle soglie di sicurezza '
+                  'configurate nel profilo.',
+          rows: <_SettingRowData>[
+            _SettingRowData(
+              'Base sedentaria',
+              '${estimate.sedentaryKcal.round()} kcal',
+            ),
+            _SettingRowData(
+              '+ passi attivi',
+              '${estimate.stepDailyKcal.round()} kcal',
+            ),
+            _SettingRowData(
+              '+ allenamenti attivi',
+              '${estimate.workoutDailyKcal.round()} kcal',
+            ),
+            _SettingRowData(
+              'Somma prima dei limiti',
+              '${unclampedProfileTarget.round()} kcal',
+            ),
+            _SettingRowData(
+              'Target mostrato',
+              '${estimate.targetKcal.round()} kcal',
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _ProfileExplanationCard(
+          title: 'Sorgente dei dati allenamento',
+          body: _activityFallbackDescription(
+              ActivityFallbackModeCodes.profileEstimate),
+          rows: <_SettingRowData>[
+            _SettingRowData(
+              'Modalit\u00E0',
+              _activityFallbackModeLabel(
+                  ActivityFallbackModeCodes.profileEstimate),
+            ),
+            const _SettingRowData(
+              'Regola',
+              'Non sommare stima profilo e calorie registrate per la stessa sessione',
+            ),
+          ],
+        ),
+      ];
+    }
+
+    if (sectionCode == 'meals') {
+      return <Widget>[
+        const TtSectionHeader(title: 'Pasti e macro'),
+        const SizedBox(height: AppSpacing.md),
+        _SummaryCard(
+          title: 'Macronutrienti',
+          icon: Icons.pie_chart_outline_rounded,
+          onEdit: () => _showMacroSheet(profile),
+          rows: <_SettingRowData>[
+            _SettingRowData(
+                'Modalit\u00E0', _macroModeLabel(profile.macroModeCode)),
+            _SettingRowData('Proteine', '${estimate.proteinGrams.round()} g'),
+            _SettingRowData('Grassi', '${estimate.fatGrams.round()} g'),
+            _SettingRowData('Fibre', '${estimate.fiberGrams.round()} g'),
+            _SettingRowData('Carboidrati', '${estimate.carbsGrams.round()} g'),
+            _SettingRowData('Zuccheri max', '${estimate.sugarGrams.round()} g'),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _SummaryCard(
+          title: 'Target per pasto',
+          icon: Icons.lunch_dining_outlined,
+          onEdit: () => _showMealTargetsSheet(profile),
+          rows: <_SettingRowData>[
+            _SettingRowData(
+              'Modalit\u00E0',
+              _mealTargetModeLabel(mealTargetSettings.modeCode),
+            ),
+            _SettingRowData(
+              'Configurazione',
+              _mealTargetSettingsSummary(mealTargetSettings),
+            ),
+          ],
+        ),
+      ];
+    }
+
+    if (sectionCode == 'app') {
+      return <Widget>[
+        const TtSectionHeader(title: 'App e dati'),
+        const SizedBox(height: AppSpacing.md),
+        _SummaryCard(
+          title: 'Preferenze',
+          icon: Icons.settings_outlined,
+          onEdit: () => _showAppSheet(profile),
+          rows: <_SettingRowData>[
+            _SettingRowData('Tema', _themeLabel(profile.themeModeCode)),
+            _SettingRowData(
+              'Lingua',
+              profile.languageCode == 'en' ? 'English' : 'Italiano',
+            ),
+            const _SettingRowData('Dashboard iniziale', 'Food Plan'),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _AppInformationCard(
+          appInfo: appInfo,
+          onRefresh: () => ref.invalidate(appInfoProvider),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        TtAppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Icon(
+                    Icons.storage_rounded,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Text(
+                      'Dati locali',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(dataPath, style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: AppSpacing.md),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                  onPressed: () => _showDeleteDataSheet(dataPath),
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  label: const Text('Cancella dati'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ];
+    }
+
+    return <Widget>[
+      _SummaryCard(
+        title: 'Target app',
+        icon: Icons.local_fire_department_outlined,
+        onTap: () => _showTargetExplanationSheet(
+          profile: profile,
+          estimate: estimate,
+          currentWeight: currentWeight,
+          hasScaleMeasurement: hasScaleMeasurement,
+        ),
+        rows: <_SettingRowData>[
+          _SettingRowData('RMR', '${estimate.rmrKcal.round()} kcal'),
+          _SettingRowData('Moltiplicatore sedentario',
+              'x${estimate.sedentaryMultiplier.toStringAsFixed(2)}'),
+          _SettingRowData(
+              'Base sedentaria', '${estimate.sedentaryKcal.round()} kcal'),
+          _SettingRowData('Allenamenti medi',
+              '${estimate.workoutDailyKcal.round()} kcal/giorno'),
+          _SettingRowData(
+              'Target calcolato', '${estimate.targetKcal.round()} kcal'),
+          _SettingRowData(
+            'Peso attuale',
+            currentWeight == null
+                ? 'n/d'
+                : '${currentWeight.toStringAsFixed(1)} kg',
+          ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.sectionGap),
+      const TtSectionHeader(title: 'Profilo'),
+      const SizedBox(height: AppSpacing.md),
+      _SummaryCard(
+        title: 'Dati personali',
+        icon: Icons.person_outline_rounded,
+        onEdit: () => _showProfileSheet(profile, currentWeight),
+        rows: <_SettingRowData>[
+          _SettingRowData(
+              'Nome',
+              profile.displayName.isEmpty
+                  ? 'Non impostato'
+                  : profile.displayName),
+          _SettingRowData('Eta', _age.text.isEmpty ? 'n/d' : _age.text),
+          _SettingRowData('Sesso', _sexLabel(profile.biologicalSexCode)),
+          _SettingRowData(
+              'Peso iniziale',
+              profile.initialWeightKg == null
+                  ? 'n/d'
+                  : '${_num(profile.initialWeightKg)} kg'),
+          _SettingRowData(
+              'Altezza',
+              profile.heightCm == null
+                  ? 'n/d'
+                  : '${_num(profile.heightCm)} cm'),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.md),
+      _SummaryCard(
+        title: 'Target e attivita',
+        icon: Icons.tune_rounded,
+        onEdit: () => _showTargetSheet(profile, estimate),
+        rows: <_SettingRowData>[
+          _SettingRowData(
+              'Modalita target', _targetModeLabel(profile.targetModeCode)),
+          _SettingRowData('Target fisso', '${profile.defaultTargetKcal} kcal'),
+          _SettingRowData('Target passi', '${profile.defaultStepGoal} passi'),
+          _SettingRowData('Kcal per passo', _num(profile.stepKcalCoefficient)),
+          _SettingRowData(
+            'Allenamenti',
+            '${profile.averageWorkoutsPerWeek}/settimana, ${profile.averageWorkoutDurationMinutes} min',
+          ),
+          _SettingRowData('Tipo allenamento',
+              _workoutLabel(profile.workoutActivityTypeCode)),
+          _SettingRowData(
+              'Risposta peso', _weightLossResponseLabel(_weightLossResponse)),
+          _SettingRowData(
+            'Finestra adattiva',
+            '${profile.adaptiveReferenceDays} giorni',
+          ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.md),
+      _SummaryCard(
+        title: 'Macro nutrienti',
+        icon: Icons.pie_chart_outline_rounded,
+        onEdit: () => _showMacroSheet(profile),
+        rows: <_SettingRowData>[
+          _SettingRowData('Modalita', _macroModeLabel(profile.macroModeCode)),
+          _SettingRowData('Proteine', '${estimate.proteinGrams.round()} g'),
+          _SettingRowData('Grassi', '${estimate.fatGrams.round()} g'),
+          _SettingRowData('Fibre', '${estimate.fiberGrams.round()} g'),
+          _SettingRowData('Carboidrati', '${estimate.carbsGrams.round()} g'),
+          _SettingRowData('Zuccheri max', '${estimate.sugarGrams.round()} g'),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.md),
+      _SummaryCard(
+        title: 'Target per pasto',
+        icon: Icons.lunch_dining_outlined,
+        onEdit: () => _showMealTargetsSheet(profile),
+        rows: <_SettingRowData>[
+          _SettingRowData(
+            'Modalita',
+            _mealTargetModeLabel(mealTargetSettings.modeCode),
+          ),
+          _SettingRowData(
+            'Configurazione',
+            _mealTargetSettingsSummary(mealTargetSettings),
+          ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.sectionGap),
+      const TtSectionHeader(title: 'App e dati'),
+      const SizedBox(height: AppSpacing.md),
+      _SummaryCard(
+        title: 'Preferenze',
+        icon: Icons.settings_outlined,
+        onEdit: () => _showAppSheet(profile),
+        rows: <_SettingRowData>[
+          _SettingRowData('Tema', _themeLabel(profile.themeModeCode)),
+          _SettingRowData(
+              'Lingua', profile.languageCode == 'en' ? 'English' : 'Italiano'),
+          const _SettingRowData(
+            'Dashboard iniziale',
+            'Food Plan',
+          ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.md),
+      _AppInformationCard(
+        appInfo: appInfo,
+        onRefresh: () => ref.invalidate(appInfoProvider),
+      ),
+      const SizedBox(height: AppSpacing.md),
+      _SummaryCard(
+        title: 'Import / Export',
+        icon: Icons.import_export_rounded,
+        onEdit: () => context.push('/settings/transfer'),
+        rows: <_SettingRowData>[
+          _SettingRowData(
+            'Export Folder',
+            profile.exportFolderPath.trim().isEmpty
+                ? 'Download/Total Tracker (predefinita)'
+                : profile.exportFolderPath,
+          ),
+          const _SettingRowData(
+            'Formato',
+            '.totaltracker portabile',
+          ),
+          const _SettingRowData(
+            'Importazione',
+            'Analisi, conflitti e conferma pagina per pagina',
+          ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.md),
+      TtAppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Icon(
+                  Icons.storage_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    'Dati locali',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              dataPath,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+                onPressed: () => _showDeleteDataSheet(dataPath),
+                icon: const Icon(Icons.delete_outline_rounded),
+                label: const Text('Cancella dati'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ];
   }
 
   void _load(UserProfileEntity profile) {
@@ -386,11 +777,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       WorkoutActivityTypeCodes.values,
       WorkoutActivityTypeCodes.weights,
     );
-    _activityFallbackMode = _safeCode(
-      profile.activityFallbackModeCode,
-      ActivityFallbackModeCodes.values,
-      ActivityFallbackModeCodes.recordedWithProfileFallback,
-    );
+    _activityFallbackMode = ActivityFallbackModeCodes.profileEstimate;
     _macroMode = _safeCode(
       profile.macroModeCode,
       MacroModeCodes.values,
@@ -480,14 +867,12 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               _ProfileExplanationCard(
                 title: 'Attivita e fallback',
                 body: _activityFallbackDescription(
-                  profile.activityFallbackModeCode,
-                ),
+                    ActivityFallbackModeCodes.profileEstimate),
                 rows: <_SettingRowData>[
                   _SettingRowData(
                     'Modalita',
                     _activityFallbackModeLabel(
-                      profile.activityFallbackModeCode,
-                    ),
+                        ActivityFallbackModeCodes.profileEstimate),
                   ),
                   _SettingRowData(
                     'Passi target',
@@ -679,18 +1064,20 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
           DropdownButtonFormField<String>(
             initialValue: _activityFallbackMode,
             decoration: const InputDecoration(
-              labelText: 'Uso dei dati di attivita',
+              labelText: 'Uso dei dati di attivit\u00E0',
               helperText:
-                  'Definisce cosa usare quando passi o allenamenti non sono disponibili',
+                  'Le sorgenti registrate saranno abilitate con il motore allenamenti',
             ),
             items: const <DropdownMenuItem<String>>[
               DropdownMenuItem<String>(
                 value: ActivityFallbackModeCodes.recordedWithProfileFallback,
-                child: Text('Registrati, con fallback profilo'),
+                enabled: false,
+                child: Text('Registrati, con fallback profilo - prossimamente'),
               ),
               DropdownMenuItem<String>(
                 value: ActivityFallbackModeCodes.recordedOnly,
-                child: Text('Solo dati registrati'),
+                enabled: false,
+                child: Text('Solo dati registrati - prossimamente'),
               ),
               DropdownMenuItem<String>(
                 value: ActivityFallbackModeCodes.profileEstimate,
@@ -698,8 +1085,11 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               ),
             ],
             onChanged: (String? value) {
-              if (value != null) {
-                setSheetState(() => _activityFallbackMode = value);
+              if (value == ActivityFallbackModeCodes.profileEstimate) {
+                setSheetState(
+                  () => _activityFallbackMode =
+                      ActivityFallbackModeCodes.profileEstimate,
+                );
               }
             },
           ),
@@ -1265,7 +1655,8 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       profile.averageWorkoutDurationMinutes =
           _toInt(_workoutDuration.text) ?? 0;
       profile.workoutActivityTypeCode = _workoutType;
-      profile.activityFallbackModeCode = _activityFallbackMode;
+      profile.activityFallbackModeCode =
+          ActivityFallbackModeCodes.profileEstimate;
       profile.macroModeCode = _macroMode;
       profile.proteinGramsPerKg = _toDouble(_proteinKg.text) ?? 2.2;
       profile.fatGramsPerKg = _toDouble(_fatKg.text) ?? 1;
