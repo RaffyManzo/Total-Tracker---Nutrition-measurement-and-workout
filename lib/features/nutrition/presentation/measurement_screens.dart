@@ -236,6 +236,12 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
                 ],
               ),
               const SizedBox(height: AppSpacing.sectionGap),
+              _InteractiveBodyMeasurementsCard(
+                data: data,
+                onRegionTap: (String code) =>
+                    _showBodyRegionSheet(context, ref, data, code),
+              ),
+              const SizedBox(height: AppSpacing.sectionGap),
               _ChartCard(
                 title: 'Peso',
                 subtitle: 'Trend bilancia',
@@ -664,31 +670,50 @@ class TapeMeasurementsScreen extends ConsumerWidget {
           onRetry: () => ref.invalidate(measurementHubProvider),
         ),
         data: (MeasurementHubData data) {
-          if (data.tapeMeasurements.isEmpty) {
-            return _EmptyList(
-              message: 'Nessuna misurazione metro.',
-              action: () => _showTapeDialog(context, ref),
-            );
-          }
-          return ListView.separated(
+          return ListView(
             padding: _screenPadding,
-            itemCount: data.tapeMeasurements.length,
-            separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.md),
-            itemBuilder: (BuildContext context, int index) {
-              final TapeMeasurementEntity item = data.tapeMeasurements[index];
-              return _TapeTile(
-                item: item,
-                entries: data.entriesByTapeId[item.id] ??
-                    const <TapeMeasurementEntryEntity>[],
-                onTap: () => _showTapeDialog(
-                  context,
-                  ref,
-                  existing: item,
-                  existingEntries: data.entriesByTapeId[item.id] ??
-                      const <TapeMeasurementEntryEntity>[],
-                ),
-              );
-            },
+            children: <Widget>[
+              _InteractiveBodyMeasurementsCard(
+                data: data,
+                onRegionTap: (String code) =>
+                    _showBodyRegionSheet(context, ref, data, code),
+              ),
+              const SizedBox(height: AppSpacing.sectionGap),
+              const TtSectionHeader(title: 'Registrazioni metro'),
+              const SizedBox(height: AppSpacing.md),
+              if (data.tapeMeasurements.isEmpty)
+                TtAppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const Text('Nessuna misurazione metro.'),
+                      const SizedBox(height: AppSpacing.md),
+                      FilledButton.icon(
+                        onPressed: () => _showTapeDialog(context, ref),
+                        icon: const Icon(Icons.add_rounded),
+                        label: const Text('Registra la prima misura'),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                for (final TapeMeasurementEntity item
+                    in data.tapeMeasurements) ...<Widget>[
+                  _TapeTile(
+                    item: item,
+                    entries: data.entriesByTapeId[item.id] ??
+                        const <TapeMeasurementEntryEntity>[],
+                    onTap: () => _showTapeDialog(
+                      context,
+                      ref,
+                      existing: item,
+                      existingEntries: data.entriesByTapeId[item.id] ??
+                          const <TapeMeasurementEntryEntity>[],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
+            ],
           );
         },
       ),
@@ -1707,6 +1732,398 @@ Widget _field(
         suffixIcon: suffixIcon,
       ),
     ),
+  );
+}
+
+class _InteractiveBodyMeasurementsCard extends StatelessWidget {
+  const _InteractiveBodyMeasurementsCard({
+    required this.data,
+    required this.onRegionTap,
+  });
+
+  final MeasurementHubData data;
+  final ValueChanged<String> onRegionTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Set<String> availableCodes = <String>{
+      for (final TapeMeasurementEntryEntity entry in data.latestTapeEntries())
+        if (entry.valueCm != null) entry.measurementCode,
+    };
+    return TtAppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                Icons.accessibility_new_rounded,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Corpo interattivo',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    Text(
+                      'Tocca una zona per vedere ultimo valore, variazione e storico.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Center(
+            child: SizedBox(
+              width: 260,
+              child: AspectRatio(
+                aspectRatio: 0.58,
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final Size size = constraints.biggest;
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTapUp: (TapUpDetails details) {
+                        final String? code =
+                            _bodyRegionAt(details.localPosition, size);
+                        if (code != null) onRegionTap(code);
+                      },
+                      child: CustomPaint(
+                        painter: _BodyMeasurementsPainter(
+                          availableCodes: availableCodes,
+                          colorScheme: Theme.of(context).colorScheme,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
+            children: <Widget>[
+              _BodyLegendChip(
+                label: 'Misura disponibile',
+                color: Theme.of(context).colorScheme.primaryContainer,
+              ),
+              _BodyLegendChip(
+                label: 'Nessun dato',
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BodyLegendChip extends StatelessWidget {
+  const _BodyLegendChip({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.xs,
+      ),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(label, style: Theme.of(context).textTheme.labelSmall),
+    );
+  }
+}
+
+class _BodyMeasurementsPainter extends CustomPainter {
+  const _BodyMeasurementsPainter({
+    required this.availableCodes,
+    required this.colorScheme,
+  });
+
+  final Set<String> availableCodes;
+  final ColorScheme colorScheme;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint outline = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6
+      ..color = colorScheme.outlineVariant;
+    final Paint neutral = Paint()
+      ..style = PaintingStyle.fill
+      ..color = colorScheme.surfaceContainerHighest;
+
+    canvas.drawCircle(
+      Offset(size.width * 0.5, size.height * 0.075),
+      size.width * 0.10,
+      neutral,
+    );
+    canvas.drawCircle(
+      Offset(size.width * 0.5, size.height * 0.075),
+      size.width * 0.10,
+      outline,
+    );
+
+    for (final _BodyRegionDefinition region in _bodyRegions) {
+      final Rect rect = region.rectFor(size);
+      final Paint fill = Paint()
+        ..style = PaintingStyle.fill
+        ..color = availableCodes.contains(region.code)
+            ? colorScheme.primaryContainer
+            : colorScheme.surfaceContainerHighest;
+      final RRect shape = RRect.fromRectAndRadius(
+        rect,
+        Radius.circular(size.width * 0.035),
+      );
+      canvas.drawRRect(shape, fill);
+      canvas.drawRRect(shape, outline);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BodyMeasurementsPainter oldDelegate) {
+    return oldDelegate.availableCodes != availableCodes ||
+        oldDelegate.colorScheme != colorScheme;
+  }
+}
+
+class _BodyRegionDefinition {
+  const _BodyRegionDefinition(
+    this.code,
+    this.left,
+    this.top,
+    this.right,
+    this.bottom,
+  );
+
+  final String code;
+  final double left;
+  final double top;
+  final double right;
+  final double bottom;
+
+  Rect rectFor(Size size) => Rect.fromLTRB(
+        size.width * left,
+        size.height * top,
+        size.width * right,
+        size.height * bottom,
+      );
+}
+
+const List<_BodyRegionDefinition> _bodyRegions = <_BodyRegionDefinition>[
+  _BodyRegionDefinition('neck_cm', 0.43, 0.13, 0.57, 0.18),
+  _BodyRegionDefinition('shoulders_cm', 0.25, 0.18, 0.75, 0.24),
+  _BodyRegionDefinition('chest_cm', 0.33, 0.24, 0.67, 0.34),
+  _BodyRegionDefinition('waist_cm', 0.37, 0.34, 0.63, 0.42),
+  _BodyRegionDefinition('abdomen_cm', 0.35, 0.42, 0.65, 0.50),
+  _BodyRegionDefinition('hips_cm', 0.31, 0.50, 0.69, 0.58),
+  _BodyRegionDefinition('left_arm_cm', 0.18, 0.20, 0.30, 0.40),
+  _BodyRegionDefinition('right_arm_cm', 0.70, 0.20, 0.82, 0.40),
+  _BodyRegionDefinition('left_forearm_cm', 0.12, 0.39, 0.24, 0.58),
+  _BodyRegionDefinition('right_forearm_cm', 0.76, 0.39, 0.88, 0.58),
+  _BodyRegionDefinition('left_thigh_cm', 0.31, 0.58, 0.47, 0.78),
+  _BodyRegionDefinition('right_thigh_cm', 0.53, 0.58, 0.69, 0.78),
+  _BodyRegionDefinition('left_calf_cm', 0.33, 0.78, 0.46, 0.97),
+  _BodyRegionDefinition('right_calf_cm', 0.54, 0.78, 0.67, 0.97),
+];
+
+String? _bodyRegionAt(Offset position, Size size) {
+  for (final _BodyRegionDefinition region in _bodyRegions.reversed) {
+    if (region.rectFor(size).inflate(5).contains(position)) {
+      return region.code;
+    }
+  }
+  return null;
+}
+
+class _BodyMeasurementPoint {
+  const _BodyMeasurementPoint({
+    required this.dateKey,
+    required this.valueCm,
+    required this.reliabilityCode,
+  });
+
+  final String dateKey;
+  final double valueCm;
+  final String reliabilityCode;
+}
+
+List<_BodyMeasurementPoint> _historyForBodyCode(
+  MeasurementHubData data,
+  String code,
+) {
+  final List<_BodyMeasurementPoint> history = <_BodyMeasurementPoint>[];
+  for (final TapeMeasurementEntity measurement in data.tapeMeasurements) {
+    final List<TapeMeasurementEntryEntity> entries =
+        data.entriesByTapeId[measurement.id] ??
+            const <TapeMeasurementEntryEntity>[];
+    for (final TapeMeasurementEntryEntity entry in entries) {
+      if (entry.measurementCode == code && entry.valueCm != null) {
+        history.add(
+          _BodyMeasurementPoint(
+            dateKey: measurement.dateKey,
+            valueCm: entry.valueCm!,
+            reliabilityCode: measurement.reliabilityCode,
+          ),
+        );
+        break;
+      }
+    }
+  }
+  history.sort(
+    (_BodyMeasurementPoint a, _BodyMeasurementPoint b) =>
+        b.dateKey.compareTo(a.dateKey),
+  );
+  return history;
+}
+
+Future<void> _showBodyRegionSheet(
+  BuildContext context,
+  WidgetRef ref,
+  MeasurementHubData data,
+  String code,
+) async {
+  final List<_BodyMeasurementPoint> history = _historyForBodyCode(data, code);
+  final _BodyMeasurementPoint? latest = history.isEmpty ? null : history.first;
+  final _BodyMeasurementPoint? previous =
+      history.length < 2 ? null : history[1];
+  final double? delta = latest == null || previous == null
+      ? null
+      : latest.valueCm - previous.valueCm;
+
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (BuildContext sheetContext) {
+      return FractionallySizedBox(
+        heightFactor: 0.5,
+        child: Column(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                0,
+                AppSpacing.lg,
+                AppSpacing.md,
+              ),
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          _tapeLabel(code),
+                          style: Theme.of(sheetContext).textTheme.headlineSmall,
+                        ),
+                        Text(
+                          latest == null
+                              ? 'Nessuna misura registrata'
+                              : 'Ultima misura ${latest.dateKey}',
+                          style: Theme.of(sheetContext).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Chiudi',
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                children: <Widget>[
+                  if (latest != null)
+                    _MetricGrid(
+                      metrics: <_Metric>[
+                        _Metric(
+                          'Ultima',
+                          '${latest.valueCm.toStringAsFixed(1)} cm',
+                        ),
+                        _Metric(
+                          'Precedente',
+                          previous == null
+                              ? 'n/d'
+                              : '${previous.valueCm.toStringAsFixed(1)} cm',
+                        ),
+                        _Metric(
+                          'Variazione',
+                          delta == null
+                              ? 'n/d'
+                              : '${delta >= 0 ? '+' : ''}${delta.toStringAsFixed(1)} cm',
+                        ),
+                        _Metric('Affidabilità', latest.reliabilityCode),
+                      ],
+                    ),
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    'Storico',
+                    style: Theme.of(sheetContext).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  if (history.isEmpty)
+                    const Text('Nessun valore disponibile per questa zona.')
+                  else
+                    for (final _BodyMeasurementPoint point in history.take(8))
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(point.dateKey),
+                        subtitle:
+                            Text('Affidabilità: ${point.reliabilityCode}'),
+                        trailing: Text(
+                          '${point.valueCm.toStringAsFixed(1)} cm',
+                          style: Theme.of(sheetContext).textTheme.titleMedium,
+                        ),
+                      ),
+                ],
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () async {
+                      Navigator.of(sheetContext).pop();
+                      await Future<void>.delayed(
+                          const Duration(milliseconds: 180));
+                      if (context.mounted) {
+                        await _showTapeDialog(context, ref);
+                      }
+                    },
+                    icon: const Icon(Icons.add_rounded),
+                    label: const Text('Registra nuova misura'),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    },
   );
 }
 

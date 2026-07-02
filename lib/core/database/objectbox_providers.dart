@@ -10,6 +10,7 @@ import '../../features/nutrition/data/services/food_analytics_service.dart';
 import '../../features/nutrition/data/services/food_planning_service.dart';
 import '../../features/nutrition/data/services/open_food_facts_service.dart';
 import '../../features/profile/data/repositories/user_profile_repository.dart';
+import '../../features/transfer/data/total_tracker_transfer_service.dart';
 import '../../features/workout/data/repositories/exercise_repository.dart';
 import '../../features/workout/data/repositories/muscle_repository.dart';
 import '../../features/workout/data/repositories/routine_repository.dart';
@@ -107,6 +108,12 @@ final Provider<FoodAnalyticsService> foodAnalyticsServiceProvider =
 final Provider<OpenFoodFactsService> openFoodFactsServiceProvider =
     Provider<OpenFoodFactsService>((ref) {
   return OpenFoodFactsService();
+});
+
+final Provider<TotalTrackerTransferService>
+    totalTrackerTransferServiceProvider =
+    Provider<TotalTrackerTransferService>((ref) {
+  return TotalTrackerTransferService(ref.watch(objectBoxStoreProvider));
 });
 
 final Provider<MuscleRepository> muscleRepositoryProvider =

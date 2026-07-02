@@ -39,6 +39,7 @@ class UserProfileEntity {
     this.maximumReasonableTdee = 4600,
     this.themeModeCode = ThemePreferenceCodes.system,
     this.languageCode = 'it',
+    this.exportFolderPath = '',
     this.isActive = true,
     required this.createdAtEpochMs,
     required this.updatedAtEpochMs,
@@ -84,6 +85,7 @@ class UserProfileEntity {
   double maximumReasonableTdee;
   String themeModeCode;
   String languageCode;
+  String exportFolderPath;
 
   bool isActive;
   int createdAtEpochMs;

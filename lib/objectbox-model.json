@@ -355,7 +355,7 @@
     },
     {
       "id": "5:8645411654677832403",
-      "lastPropertyId": "37:3388718277239833684",
+      "lastPropertyId": "38:3557396583143516158",
       "name": "UserProfileEntity",
       "properties": [
         {
@@ -544,6 +544,11 @@
         {
           "id": "37:3388718277239833684",
           "name": "activityFallbackModeCode",
+          "type": 9
+        },
+        {
+          "id": "38:3557396583143516158",
+          "name": "exportFolderPath",
           "type": 9
         }
       ],

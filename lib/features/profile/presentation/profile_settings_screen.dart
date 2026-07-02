@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:objectbox/objectbox.dart';
 
 import '../../../app/theme/app_spacing.dart';
@@ -55,15 +56,6 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
   String _language = 'it';
   String _weightLossResponse = _WeightLossResponseCodes.standard;
   bool _isApplying = false;
-  Set<_TransferArea> _exportAreas = <_TransferArea>{
-    _TransferArea.food,
-    _TransferArea.workout,
-  };
-  Set<_TransferArea> _importAreas = <_TransferArea>{
-    _TransferArea.food,
-    _TransferArea.workout,
-  };
-
   @override
   void dispose() {
     _name.dispose();
@@ -263,19 +255,21 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               _SummaryCard(
                 title: 'Import / Export',
                 icon: Icons.import_export_rounded,
-                onEdit: _showTransferSelectionSheet,
+                onEdit: () => context.push('/settings/transfer'),
                 rows: <_SettingRowData>[
                   _SettingRowData(
-                    'Esportazione',
-                    _transferAreaLabel(_exportAreas),
-                  ),
-                  _SettingRowData(
-                    'Importazione',
-                    _transferAreaLabel(_importAreas),
+                    'Export Folder',
+                    profile.exportFolderPath.trim().isEmpty
+                        ? 'Download/Total Tracker (predefinita)'
+                        : profile.exportFolderPath,
                   ),
                   const _SettingRowData(
-                    'Operazioni file',
-                    'Non ancora abilitate',
+                    'Formato',
+                    '.totaltracker portabile',
+                  ),
+                  const _SettingRowData(
+                    'Importazione',
+                    'Analisi, conflitti e conferma pagina per pagina',
                   ),
                 ],
               ),
@@ -1011,296 +1005,6 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       _copyProfileToControllers(profile);
       setState(() {});
     }
-  }
-
-  Future<void> _showTransferSelectionSheet() async {
-    _TransferDirection direction = _TransferDirection.export;
-    final Set<_TransferArea> exportSelection = <_TransferArea>{
-      ..._exportAreas,
-    };
-    final Set<_TransferArea> importSelection = <_TransferArea>{
-      ..._importAreas,
-    };
-    final bool? saved = await showModalBottomSheet<bool>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (BuildContext sheetContext) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setSheetState) {
-            final Set<_TransferArea> selected =
-                direction == _TransferDirection.export
-                    ? exportSelection
-                    : importSelection;
-            return FractionallySizedBox(
-              heightFactor: 0.82,
-              child: Column(
-                children: <Widget>[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg,
-                      AppSpacing.sm,
-                      AppSpacing.sm,
-                      AppSpacing.md,
-                    ),
-                    child: Row(
-                      children: <Widget>[
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color:
-                                Theme.of(context).colorScheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Icon(
-                            Icons.import_export_rounded,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onPrimaryContainer,
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Text(
-                                'Seleziona aree dati',
-                                style:
-                                    Theme.of(context).textTheme.headlineSmall,
-                              ),
-                              Text(
-                                'Questa fase configura soltanto la selezione.',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'Chiudi',
-                          onPressed: () =>
-                              Navigator.of(sheetContext).pop(false),
-                          icon: const Icon(Icons.close_rounded),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: ListView(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppSpacing.lg,
-                        0,
-                        AppSpacing.lg,
-                        AppSpacing.md,
-                      ),
-                      children: <Widget>[
-                        SegmentedButton<_TransferDirection>(
-                          segments: const <ButtonSegment<_TransferDirection>>[
-                            ButtonSegment<_TransferDirection>(
-                              value: _TransferDirection.export,
-                              icon: Icon(Icons.upload_file_rounded),
-                              label: Text('Esportazione'),
-                            ),
-                            ButtonSegment<_TransferDirection>(
-                              value: _TransferDirection.import,
-                              icon: Icon(Icons.download_rounded),
-                              label: Text('Importazione'),
-                            ),
-                          ],
-                          selected: <_TransferDirection>{direction},
-                          onSelectionChanged: (Set<_TransferDirection> value) {
-                            setSheetState(() => direction = value.first);
-                          },
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                        for (final _TransferArea area in _TransferArea.values)
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              bottom: AppSpacing.md,
-                            ),
-                            child: TtAppCard(
-                              onTap: () {
-                                setSheetState(() {
-                                  if (selected.contains(area)) {
-                                    selected.remove(area);
-                                  } else {
-                                    selected.add(area);
-                                  }
-                                });
-                              },
-                              backgroundColor: selected.contains(area)
-                                  ? Theme.of(context)
-                                      .colorScheme
-                                      .primaryContainer
-                                      .withValues(alpha: 0.6)
-                                  : null,
-                              borderColor: selected.contains(area)
-                                  ? Theme.of(context).colorScheme.primary
-                                  : null,
-                              child: Row(
-                                children: <Widget>[
-                                  Container(
-                                    width: 46,
-                                    height: 46,
-                                    decoration: BoxDecoration(
-                                      color: selected.contains(area)
-                                          ? Theme.of(context)
-                                              .colorScheme
-                                              .primary
-                                          : Theme.of(context)
-                                              .colorScheme
-                                              .surfaceContainerHighest,
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                    child: Icon(
-                                      area.icon,
-                                      color: selected.contains(area)
-                                          ? Theme.of(context)
-                                              .colorScheme
-                                              .onPrimary
-                                          : Theme.of(context)
-                                              .colorScheme
-                                              .onSurfaceVariant,
-                                    ),
-                                  ),
-                                  const SizedBox(width: AppSpacing.md),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: <Widget>[
-                                        Text(
-                                          area.label,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleMedium
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w800,
-                                              ),
-                                        ),
-                                        const SizedBox(
-                                          height: AppSpacing.xxs,
-                                        ),
-                                        Text(
-                                          area.subtitle,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodySmall,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Checkbox(
-                                    value: selected.contains(area),
-                                    onChanged: (bool? value) {
-                                      setSheetState(() {
-                                        if (value ?? false) {
-                                          selected.add(area);
-                                        } else {
-                                          selected.remove(area);
-                                        }
-                                      });
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        Container(
-                          padding: const EdgeInsets.all(AppSpacing.md),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .secondaryContainer,
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Icon(
-                                Icons.info_outline_rounded,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSecondaryContainer,
-                              ),
-                              const SizedBox(width: AppSpacing.sm),
-                              Expanded(
-                                child: Text(
-                                  'Nessun file verrà creato, letto o modificato. '
-                                  'L importazione e l esportazione effettive '
-                                  'saranno implementate nella fase successiva.',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.copyWith(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSecondaryContainer,
-                                      ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  SafeArea(
-                    top: false,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppSpacing.lg,
-                        AppSpacing.sm,
-                        AppSpacing.lg,
-                        AppSpacing.lg,
-                      ),
-                      child: Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () =>
-                                  Navigator.of(sheetContext).pop(false),
-                              child: const Text('Annulla'),
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: exportSelection.isEmpty ||
-                                      importSelection.isEmpty
-                                  ? null
-                                  : () => Navigator.of(sheetContext).pop(true),
-                              icon: const Icon(Icons.check_rounded),
-                              label: const Text('Conferma'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-    if (saved != true || !mounted) {
-      return;
-    }
-    setState(() {
-      _exportAreas = <_TransferArea>{...exportSelection};
-      _importAreas = <_TransferArea>{...importSelection};
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Selezione aggiornata. Nessun import o export è stato eseguito.',
-        ),
-      ),
-    );
   }
 
   Future<void> _showDeleteDataSheet(String dataPath) async {
@@ -2166,37 +1870,6 @@ String _optionalNumber(double? value) {
       .toStringAsFixed(2)
       .replaceFirst(RegExp(r'0+$'), '')
       .replaceFirst(RegExp(r'\.$'), '');
-}
-
-enum _TransferDirection { export, import }
-
-enum _TransferArea {
-  food(
-    'Alimentazione',
-    'Giorni, pasti, ingredienti, ricette e misurazioni corporee.',
-    Icons.restaurant_menu_rounded,
-  ),
-  workout(
-    'Allenamento',
-    'Esercizi, schede, routine e sessioni di allenamento.',
-    Icons.fitness_center_rounded,
-  );
-
-  const _TransferArea(this.label, this.subtitle, this.icon);
-
-  final String label;
-  final String subtitle;
-  final IconData icon;
-}
-
-String _transferAreaLabel(Set<_TransferArea> areas) {
-  if (areas.length == _TransferArea.values.length) {
-    return 'Alimentazione e allenamento';
-  }
-  if (areas.length == 1) {
-    return areas.single.label;
-  }
-  return 'Nessuna area';
 }
 
 enum _DataGroup {

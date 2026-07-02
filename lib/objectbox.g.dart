@@ -431,7 +431,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(5, 8645411654677832403),
     name: 'UserProfileEntity',
-    lastPropertyId: const obx_int.IdUid(37, 3388718277239833684),
+    lastPropertyId: const obx_int.IdUid(38, 3557396583143516158),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -654,6 +654,12 @@ final _entities = <obx_int.ModelEntity>[
       obx_int.ModelProperty(
         id: const obx_int.IdUid(37, 3388718277239833684),
         name: 'activityFallbackModeCode',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(38, 3557396583143516158),
+        name: 'exportFolderPath',
         type: 9,
         flags: 0,
       ),
@@ -3521,7 +3527,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final activityFallbackModeCodeOffset = fbb.writeString(
           object.activityFallbackModeCode,
         );
-        fbb.startTable(38);
+        final exportFolderPathOffset = fbb.writeString(object.exportFolderPath);
+        fbb.startTable(39);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, uuidOffset);
         fbb.addOffset(2, displayNameOffset);
@@ -3559,6 +3566,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addOffset(34, mealTargetModeCodeOffset);
         fbb.addOffset(35, mealTargetsJsonOffset);
         fbb.addOffset(36, activityFallbackModeCodeOffset);
+        fbb.addOffset(37, exportFolderPathOffset);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -3719,6 +3727,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final languageCodeParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 68, '');
+        final exportFolderPathParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 78, '');
         final isActiveParam = const fb.BoolReader().vTableGet(
           buffer,
           rootOffset,
@@ -3776,6 +3787,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
           maximumReasonableTdee: maximumReasonableTdeeParam,
           themeModeCode: themeModeCodeParam,
           languageCode: languageCodeParam,
+          exportFolderPath: exportFolderPathParam,
           isActive: isActiveParam,
           createdAtEpochMs: createdAtEpochMsParam,
           updatedAtEpochMs: updatedAtEpochMsParam,
@@ -6923,6 +6935,11 @@ class UserProfileEntity_ {
   /// See [UserProfileEntity.activityFallbackModeCode].
   static final activityFallbackModeCode =
       obx.QueryStringProperty<UserProfileEntity>(_entities[4].properties[36]);
+
+  /// See [UserProfileEntity.exportFolderPath].
+  static final exportFolderPath = obx.QueryStringProperty<UserProfileEntity>(
+    _entities[4].properties[37],
+  );
 }
 
 /// [DailyRecordEntity] entity fields to define ObjectBox queries.
