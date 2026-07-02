@@ -6,7 +6,9 @@ class ProfileNutritionTargets {
     required this.rmrKcal,
     required this.sedentaryMultiplier,
     required this.sedentaryKcal,
+    required this.stepDailyKcal,
     required this.workoutDailyKcal,
+    required this.profileActivityDailyKcal,
     required this.targetKcal,
     required this.proteinGrams,
     required this.fatGrams,
@@ -18,7 +20,9 @@ class ProfileNutritionTargets {
   final double rmrKcal;
   final double sedentaryMultiplier;
   final double sedentaryKcal;
+  final double stepDailyKcal;
   final double workoutDailyKcal;
+  final double profileActivityDailyKcal;
   final double targetKcal;
   final double proteinGrams;
   final double fatGrams;
@@ -41,29 +45,50 @@ class ProfileNutritionCalculator {
     final double sedentaryMultiplier =
         profile.rmrActivityFactor <= 0 ? 1.10 : profile.rmrActivityFactor;
     final double sedentary = rmr * sedentaryMultiplier;
-    final double workoutDaily = _workoutDailyKcal(profile, weightKg);
+    final double stepDaily =
+        profile.defaultStepGoal.clamp(0, 100000).toDouble() *
+            profile.stepKcalCoefficient.clamp(0, 1).toDouble();
+    final double workoutDaily = workoutDailyKcal(profile, weightKg);
+    final double profileActivityDaily = stepDaily + workoutDaily;
     final double target = profile.targetModeCode == TargetModeCodes.fixedUser
         ? profile.defaultTargetKcal.toDouble()
-        : sedentary + workoutDaily;
+        : sedentary + profileActivityDaily;
     final double carbsGrams = profile.carbsGramsPerKg * weightKg;
     final double sugarPercent = profile.sugarCarbsPercent <= 0
-        ? 15
+        ? 25
         : profile.sugarCarbsPercent.clamp(0, 100).toDouble();
     return ProfileNutritionTargets(
       sedentaryKcal: sedentary,
       rmrKcal: rmr,
       sedentaryMultiplier: sedentaryMultiplier,
+      stepDailyKcal: stepDaily,
       workoutDailyKcal: workoutDaily,
-      targetKcal: target.clamp(
-        profile.minimumReasonableTdee,
-        profile.maximumReasonableTdee,
-      ),
+      profileActivityDailyKcal: profileActivityDaily,
+      targetKcal: target
+          .clamp(
+            profile.minimumReasonableTdee,
+            profile.maximumReasonableTdee,
+          )
+          .toDouble(),
       proteinGrams: profile.proteinGramsPerKg * weightKg,
       fatGrams: profile.fatGramsPerKg * weightKg,
       fiberGrams: profile.fiberGramsPerKg * weightKg,
       carbsGrams: carbsGrams,
       sugarGrams: carbsGrams * sugarPercent / 100,
     );
+  }
+
+  double workoutDailyKcal(UserProfileEntity profile, double weightKg) {
+    final double metNet = switch (profile.workoutActivityTypeCode) {
+      WorkoutActivityTypeCodes.mixed => 5.5,
+      WorkoutActivityTypeCodes.cardio => 7.0,
+      _ => 4.0,
+    };
+    final double durationHours =
+        (profile.averageWorkoutDurationMinutes / 60).clamp(0, 8).toDouble();
+    final double workouts =
+        profile.averageWorkoutsPerWeek.clamp(0, 14).toDouble();
+    return metNet * weightKg * durationHours * workouts / 7;
   }
 
   double _rmrKcal(
@@ -74,9 +99,8 @@ class ProfileNutritionCalculator {
     final int? age = _age(profile.birthDateEpochDay, now ?? DateTime.now());
     final double? heightCm = profile.heightCm;
     if (age == null || heightCm == null || heightCm <= 0) {
-      return profile.defaultTargetKcal / (profile.rmrActivityFactor <= 0
-          ? 1.10
-          : profile.rmrActivityFactor);
+      return profile.defaultTargetKcal /
+          (profile.rmrActivityFactor <= 0 ? 1.10 : profile.rmrActivityFactor);
     }
     final double male =
         88.362 + (13.397 * weightKg) + (4.799 * heightCm) - (5.677 * age);
@@ -89,19 +113,6 @@ class ProfileNutritionCalculator {
       return female;
     }
     return (male + female) / 2;
-  }
-
-  double _workoutDailyKcal(UserProfileEntity profile, double weightKg) {
-    final double metNet = switch (profile.workoutActivityTypeCode) {
-      WorkoutActivityTypeCodes.mixed => 5.5,
-      WorkoutActivityTypeCodes.cardio => 7.0,
-      _ => 4.0,
-    };
-    final double durationHours =
-        (profile.averageWorkoutDurationMinutes / 60).clamp(0, 8).toDouble();
-    final double workouts =
-        profile.averageWorkoutsPerWeek.clamp(0, 14).toDouble();
-    return metNet * weightKg * durationHours * workouts / 7;
   }
 
   int? _age(int? birthDateEpochDay, DateTime now) {

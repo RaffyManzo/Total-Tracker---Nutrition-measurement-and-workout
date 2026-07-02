@@ -42,6 +42,21 @@ class MealTargetModeCodes {
   };
 }
 
+class ActivityFallbackModeCodes {
+  const ActivityFallbackModeCodes._();
+
+  static const String recordedWithProfileFallback =
+      'recorded_with_profile_fallback';
+  static const String recordedOnly = 'recorded_only';
+  static const String profileEstimate = 'profile_estimate';
+
+  static const Set<String> values = <String>{
+    recordedWithProfileFallback,
+    recordedOnly,
+    profileEstimate,
+  };
+}
+
 class MacroModeCodes {
   const MacroModeCodes._();
 

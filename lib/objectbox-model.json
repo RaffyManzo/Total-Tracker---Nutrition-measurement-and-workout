@@ -355,7 +355,7 @@
     },
     {
       "id": "5:8645411654677832403",
-      "lastPropertyId": "36:2329870446313036275",
+      "lastPropertyId": "37:3388718277239833684",
       "name": "UserProfileEntity",
       "properties": [
         {
@@ -539,6 +539,11 @@
         {
           "id": "36:2329870446313036275",
           "name": "mealTargetsJson",
+          "type": 9
+        },
+        {
+          "id": "37:3388718277239833684",
+          "name": "activityFallbackModeCode",
           "type": 9
         }
       ],

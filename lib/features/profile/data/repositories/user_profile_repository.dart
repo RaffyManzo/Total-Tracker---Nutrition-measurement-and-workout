@@ -179,6 +179,14 @@ class UserProfileRepository {
         'Unsupported workout activity type code.',
       );
     }
+    if (!ActivityFallbackModeCodes.values
+        .contains(profile.activityFallbackModeCode)) {
+      throw ArgumentError.value(
+        profile.activityFallbackModeCode,
+        'activityFallbackModeCode',
+        'Unsupported activity fallback mode code.',
+      );
+    }
     if (!ThemePreferenceCodes.values.contains(profile.themeModeCode)) {
       throw ArgumentError.value(
         profile.themeModeCode,

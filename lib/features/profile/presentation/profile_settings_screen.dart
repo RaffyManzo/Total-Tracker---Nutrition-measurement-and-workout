@@ -11,6 +11,7 @@ import '../../../shared/widgets/tt_global_nav_fab.dart';
 import '../../../shared/widgets/tt_section_header.dart';
 import '../../nutrition/data/entities/ingredient_entity.dart';
 import '../../nutrition/data/entities/nutrition_tracking_entities.dart';
+import '../../nutrition/data/services/food_analytics_service.dart';
 import '../../nutrition/domain/meal_target_settings.dart';
 import '../../nutrition/presentation/food_v01_screens.dart';
 import '../../nutrition/presentation/measurement_screens.dart';
@@ -47,6 +48,8 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
   String _sex = BiologicalSexCodes.unspecified;
   String _targetMode = TargetModeCodes.adaptiveWeekly;
   String _workoutType = WorkoutActivityTypeCodes.weights;
+  String _activityFallbackMode =
+      ActivityFallbackModeCodes.recordedWithProfileFallback;
   String _macroMode = MacroModeCodes.defaultByWeight;
   String _themeMode = ThemePreferenceCodes.system;
   String _language = 'it';
@@ -389,6 +392,11 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       WorkoutActivityTypeCodes.values,
       WorkoutActivityTypeCodes.weights,
     );
+    _activityFallbackMode = _safeCode(
+      profile.activityFallbackModeCode,
+      ActivityFallbackModeCodes.values,
+      ActivityFallbackModeCodes.recordedWithProfileFallback,
+    );
     _macroMode = _safeCode(
       profile.macroModeCode,
       MacroModeCodes.values,
@@ -476,21 +484,30 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               ),
               const SizedBox(height: AppSpacing.md),
               _ProfileExplanationCard(
-                title: 'Attivita stimata',
-                body: 'Finche la parte allenamenti resta disabilitata, il '
-                    'profilo usa allenamenti medi a settimana, durata media e '
-                    'tipologia per stimare una quota giornaliera.',
+                title: 'Attivita e fallback',
+                body: _activityFallbackDescription(
+                  profile.activityFallbackModeCode,
+                ),
                 rows: <_SettingRowData>[
                   _SettingRowData(
-                    'Allenamenti',
-                    '${profile.averageWorkoutsPerWeek}/settimana',
+                    'Modalita',
+                    _activityFallbackModeLabel(
+                      profile.activityFallbackModeCode,
+                    ),
                   ),
                   _SettingRowData(
-                    'Durata',
-                    '${profile.averageWorkoutDurationMinutes} min',
+                    'Passi target',
+                    '${profile.defaultStepGoal} · ${estimate.stepDailyKcal.round()} kcal',
                   ),
-                  _SettingRowData('Quota media',
-                      '${estimate.workoutDailyKcal.round()} kcal/giorno'),
+                  _SettingRowData(
+                    'Allenamenti',
+                    '${profile.averageWorkoutsPerWeek}/settimana · '
+                        '${profile.averageWorkoutDurationMinutes} min',
+                  ),
+                  _SettingRowData(
+                    'Quota profilo',
+                    '${estimate.profileActivityDailyKcal.round()} kcal/giorno',
+                  ),
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
@@ -617,8 +634,13 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
             },
           ),
           const SizedBox(height: AppSpacing.md),
-          _field(_targetKcal, 'Target fisso kcal',
-              keyboardType: TextInputType.number),
+          if (_targetMode == TargetModeCodes.fixedUser) ...<Widget>[
+            _field(
+              _targetKcal,
+              'Target fisso kcal',
+              keyboardType: TextInputType.number,
+            ),
+          ],
           if (_targetMode == TargetModeCodes.adaptiveWeekly) ...<Widget>[
             _field(
               _adaptiveReferenceDays,
@@ -658,6 +680,34 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               labelText: 'Base sedentaria stimata',
               helperText: 'Metabolismo basale moltiplicato per 1.10',
             ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          DropdownButtonFormField<String>(
+            initialValue: _activityFallbackMode,
+            decoration: const InputDecoration(
+              labelText: 'Uso dei dati di attivita',
+              helperText:
+                  'Definisce cosa usare quando passi o allenamenti non sono disponibili',
+            ),
+            items: const <DropdownMenuItem<String>>[
+              DropdownMenuItem<String>(
+                value: ActivityFallbackModeCodes.recordedWithProfileFallback,
+                child: Text('Registrati, con fallback profilo'),
+              ),
+              DropdownMenuItem<String>(
+                value: ActivityFallbackModeCodes.recordedOnly,
+                child: Text('Solo dati registrati'),
+              ),
+              DropdownMenuItem<String>(
+                value: ActivityFallbackModeCodes.profileEstimate,
+                child: Text('Sempre stima del profilo'),
+              ),
+            ],
+            onChanged: (String? value) {
+              if (value != null) {
+                setSheetState(() => _activityFallbackMode = value);
+              }
+            },
           ),
           const SizedBox(height: AppSpacing.md),
           _field(_stepGoal, 'Target passi giornaliero',
@@ -1507,6 +1557,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       profile.averageWorkoutDurationMinutes =
           _toInt(_workoutDuration.text) ?? 0;
       profile.workoutActivityTypeCode = _workoutType;
+      profile.activityFallbackModeCode = _activityFallbackMode;
       profile.macroModeCode = _macroMode;
       profile.proteinGramsPerKg = _toDouble(_proteinKg.text) ?? 2.2;
       profile.fatGramsPerKg = _toDouble(_fatKg.text) ?? 1;
@@ -1544,12 +1595,13 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     final analytics = ref.read(foodAnalyticsServiceProvider);
     final List<DailyRecordEntity> days = dailyRepository.getAllActive();
     for (final DailyRecordEntity day in days) {
-      day.targetKcal = analytics.targetForDay(
+      day.stepGoal = profile.defaultStepGoal;
+      final TargetDayResult result = analytics.targetResultForDay(
         day: day,
         allDays: days,
         profile: profile,
       );
-      day.stepGoal = profile.defaultStepGoal;
+      analytics.applyTargetSnapshot(day, result);
       dailyRepository.save(day);
     }
   }
@@ -2307,6 +2359,28 @@ String _targetModeLabel(String code) {
     TargetModeCodes.fixedUser => 'Fisso impostato',
     TargetModeCodes.adaptiveWeekly => 'Adattivo settimanale',
     _ => 'Calcolato e fisso',
+  };
+}
+
+String _activityFallbackModeLabel(String code) {
+  return switch (code) {
+    ActivityFallbackModeCodes.recordedOnly => 'Solo dati registrati',
+    ActivityFallbackModeCodes.profileEstimate => 'Sempre stima profilo',
+    _ => 'Registrati con fallback profilo',
+  };
+}
+
+String _activityFallbackDescription(String code) {
+  return switch (code) {
+    ActivityFallbackModeCodes.recordedOnly =>
+      'Il target usa esclusivamente passi reali e allenamenti completati. '
+          'I dati mancanti valgono zero.',
+    ActivityFallbackModeCodes.profileEstimate =>
+      'Il target usa sempre target passi e allenamenti medi del profilo, '
+          'senza sostituirli con i dati del giorno.',
+    _ => 'Per oggi e per i giorni futuri usa i dati reali quando presenti; '
+        'altrimenti usa target passi e allenamenti medi del profilo. '
+        'I giorni passati restano basati solo sui dati registrati.',
   };
 }
 

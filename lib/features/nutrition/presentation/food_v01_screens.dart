@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -26,6 +27,7 @@ import '../data/repositories/recipe_repository.dart';
 import '../data/services/food_analytics_service.dart';
 import '../data/services/food_planning_service.dart';
 import '../data/services/open_food_facts_service.dart';
+import '../domain/adaptive_target_engine.dart';
 import '../domain/meal_target_settings.dart';
 import 'measurement_screens.dart' show measurementHubProvider;
 
@@ -243,13 +245,15 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
         profileName.isEmpty ? 'Dashboard' : 'Dashboard di $profileName';
     final DailyRecordEntity? latest = data.latest;
     final MealNutritionTotals totals = data.latestTotals;
-    final double latestTarget = latest == null
-        ? data.adaptiveSummary.targetKcal
-        : data.analytics.targetForDay(
+    final TargetDayResult? latestTargetResult = latest == null
+        ? null
+        : data.analytics.targetResultForDay(
             day: latest,
             allDays: data.days,
             profile: data.profile,
           );
+    final double latestTarget =
+        latestTargetResult?.targetKcal ?? data.adaptiveSummary.targetKcal;
     final ProfileNutritionTargets macroTargets = latest == null
         ? const ProfileNutritionCalculator().calculateFixedTargets(
             data.profile ??
@@ -307,6 +311,15 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
             context.push('/food/meals/${meal.meal.id}');
           },
         ),
+        if (latestTargetResult != null &&
+            latestTargetResult.alerts.isNotEmpty) ...<Widget>[
+          const SizedBox(height: AppSpacing.md),
+          for (final TargetAlert alert in latestTargetResult.alerts)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: _TargetAlertCard(alert: alert),
+            ),
+        ],
         if (data.hasPartialNutrition) ...<Widget>[
           const SizedBox(height: AppSpacing.md),
           const TtAppCard(
@@ -972,6 +985,14 @@ class FoodWeekScreen extends ConsumerWidget {
                   ],
                 ),
               ),
+              if (adaptive.alerts.isNotEmpty) ...<Widget>[
+                const SizedBox(height: AppSpacing.md),
+                for (final TargetAlert alert in adaptive.alerts)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    child: _TargetAlertCard(alert: alert),
+                  ),
+              ],
               const SizedBox(height: AppSpacing.md),
               _ChartCard(
                 title: 'Calorie',
@@ -1387,11 +1408,12 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
     final MealNutritionTotals totals = _totalsForMeals(meals);
     final ActivityBreakdown activity =
         analytics.activityForDay(day, profile: profile);
-    final double target = analytics.targetForDay(
+    final TargetDayResult targetResult = analytics.targetResultForDay(
       day: day,
       allDays: allDays,
       profile: profile,
     );
+    final double target = targetResult.targetKcal;
     final ProfileNutritionTargets macroTargets = analytics.macroTargetsForDay(
       day: day,
       profile: profile,
@@ -1463,6 +1485,14 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
               weight: weight,
             ),
           ),
+          if (targetResult.alerts.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSpacing.md),
+            for (final TargetAlert alert in targetResult.alerts)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                child: _TargetAlertCard(alert: alert),
+              ),
+          ],
           if (partial) ...<Widget>[
             const SizedBox(height: AppSpacing.md),
             const TtAppCard(
@@ -1575,6 +1605,19 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
       measurementRepository.saveScale(measurement);
       ref.invalidate(measurementHubProvider);
     }
+    final UserProfileEntity? profile =
+        ref.read(userProfileRepositoryProvider).getActiveProfile();
+    final dailyRepository = ref.read(dailyRecordRepositoryProvider);
+    final FoodAnalyticsService analytics =
+        ref.read(foodAnalyticsServiceProvider);
+    final List<DailyRecordEntity> allDays = dailyRepository.getAllActive();
+    final TargetDayResult targetResult = analytics.targetResultForDay(
+      day: day,
+      allDays: allDays,
+      profile: profile,
+    );
+    analytics.applyTargetSnapshot(day, targetResult);
+    dailyRepository.save(day);
     ref.invalidate(foodDaysV01Provider);
     ref.invalidate(foodHubV01Provider);
     setState(() =>
@@ -4360,85 +4403,234 @@ class _PersistentIngredientListScreenState
     final TextEditingController protein = TextEditingController();
     final TextEditingController carbs = TextEditingController();
     final TextEditingController fat = TextEditingController();
+    final TextEditingController fiber = TextEditingController();
+    final TextEditingController sugar = TextEditingController();
     final GlobalKey<FormState> formKey = GlobalKey<FormState>();
+
     final bool? saved = await showModalBottomSheet<bool>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Nuovo ingrediente'),
-          content: Form(
-            key: formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+      builder: (BuildContext sheetContext) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.92,
+          minChildSize: 0.68,
+          maxChildSize: 0.96,
+          builder: (
+            BuildContext context,
+            ScrollController scrollController,
+          ) {
+            return Form(
+              key: formKey,
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  0,
+                  AppSpacing.lg,
+                  AppSpacing.xxl,
+                ),
                 children: <Widget>[
-                  _field(name, 'Nome', isRequired: true),
-                  _field(brand, 'Brand'),
-                  _field(barcode, 'Barcode'),
-                  _ImageSourcePickerField(
-                    controller: image,
-                    title: 'Immagine ingrediente',
-                    fallbackIcon: Icons.inventory_2_outlined,
-                    onPick: () => _pickAndStoreImage(
-                      controller: image,
-                      folderName: 'ingredient_images',
-                      fallbackBaseName: 'ingredient',
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Icon(
+                          Icons.add_shopping_cart_rounded,
+                          color:
+                              Theme.of(context).colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              'Nuovo alimento',
+                              style: Theme.of(context).textTheme.headlineSmall,
+                            ),
+                            const SizedBox(height: AppSpacing.xxs),
+                            Text(
+                              'Compila le sezioni. Tutti i controlli occupano '
+                              'l’intera larghezza disponibile.',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Chiudi',
+                        onPressed: () => Navigator.of(sheetContext).pop(false),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
                   ),
-                  _field(kcal, 'Kcal per 100 g',
-                      keyboardType: TextInputType.number),
-                  _field(protein, 'Proteine per 100 g',
-                      keyboardType: TextInputType.number),
-                  _field(carbs, 'Carboidrati per 100 g',
-                      keyboardType: TextInputType.number),
-                  _field(fat, 'Grassi per 100 g',
-                      keyboardType: TextInputType.number),
+                  const SizedBox(height: AppSpacing.lg),
+                  _IngredientFormSection(
+                    icon: Icons.badge_outlined,
+                    title: 'Informazioni principali',
+                    subtitle: 'Identità, marca e codice del prodotto.',
+                    children: <Widget>[
+                      _field(name, 'Nome alimento', isRequired: true),
+                      _field(brand, 'Brand o produttore'),
+                      _field(
+                        barcode,
+                        'Codice a barre',
+                        keyboardType: TextInputType.number,
+                        helperText: 'Facoltativo. Deve contenere solo cifre.',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _IngredientFormSection(
+                    icon: Icons.image_outlined,
+                    title: 'Immagine',
+                    subtitle: 'Usa un file locale oppure un URL remoto.',
+                    children: <Widget>[
+                      _ImageSourcePickerField(
+                        controller: image,
+                        title: 'Immagine alimento',
+                        fallbackIcon: Icons.inventory_2_outlined,
+                        onPick: () => _pickAndStoreImage(
+                          controller: image,
+                          folderName: 'ingredient_images',
+                          fallbackBaseName: 'ingredient',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _IngredientFormSection(
+                    icon: Icons.monitor_heart_outlined,
+                    title: 'Valori nutrizionali per 100 g',
+                    subtitle: 'Lascia vuoto ciò che non è disponibile.',
+                    children: <Widget>[
+                      _field(
+                        kcal,
+                        'Calorie',
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                      ),
+                      _field(
+                        protein,
+                        'Proteine (g)',
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                      ),
+                      _field(
+                        carbs,
+                        'Carboidrati (g)',
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                      ),
+                      _field(
+                        fat,
+                        'Grassi (g)',
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                      ),
+                      _field(
+                        fiber,
+                        'Fibre (g)',
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                      ),
+                      _field(
+                        sugar,
+                        'Zuccheri (g)',
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () =>
+                              Navigator.of(sheetContext).pop(false),
+                          child: const Text('Annulla'),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () {
+                            if (formKey.currentState?.validate() ?? false) {
+                              Navigator.of(sheetContext).pop(true);
+                            }
+                          },
+                          icon: const Icon(Icons.save_outlined),
+                          label: const Text('Salva alimento'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Annulla'),
-            ),
-            FilledButton(
-              onPressed: () {
-                if (formKey.currentState?.validate() ?? false) {
-                  Navigator.of(context).pop(true);
-                }
-              },
-              child: const Text('Salva'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
-    if (saved != true) {
-      return;
-    }
-    ref.read(ingredientRepositoryProvider).save(
-          IngredientEntity(
-            uuid: '',
-            name: name.text.trim(),
-            brand: brand.text.trim(),
-            barcode: barcode.text.trim(),
-            imageUrl: image.text.trim(),
-            kcalPerReference: _toDouble(kcal.text) ?? 0,
-            proteinPerReference: _toDouble(protein.text) ?? 0,
-            carbsPerReference: _toDouble(carbs.text) ?? 0,
-            fatPerReference: _toDouble(fat.text) ?? 0,
-            createdAtEpochMs: 0,
-            updatedAtEpochMs: 0,
-          ),
+
+    if (saved == true) {
+      ref.read(ingredientRepositoryProvider).save(
+            IngredientEntity(
+              uuid: '',
+              name: name.text.trim(),
+              brand: brand.text.trim(),
+              barcode: barcode.text.trim(),
+              imageUrl: image.text.trim(),
+              kcalPerReference: _toDouble(kcal.text) ?? 0,
+              proteinPerReference: _toDouble(protein.text) ?? 0,
+              carbsPerReference: _toDouble(carbs.text) ?? 0,
+              fatPerReference: _toDouble(fat.text) ?? 0,
+              fiberPerReference: _toDouble(fiber.text) ?? 0,
+              sugarPerReference: _toDouble(sugar.text) ?? 0,
+              createdAtEpochMs: 0,
+              updatedAtEpochMs: 0,
+            ),
+          );
+      ref.invalidate(ingredientArchiveProvider);
+      _invalidateFood(ref);
+      if (mounted) {
+        _resetIngredientSearchState();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${name.text.trim()} salvato')),
         );
-    ref.invalidate(ingredientArchiveProvider);
-    _invalidateFood(ref);
-    if (mounted) {
-      _resetIngredientSearchState();
+      }
+    }
+
+    for (final TextEditingController controller in <TextEditingController>[
+      name,
+      brand,
+      barcode,
+      image,
+      kcal,
+      protein,
+      carbs,
+      fat,
+      fiber,
+      sugar,
+    ]) {
+      controller.dispose();
     }
   }
 
@@ -4451,6 +4643,71 @@ class _PersistentIngredientListScreenState
       _onlineAttempt = 0;
       _searchingOnline = false;
     });
+  }
+}
+
+class _IngredientFormSection extends StatelessWidget {
+  const _IngredientFormSection({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.children,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: double.infinity,
+      child: TtAppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: colors.secondaryContainer,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(icon, color: colors.onSecondaryContainer),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        title,
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                      ),
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            ...children,
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -5482,18 +5739,249 @@ class IngredientScannerScreen extends ConsumerStatefulWidget {
 
 class _IngredientScannerScreenState
     extends ConsumerState<IngredientScannerScreen> {
+  final MobileScannerController _scannerController = MobileScannerController();
   bool _handling = false;
+
+  @override
+  void dispose() {
+    _scannerController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _stopScannerSafely() async {
+    try {
+      await _scannerController.stop();
+    } catch (_) {
+      // The controller can already be stopped while a manual search is open.
+    }
+  }
+
+  Future<void> _startScannerSafely() async {
+    try {
+      await _scannerController.start();
+    } catch (_) {
+      // Ignore lifecycle races while the route is closing or resuming.
+    }
+  }
+
+  Future<void> _processBarcode(String rawCode) async {
+    final String code = rawCode.replaceAll(RegExp(r'\s+'), '').trim();
+    if (_handling) {
+      return;
+    }
+    if (!RegExp(r'^\d{6,18}$').hasMatch(code)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Inserisci un codice a barre numerico valido.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _handling = true);
+    await _stopScannerSafely();
+    bool completed = false;
+    try {
+      final OpenFoodFactsProduct? product =
+          await ref.read(openFoodFactsServiceProvider).findByBarcode(code);
+      if (!mounted) {
+        return;
+      }
+      if (product == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Barcode $code non trovato')),
+        );
+        return;
+      }
+
+      final IngredientEntity ingredient = product.toIngredientEntity();
+      final IngredientEntity? existing =
+          ref.read(ingredientRepositoryProvider).findByBarcode(product.code);
+      if (existing != null) {
+        ingredient.id = existing.id;
+        ingredient.uuid = existing.uuid;
+        ingredient.createdAtEpochMs = existing.createdAtEpochMs;
+      }
+      ref.read(ingredientRepositoryProvider).save(ingredient);
+      ref.invalidate(ingredientArchiveProvider);
+      _invalidateFood(ref);
+      completed = true;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${product.name} salvato')),
+        );
+        context.go('/food/ingredients');
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ricerca barcode non riuscita: $error')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _handling = false);
+        if (!completed) {
+          await _startScannerSafely();
+        }
+      }
+    }
+  }
+
+  Future<void> _showManualBarcodeSearch() async {
+    if (_handling) {
+      return;
+    }
+    await _stopScannerSafely();
+    if (!mounted) {
+      return;
+    }
+    final TextEditingController controller = TextEditingController();
+    final GlobalKey<FormState> formKey = GlobalKey<FormState>();
+    final String? barcode = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.sm,
+            AppSpacing.lg,
+            MediaQuery.viewInsetsOf(sheetContext).bottom + AppSpacing.lg,
+          ),
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color:
+                            Theme.of(sheetContext).colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: Icon(
+                        Icons.search_rounded,
+                        color: Theme.of(sheetContext)
+                            .colorScheme
+                            .onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Cerca tramite barcode',
+                            style:
+                                Theme.of(sheetContext).textTheme.headlineSmall,
+                          ),
+                          Text(
+                            'Inserisci manualmente il codice numerico.',
+                            style: Theme.of(sheetContext).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                TextFormField(
+                  controller: controller,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.search,
+                  inputFormatters: <TextInputFormatter>[
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(18),
+                  ],
+                  decoration: const InputDecoration(
+                    labelText: 'Codice a barre',
+                    prefixIcon: Icon(Icons.qr_code_2_rounded),
+                    helperText: 'Da 6 a 18 cifre',
+                  ),
+                  validator: (String? value) {
+                    final String clean = value?.trim() ?? '';
+                    if (!RegExp(r'^\d{6,18}$').hasMatch(clean)) {
+                      return 'Inserisci un codice numerico valido';
+                    }
+                    return null;
+                  },
+                  onFieldSubmitted: (String value) {
+                    if (formKey.currentState?.validate() ?? false) {
+                      Navigator.of(sheetContext).pop(value.trim());
+                    }
+                  },
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(),
+                        child: const Text('Annulla'),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () {
+                          if (formKey.currentState?.validate() ?? false) {
+                            Navigator.of(sheetContext)
+                                .pop(controller.text.trim());
+                          }
+                        },
+                        icon: const Icon(Icons.search_rounded),
+                        label: const Text('Cerca'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    controller.dispose();
+    if (!mounted) {
+      return;
+    }
+    if (barcode == null) {
+      await _startScannerSafely();
+      return;
+    }
+    await _processBarcode(barcode);
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Scanner barcode')),
+      appBar: AppBar(
+        title: const Text('Scanner barcode'),
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Cerca inserendo il barcode',
+            onPressed: _handling ? null : _showManualBarcodeSearch,
+            icon: const Icon(Icons.search_rounded),
+          ),
+        ],
+      ),
       bottomNavigationBar:
           const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
       body: Stack(
         children: <Widget>[
           MobileScanner(
-            onDetect: (BarcodeCapture capture) async {
+            controller: _scannerController,
+            onDetect: (BarcodeCapture capture) {
               if (_handling) {
                 return;
               }
@@ -5501,44 +5989,8 @@ class _IngredientScannerScreenState
                   .map((Barcode item) => item.rawValue)
                   .whereType<String>()
                   .firstOrNull;
-              if (code == null || code.trim().isEmpty) {
-                return;
-              }
-              setState(() => _handling = true);
-              try {
-                final OpenFoodFactsProduct? product = await ref
-                    .read(openFoodFactsServiceProvider)
-                    .findByBarcode(code.trim());
-                if (!context.mounted) {
-                  return;
-                }
-                if (product == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Barcode $code non trovato')),
-                  );
-                  setState(() => _handling = false);
-                  return;
-                }
-                final IngredientEntity ingredient =
-                    product.toIngredientEntity();
-                final existing = ref
-                    .read(ingredientRepositoryProvider)
-                    .findByBarcode(product.code);
-                if (existing != null) {
-                  ingredient.id = existing.id;
-                  ingredient.uuid = existing.uuid;
-                  ingredient.createdAtEpochMs = existing.createdAtEpochMs;
-                }
-                ref.read(ingredientRepositoryProvider).save(ingredient);
-                ref.invalidate(ingredientArchiveProvider);
-                if (!context.mounted) {
-                  return;
-                }
-                context.go('/food/ingredients');
-              } finally {
-                if (mounted) {
-                  setState(() => _handling = false);
-                }
+              if (code != null && code.trim().isNotEmpty) {
+                _processBarcode(code);
               }
             },
           ),
@@ -5547,13 +5999,36 @@ class _IngredientScannerScreenState
             right: AppSpacing.md,
             bottom: AppSpacing.xxxl,
             child: TtAppCard(
-              child: Text(
-                _handling
-                    ? 'Sto leggendo il prodotto su Open Food Facts...'
-                    : 'Inquadra il codice a barre. Puoi sempre tornare indietro e inserirlo a mano.',
+              child: Row(
+                children: <Widget>[
+                  Icon(
+                    _handling
+                        ? Icons.hourglass_top_rounded
+                        : Icons.qr_code_scanner_rounded,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Text(
+                      _handling
+                          ? 'Ricerca del prodotto su Open Food Facts...'
+                          : 'Inquadra il barcode oppure usa la lente in alto '
+                              'a destra per inserirlo manualmente.',
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
+          if (_handling)
+            const Positioned.fill(
+              child: IgnorePointer(
+                child: ColoredBox(
+                  color: Color(0x33000000),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -8828,6 +9303,67 @@ class _MetricGrid extends StatelessWidget {
           }).toList(),
         );
       },
+    );
+  }
+}
+
+class _TargetAlertCard extends StatelessWidget {
+  const _TargetAlertCard({required this.alert});
+
+  final TargetAlert alert;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool critical =
+        alert.severityCode == TargetAlertSeverityCodes.critical;
+    final bool warning = alert.severityCode == TargetAlertSeverityCodes.warning;
+    final Color accent = critical
+        ? colors.error
+        : warning
+            ? colors.tertiary
+            : colors.primary;
+    final IconData icon = critical
+        ? Icons.error_outline_rounded
+        : warning
+            ? Icons.warning_amber_rounded
+            : Icons.info_outline_rounded;
+    return TtAppCard(
+      borderColor: accent.withValues(alpha: 0.72),
+      backgroundColor: accent.withValues(alpha: 0.08),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: accent),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  alert.title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  alert.message,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

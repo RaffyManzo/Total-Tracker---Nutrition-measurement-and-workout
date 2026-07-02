@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import '../../../profile/data/entities/user_profile_entity.dart';
 import '../../../profile/domain/profile_codes.dart';
 import '../../../profile/domain/profile_nutrition_calculator.dart';
+import '../../../workout/data/entities/workout_tracking_entities.dart';
 import '../../../workout/data/repositories/workout_session_repository.dart';
+import '../../domain/adaptive_target_engine.dart';
 import '../entities/nutrition_tracking_entities.dart';
 import '../repositories/meal_repository.dart';
 import '../repositories/measurement_repository.dart';
@@ -18,6 +20,46 @@ class ActivityBreakdown {
   final double stepKcal;
   final double completedWorkoutKcal;
   final double actualTotalKcal;
+}
+
+class TargetDayResult {
+  const TargetDayResult({
+    required this.targetKcal,
+    required this.targetStatusCode,
+    required this.tdeeRefKcal,
+    required this.tdeeTheoreticalKcal,
+    required this.tdeeObservedKcal,
+    required this.observedConfidence,
+    required this.referenceDaysCount,
+    required this.validIntakeDays,
+    required this.validWeightDays,
+    required this.rmrKcal,
+    required this.weightRefKg,
+    required this.weightStatusCode,
+    required this.weightDaysSinceMeasurement,
+    required this.activeRefKcal,
+    required this.activity,
+    required this.activityDeltaKcal,
+    required this.alerts,
+  });
+
+  final double targetKcal;
+  final String targetStatusCode;
+  final double tdeeRefKcal;
+  final double tdeeTheoreticalKcal;
+  final double? tdeeObservedKcal;
+  final double observedConfidence;
+  final int referenceDaysCount;
+  final int validIntakeDays;
+  final int validWeightDays;
+  final double? rmrKcal;
+  final double? weightRefKg;
+  final String weightStatusCode;
+  final int? weightDaysSinceMeasurement;
+  final double activeRefKcal;
+  final ResolvedActivityBreakdown activity;
+  final double activityDeltaKcal;
+  final List<TargetAlert> alerts;
 }
 
 class ObservedTdeeResult {
@@ -53,12 +95,18 @@ class WeekAdaptiveSummary {
     required this.validWeightDays,
     required this.rmrKcal,
     required this.weightRefKg,
+    required this.weightStatusCode,
+    required this.weightDaysSinceMeasurement,
+    required this.weightTrendEnabled,
     required this.activeRefKcal,
+    required this.activeRefSourceCode,
     required this.currentWeekActiveKcal,
+    required this.activityStatusCode,
     required this.activityDeltaKcal,
     required this.deltaWeightKg,
     required this.avgCalories,
     required this.kcalPerKg,
+    required this.alerts,
   });
 
   final DateTime monday;
@@ -74,12 +122,18 @@ class WeekAdaptiveSummary {
   final int validWeightDays;
   final double? rmrKcal;
   final double? weightRefKg;
+  final String weightStatusCode;
+  final int? weightDaysSinceMeasurement;
+  final bool weightTrendEnabled;
   final double activeRefKcal;
+  final String activeRefSourceCode;
   final double currentWeekActiveKcal;
+  final String activityStatusCode;
   final double activityDeltaKcal;
   final double? deltaWeightKg;
   final double? avgCalories;
   final double kcalPerKg;
+  final List<TargetAlert> alerts;
 }
 
 class FoodAnalyticsService {
@@ -96,6 +150,7 @@ class FoodAnalyticsService {
   final WorkoutSessionRepository _workoutSessions;
   final ProfileNutritionCalculator _profileCalculator =
       const ProfileNutritionCalculator();
+  final AdaptiveTargetEngine _targetEngine = const AdaptiveTargetEngine();
 
   ActivityBreakdown activityForDay(
     DailyRecordEntity day, {
@@ -109,9 +164,52 @@ class FoodAnalyticsService {
         day.activeKcalWorkoutCompleted ?? completedWorkout;
     final double actual = math.max(0, stepKcal + fallbackCompleted);
     return ActivityBreakdown(
-      stepKcal: stepKcal,
-      completedWorkoutKcal: fallbackCompleted,
+      stepKcal: math.max(0, stepKcal),
+      completedWorkoutKcal: math.max(0, fallbackCompleted),
       actualTotalKcal: actual,
+    );
+  }
+
+  ResolvedActivityBreakdown effectiveActivityForDay(
+    DailyRecordEntity day, {
+    UserProfileEntity? profile,
+    DateTime? now,
+  }) {
+    final ActivityBreakdown actual = activityForDay(day, profile: profile);
+    if (profile == null) {
+      return _targetEngine.resolveActivity(
+        steps: day.steps,
+        stepGoal: day.stepGoal,
+        stepKcalCoefficient: 0.020,
+        completedWorkoutKcal: actual.completedWorkoutKcal,
+        profileWorkoutDailyKcal: 0,
+        fallbackModeCode: ActivityFallbackModeCodes.recordedOnly,
+        dayDate: DateTime.parse(day.dateKey),
+        now: now ?? DateTime.now(),
+      );
+    }
+    final DateTime resolvedNow = now ?? DateTime.now();
+    final DateTime dayDate = DateTime.parse(day.dateKey);
+    final WeightFreshnessResult weight = _weightFreshnessForDate(
+      dateKey: day.dateKey,
+      profile: profile,
+      referenceDate: dayDate.isAfter(resolvedNow) ? resolvedNow : dayDate,
+    );
+    final ProfileNutritionTargets profileTargets =
+        _profileCalculator.calculateFixedTargets(
+      profile,
+      currentWeightKg: weight.effectiveWeightKg,
+      now: now,
+    );
+    return _targetEngine.resolveActivity(
+      steps: day.steps,
+      stepGoal: day.stepGoal <= 0 ? profile.defaultStepGoal : day.stepGoal,
+      stepKcalCoefficient: profile.stepKcalCoefficient,
+      completedWorkoutKcal: actual.completedWorkoutKcal,
+      profileWorkoutDailyKcal: profileTargets.workoutDailyKcal,
+      fallbackModeCode: profile.activityFallbackModeCode,
+      dayDate: dayDate,
+      now: resolvedNow,
     );
   }
 
@@ -122,29 +220,212 @@ class FoodAnalyticsService {
         );
   }
 
+  TargetDayResult targetResultForDay({
+    required DailyRecordEntity day,
+    required List<DailyRecordEntity> allDays,
+    UserProfileEntity? profile,
+    DateTime? now,
+  }) {
+    final DateTime resolvedNow = now ?? DateTime.now();
+    final ResolvedActivityBreakdown activity = effectiveActivityForDay(
+      day,
+      profile: profile,
+      now: resolvedNow,
+    );
+
+    if (profile == null) {
+      final double target = day.targetKcal ?? 1980;
+      return TargetDayResult(
+        targetKcal: target,
+        targetStatusCode: 'fallback',
+        tdeeRefKcal: target,
+        tdeeTheoreticalKcal: target,
+        tdeeObservedKcal: null,
+        observedConfidence: 0,
+        referenceDaysCount: 0,
+        validIntakeDays: 0,
+        validWeightDays: 0,
+        rmrKcal: null,
+        weightRefKg: weightForDay(day),
+        weightStatusCode: 'unavailable',
+        weightDaysSinceMeasurement: null,
+        activeRefKcal: activity.totalKcal,
+        activity: activity,
+        activityDeltaKcal: 0,
+        alerts: const <TargetAlert>[
+          TargetAlert(
+            code: 'profile_missing',
+            title: 'Profilo non disponibile',
+            message: 'Il target usa il valore salvato nel giorno.',
+            severityCode: TargetAlertSeverityCodes.warning,
+          ),
+        ],
+      );
+    }
+
+    final WeightFreshnessResult weight = _weightFreshnessForDate(
+      dateKey: day.dateKey,
+      profile: profile,
+      referenceDate: DateTime.parse(day.dateKey).isAfter(resolvedNow)
+          ? resolvedNow
+          : DateTime.parse(day.dateKey),
+    );
+    final ProfileNutritionTargets fixed =
+        _profileCalculator.calculateFixedTargets(
+      profile,
+      currentWeightKg: weight.effectiveWeightKg,
+      now: resolvedNow,
+    );
+
+    if (profile.targetModeCode == TargetModeCodes.fixedUser) {
+      return TargetDayResult(
+        targetKcal: profile.defaultTargetKcal.toDouble(),
+        targetStatusCode: 'fixed_user',
+        tdeeRefKcal: profile.defaultTargetKcal.toDouble(),
+        tdeeTheoreticalKcal: fixed.sedentaryKcal,
+        tdeeObservedKcal: null,
+        observedConfidence: 0,
+        referenceDaysCount: 0,
+        validIntakeDays: 0,
+        validWeightDays: 0,
+        rmrKcal: fixed.rmrKcal,
+        weightRefKg: weight.effectiveWeightKg,
+        weightStatusCode: weight.statusCode,
+        weightDaysSinceMeasurement: weight.daysSinceMeasurement,
+        activeRefKcal: 0,
+        activity: activity,
+        activityDeltaKcal: 0,
+        alerts: const <TargetAlert>[],
+      );
+    }
+
+    if (profile.targetModeCode == TargetModeCodes.appCalculatedFixed) {
+      return TargetDayResult(
+        targetKcal: fixed.targetKcal,
+        targetStatusCode: 'calculated_fixed',
+        tdeeRefKcal: fixed.targetKcal,
+        tdeeTheoreticalKcal: fixed.targetKcal,
+        tdeeObservedKcal: null,
+        observedConfidence: 0,
+        referenceDaysCount: 0,
+        validIntakeDays: 0,
+        validWeightDays: 0,
+        rmrKcal: fixed.rmrKcal,
+        weightRefKg: weight.effectiveWeightKg,
+        weightStatusCode: weight.statusCode,
+        weightDaysSinceMeasurement: weight.daysSinceMeasurement,
+        activeRefKcal: fixed.profileActivityDailyKcal,
+        activity: activity,
+        activityDeltaKcal: 0,
+        alerts: weight.alerts,
+      );
+    }
+
+    final DateTime date = DateTime.parse(day.dateKey);
+    final DateTime monday = date.subtract(Duration(days: date.weekday - 1));
+    final WeekAdaptiveSummary summary = adaptiveSummaryForWeek(
+      monday: monday,
+      allDays: allDays,
+      profile: profile,
+      now: resolvedNow,
+    );
+    final double activityDelta = activity.totalKcal - summary.activeRefKcal;
+    final double target = _clamp(
+      summary.tdeeRefKcal + activityDelta,
+      profile.minimumReasonableTdee,
+      profile.maximumReasonableTdee,
+    );
+    final List<TargetAlert> alerts = <TargetAlert>[...summary.alerts];
+    if (activity.usedStepGoalFallback || activity.usedProfileWorkoutFallback) {
+      alerts.add(
+        TargetAlert(
+          code: 'activity_fallback_${day.dateKey}',
+          title: 'Attività stimata per il giorno',
+          message: _activityFallbackMessage(activity),
+          severityCode: TargetAlertSeverityCodes.info,
+        ),
+      );
+    }
+    return TargetDayResult(
+      targetKcal: target,
+      targetStatusCode: summary.targetStatusCode,
+      tdeeRefKcal: summary.tdeeRefKcal,
+      tdeeTheoreticalKcal: summary.tdeeTheoreticalKcal,
+      tdeeObservedKcal: summary.tdeeObservedKcal,
+      observedConfidence: summary.observedConfidence,
+      referenceDaysCount: summary.referenceDaysCount,
+      validIntakeDays: summary.validIntakeDays,
+      validWeightDays: summary.validWeightDays,
+      rmrKcal: summary.rmrKcal,
+      weightRefKg: summary.weightRefKg,
+      weightStatusCode: summary.weightStatusCode,
+      weightDaysSinceMeasurement: summary.weightDaysSinceMeasurement,
+      activeRefKcal: summary.activeRefKcal,
+      activity: activity,
+      activityDeltaKcal: activityDelta,
+      alerts: alerts,
+    );
+  }
+
   double targetForDay({
     required DailyRecordEntity day,
     required List<DailyRecordEntity> allDays,
     UserProfileEntity? profile,
+    DateTime? now,
   }) {
-    if (profile == null) {
-      return day.targetKcal ?? 1980;
-    }
-    if (profile.targetModeCode != TargetModeCodes.adaptiveWeekly) {
-      return _profileCalculator
-          .calculateFixedTargets(
-            profile,
-            currentWeightKg: weightForDay(day),
-          )
-          .targetKcal;
-    }
-    final DateTime date = DateTime.parse(day.dateKey);
-    final DateTime monday = date.subtract(Duration(days: date.weekday - 1));
-    return adaptiveSummaryForWeek(
-      monday: monday,
+    return targetResultForDay(
+      day: day,
       allDays: allDays,
       profile: profile,
+      now: now,
     ).targetKcal;
+  }
+
+  void applyTargetSnapshot(
+    DailyRecordEntity day,
+    TargetDayResult result, {
+    int? calculatedAtEpochMs,
+  }) {
+    day.targetKcal = result.targetKcal;
+    day.targetStatusCode = result.targetStatusCode;
+    day.targetCalculatedAtEpochMs =
+        calculatedAtEpochMs ?? DateTime.now().millisecondsSinceEpoch;
+    day.targetSourceHash = <Object?>[
+      result.targetStatusCode,
+      result.referenceDaysCount,
+      result.validIntakeDays,
+      result.validWeightDays,
+      result.weightStatusCode,
+      result.activity.statusCode,
+      result.targetKcal.round(),
+    ].join('|');
+    day.tdeeRefKcal = result.tdeeRefKcal;
+    day.tdeeTheoreticalKcal = result.tdeeTheoreticalKcal;
+    day.tdeeObservedKcal = result.tdeeObservedKcal;
+    day.observedConfidence = result.observedConfidence;
+    day.referenceDaysCount = result.referenceDaysCount;
+    day.validIntakeDays = result.validIntakeDays;
+    day.validWeightDays = result.validWeightDays;
+    day.rmrKcal = result.rmrKcal;
+    day.weightRefKg = result.weightRefKg;
+    day.activeRefKcal = result.activeRefKcal;
+    day.activeKcalSteps = result.activity.actualStepKcal;
+    final Map<String, double> workoutByStatus =
+        _workoutKcalByStatus(day.dateKey);
+    day.activeKcalWorkoutCompleted =
+        workoutByStatus['completed'] ?? result.activity.actualWorkoutKcal;
+    day.activeKcalWorkoutInProgress = workoutByStatus['in_progress'] ?? 0;
+    day.activeKcalWorkoutPlanned = workoutByStatus['planned'] ?? 0;
+    day.activeKcalWorkoutSkipped = workoutByStatus['skipped'] ?? 0;
+    day.activeKcalWorkoutUnknown = workoutByStatus['unknown'] ?? 0;
+    day.activeKcalActual =
+        result.activity.actualStepKcal + result.activity.actualWorkoutKcal;
+    day.activeEffectiveKcal = result.activity.totalKcal;
+    day.activityDeltaKcal = result.activityDeltaKcal;
+    day.activeStatusCode = result.activity.statusCode;
+    day.caloriesInKcal = caloriesForDate(day.dateKey);
+    day.energyBalanceKcal = day.caloriesInKcal! - result.targetKcal;
+    day.dataCompletenessScore = _dataCompleteness(result);
   }
 
   ProfileNutritionTargets macroTargetsForDay({
@@ -157,9 +438,14 @@ class FoodAnalyticsService {
           createdAtEpochMs: 0,
           updatedAtEpochMs: 0,
         );
+    final WeightFreshnessResult weight = _weightFreshnessForDate(
+      dateKey: day.dateKey,
+      profile: fallbackProfile,
+      referenceDate: DateTime.parse(day.dateKey),
+    );
     return _profileCalculator.calculateFixedTargets(
       fallbackProfile,
-      currentWeightKg: weightForDay(day),
+      currentWeightKg: weight.effectiveWeightKg ?? weightForDay(day),
     );
   }
 
@@ -199,7 +485,10 @@ class FoodAnalyticsService {
     UserProfileEntity? profile,
     DateTime? now,
   }) {
+    final DateTime resolvedNow = now ?? DateTime.now();
     final DateTime sunday = monday.add(const Duration(days: 6));
+    final DateTime referenceDate =
+        sunday.isAfter(resolvedNow) ? resolvedNow : sunday;
     final String mondayKey = _dateKey(monday);
     final List<DailyRecordEntity> sorted = List<DailyRecordEntity>.from(allDays)
       ..sort((DailyRecordEntity a, DailyRecordEntity b) {
@@ -213,38 +502,88 @@ class FoodAnalyticsService {
     final List<DailyRecordEntity> currentWeek = sorted.where(
       (DailyRecordEntity day) {
         final DateTime parsed = DateTime.parse(day.dateKey);
-        return !parsed.isBefore(monday) && !parsed.isAfter(sunday);
+        return !parsed.isBefore(monday) &&
+            !parsed.isAfter(sunday) &&
+            !parsed.isAfter(resolvedNow);
       },
     ).toList();
-    final List<ActivityBreakdown> referenceActivity = reference
+
+    final WeightFreshnessResult weight = profile == null
+        ? const WeightFreshnessResult(
+            effectiveWeightKg: null,
+            sourceCode: 'unavailable',
+            statusCode: 'missing',
+            daysSinceMeasurement: null,
+            allowObservedWeightTrend: false,
+            alerts: <TargetAlert>[],
+          )
+        : _weightFreshnessForDate(
+            dateKey: _dateKey(referenceDate),
+            profile: profile,
+            referenceDate: referenceDate,
+          );
+    final ProfileNutritionTargets? profileTargets = profile == null
+        ? null
+        : _profileCalculator.calculateFixedTargets(
+            profile,
+            currentWeightKg: weight.effectiveWeightKg,
+            now: resolvedNow,
+          );
+    final double profileActivity =
+        profileTargets?.profileActivityDailyKcal ?? 0;
+
+    final List<double> activeValues = reference
         .map((DailyRecordEntity day) => activityForDay(day, profile: profile))
-        .toList();
-    final List<double> activeValues = referenceActivity
         .map((ActivityBreakdown item) => item.actualTotalKcal)
         .where((double value) => value > 0)
         .toList();
-    final double activeRef = _average(activeValues) ?? 0;
-    final List<ActivityBreakdown> currentActivity = currentWeek
-        .map((DailyRecordEntity day) => activityForDay(day, profile: profile))
+    final bool forceProfileEstimate = profile?.activityFallbackModeCode ==
+        ActivityFallbackModeCodes.profileEstimate;
+    final bool allowProfileFallback = profile?.activityFallbackModeCode !=
+        ActivityFallbackModeCodes.recordedOnly;
+    final double activeRef;
+    final String activeRefSourceCode;
+    if (forceProfileEstimate) {
+      activeRef = profileActivity;
+      activeRefSourceCode = 'profile_estimate';
+    } else if (activeValues.isNotEmpty) {
+      activeRef = _average(activeValues) ?? 0;
+      activeRefSourceCode = 'recorded_history';
+    } else if (allowProfileFallback) {
+      activeRef = profileActivity;
+      activeRefSourceCode = 'profile_fallback';
+    } else {
+      activeRef = 0;
+      activeRefSourceCode = 'unavailable';
+    }
+
+    final List<ResolvedActivityBreakdown> currentActivity = currentWeek
+        .map(
+          (DailyRecordEntity day) => effectiveActivityForDay(
+            day,
+            profile: profile,
+            now: resolvedNow,
+          ),
+        )
         .toList();
     final double currentWeekActive = _average(
           currentActivity
-              .map((ActivityBreakdown item) => item.actualTotalKcal)
-              .where((double value) => value > 0)
+              .map((ResolvedActivityBreakdown item) => item.totalKcal)
               .toList(),
         ) ??
         activeRef;
-    final double? weightRef = _referenceWeight(reference, currentWeek);
-    final double? rmr = _calculateRmr(weightRef, profile, now: now);
-    final double theoretical = rmr == null
-        ? (profile?.defaultTargetKcal ?? 1980).toDouble()
-        : (rmr * (profile?.rmrActivityFactor ?? 1.10)) + activeRef;
+    final String activityStatusCode = _summaryActivityStatus(currentActivity);
+    final double? rmr = profileTargets?.rmrKcal;
+    final double theoretical = profileTargets == null
+        ? 1980
+        : profileTargets.sedentaryKcal + activeRef;
     final ObservedTdeeResult observed = _calculateObservedTdee(
       reference,
       minimumObservedDays: profile?.adaptiveMinimumObservedDays ?? 7,
       kcalPerKg: profile?.kcalPerKg ?? 7700,
       minTdee: profile?.minimumReasonableTdee ?? 1300,
       maxTdee: profile?.maximumReasonableTdee ?? 4600,
+      allowWeightTrend: weight.allowObservedWeightTrend,
     );
     final double confidence =
         observed.tdeeObserved == null ? 0 : observed.observedConfidence;
@@ -262,11 +601,48 @@ class FoodAnalyticsService {
       profile?.minimumReasonableTdee ?? 1300,
       profile?.maximumReasonableTdee ?? 4600,
     );
+    final List<TargetAlert> alerts = <TargetAlert>[...weight.alerts];
+    final int minimumObserved = profile?.adaptiveMinimumObservedDays ?? 7;
+    if (reference.length < minimumObserved) {
+      alerts.add(
+        TargetAlert(
+          code: 'reference_days_insufficient',
+          title: 'Target ancora provvisorio',
+          message: 'Sono disponibili ${reference.length} giorni precedenti; '
+              'ne servono almeno $minimumObserved per attivare la componente '
+              'osservata.',
+          severityCode: TargetAlertSeverityCodes.info,
+        ),
+      );
+    } else if (observed.validIntakeDays < minimumObserved) {
+      alerts.add(
+        TargetAlert(
+          code: 'intake_days_insufficient',
+          title: 'Dati alimentari insufficienti',
+          message: 'Solo ${observed.validIntakeDays} giorni hanno calorie '
+              'utilizzabili. I pasti non quantificati non vengono trattati '
+              'come giornate complete.',
+          severityCode: TargetAlertSeverityCodes.warning,
+        ),
+      );
+    }
+    if (activeRefSourceCode == 'profile_fallback') {
+      alerts.add(
+        const TargetAlert(
+          code: 'activity_history_missing',
+          title: 'Attività storica stimata',
+          message: 'Non ci sono giorni precedenti con attività utilizzabile. '
+              'La base usa target passi e allenamenti medi del profilo.',
+          severityCode: TargetAlertSeverityCodes.info,
+        ),
+      );
+    }
+
     return WeekAdaptiveSummary(
       monday: monday,
       sunday: sunday,
       targetKcal: target,
-      targetStatusCode: confidence >= 0.35 || reference.length >= 7
+      targetStatusCode: observed.tdeeObserved != null && confidence >= 0.35
           ? 'adaptive'
           : 'provisional',
       tdeeRefKcal: tdeeRef,
@@ -277,13 +653,19 @@ class FoodAnalyticsService {
       validIntakeDays: observed.validIntakeDays,
       validWeightDays: observed.validWeightDays,
       rmrKcal: rmr,
-      weightRefKg: weightRef,
+      weightRefKg: weight.effectiveWeightKg,
+      weightStatusCode: weight.statusCode,
+      weightDaysSinceMeasurement: weight.daysSinceMeasurement,
+      weightTrendEnabled: weight.allowObservedWeightTrend,
       activeRefKcal: activeRef,
+      activeRefSourceCode: activeRefSourceCode,
       currentWeekActiveKcal: currentWeekActive,
+      activityStatusCode: activityStatusCode,
       activityDeltaKcal: activityDelta,
       deltaWeightKg: observed.deltaWeightKg,
       avgCalories: observed.avgCalories,
       kcalPerKg: profile?.kcalPerKg ?? 7700,
+      alerts: alerts,
     );
   }
 
@@ -293,6 +675,7 @@ class FoodAnalyticsService {
     required double kcalPerKg,
     required double minTdee,
     required double maxTdee,
+    required bool allowWeightTrend,
   }) {
     if (referenceDays.length < minimumObservedDays) {
       return const ObservedTdeeResult(
@@ -306,24 +689,31 @@ class FoodAnalyticsService {
     }
     final List<_WeightedValue> intakeDays = <_WeightedValue>[];
     final List<_WeightPoint> weightPoints = <_WeightPoint>[];
-    for (int index = 0; index < referenceDays.length; index += 1) {
-      final DailyRecordEntity day = referenceDays[index];
+    for (final DailyRecordEntity day in referenceDays) {
       final String freeMode = freeMealModeForDate(day.dateKey);
       final double intakeReliability = _intakeReliabilityForMode(freeMode);
       final double kcal = caloriesForDate(day.dateKey);
       if (kcal > 0 && intakeReliability > 0) {
         intakeDays.add(_WeightedValue(value: kcal, weight: intakeReliability));
       }
-      final double? weight = weightForDay(day);
-      final double reliability = weight == null ? 0 : 1;
-      if (weight != null && weight > 0 && reliability > 0.25) {
-        weightPoints.add(
-          _WeightPoint(
-            dateKey: day.dateKey,
-            value: weight,
-            weight: reliability,
-          ),
-        );
+      if (allowWeightTrend) {
+        final ScaleMeasurementEntity? measurement =
+            _measurements.findScaleByDate(day.dateKey);
+        final double? weight = measurement?.weightKg ?? day.weightKg;
+        final double reliability = measurement == null
+            ? (weight == null ? 0 : 0.75)
+            : measurement.reliabilityCode == 'low'
+                ? 0.5
+                : 1;
+        if (weight != null && weight > 0 && reliability > 0.25) {
+          weightPoints.add(
+            _WeightPoint(
+              dateKey: day.dateKey,
+              value: weight,
+              weight: reliability,
+            ),
+          );
+        }
       }
     }
     if (intakeDays.length < minimumObservedDays) {
@@ -331,7 +721,7 @@ class FoodAnalyticsService {
         tdeeObserved: null,
         observedConfidence: 0.10,
         validIntakeDays: intakeDays.length,
-        validWeightDays: 0,
+        validWeightDays: weightPoints.length,
         deltaWeightKg: null,
         avgCalories: intakeDays.isEmpty ? null : _weightedAverage(intakeDays),
       );
@@ -367,7 +757,8 @@ class FoodAnalyticsService {
     final double dayFactor = _clamp((intakeDays.length - 4) / 10, 0, 1);
     final double weightFactor = _clamp((weightPoints.length - 3) / 8, 0, 1);
     final double intakeReliability = _average(
-            intakeDays.map((_WeightedValue item) => item.weight).toList()) ??
+          intakeDays.map((_WeightedValue item) => item.weight).toList(),
+        ) ??
         0;
     final double observedConfidence = _clamp(
       dayFactor * 0.42 + weightFactor * 0.28 + intakeReliability * 0.30,
@@ -384,63 +775,94 @@ class FoodAnalyticsService {
     );
   }
 
-  double? _calculateRmr(
-    double? weightKg,
-    UserProfileEntity? profile, {
-    DateTime? now,
+  WeightFreshnessResult _weightFreshnessForDate({
+    required String dateKey,
+    required UserProfileEntity profile,
+    required DateTime referenceDate,
   }) {
-    if (weightKg == null || weightKg <= 0 || profile?.heightCm == null) {
-      return null;
-    }
-    final int? age = _age(profile!.birthDateEpochDay, now ?? DateTime.now());
-    if (age == null) {
-      return null;
-    }
-    final double male = 88.362 +
-        (13.397 * weightKg) +
-        (4.799 * profile.heightCm!) -
-        (5.677 * age);
-    final double female = 447.593 +
-        (9.247 * weightKg) +
-        (3.098 * profile.heightCm!) -
-        (4.330 * age);
-    if (<String>['male', 'm', 'man', 'uomo', 'maschio']
-        .contains(profile.biologicalSexCode.toLowerCase())) {
-      return male;
-    }
-    if (<String>['female', 'f', 'woman', 'donna', 'femmina']
-        .contains(profile.biologicalSexCode.toLowerCase())) {
-      return female;
-    }
-    return (male + female) / 2;
+    final ScaleMeasurementEntity? latest =
+        _measurements.latestScaleOnOrBefore(dateKey);
+    return _targetEngine.evaluateWeight(
+      latestMeasurementWeightKg: latest?.weightKg,
+      latestMeasurementDate:
+          latest == null ? null : DateTime.tryParse(latest.dateKey),
+      latestReliabilityCode: latest?.reliabilityCode ?? '',
+      initialProfileWeightKg: profile.initialWeightKg,
+      referenceDate: referenceDate,
+    );
   }
 
-  int? _age(int? birthDateEpochDay, DateTime now) {
-    if (birthDateEpochDay == null) {
-      return null;
+  Map<String, double> _workoutKcalByStatus(String dateKey) {
+    final Map<String, double> result = <String, double>{
+      'planned': 0,
+      'in_progress': 0,
+      'completed': 0,
+      'skipped': 0,
+      'unknown': 0,
+    };
+    for (final WorkoutSessionEntity session
+        in _workoutSessions.getAllActive()) {
+      if (session.sessionDateKey != dateKey) {
+        continue;
+      }
+      final String status = result.containsKey(session.statusCode)
+          ? session.statusCode
+          : 'unknown';
+      result[status] = result[status]! + (session.estimatedKcalBurned ?? 0);
     }
-    final DateTime birthDate =
-        DateTime.fromMillisecondsSinceEpoch(birthDateEpochDay * 86400000);
-    int age = now.year - birthDate.year;
-    if (now.month < birthDate.month ||
-        (now.month == birthDate.month && now.day < birthDate.day)) {
-      age -= 1;
-    }
-    return age < 0 ? null : age;
+    return result;
   }
 
-  double? _referenceWeight(
-    List<DailyRecordEntity> reference,
-    List<DailyRecordEntity> currentWeek,
+  String _activityFallbackMessage(ResolvedActivityBreakdown activity) {
+    if (activity.usedStepGoalFallback && activity.usedProfileWorkoutFallback) {
+      return 'Non sono ancora disponibili passi o allenamenti completati: '
+          'vengono usati target passi e attività media del profilo.';
+    }
+    if (activity.usedStepGoalFallback) {
+      return 'I passi non sono ancora disponibili: viene usato il target '
+          'passi configurato nel profilo.';
+    }
+    return 'Non risultano allenamenti completati: viene usata la quota media '
+        'giornaliera configurata nel profilo.';
+  }
+
+  String _summaryActivityStatus(
+    List<ResolvedActivityBreakdown> activities,
   ) {
-    final List<double> values = <double>[
-      for (final DailyRecordEntity day in reference.followedBy(currentWeek))
-        if (weightForDay(day) != null) weightForDay(day)!,
-    ];
-    if (values.isEmpty) {
-      return null;
+    if (activities.isEmpty) {
+      return 'unavailable';
     }
-    return values.reduce((double a, double b) => a + b) / values.length;
+    final Set<String> statuses = activities
+        .map((ResolvedActivityBreakdown item) => item.statusCode)
+        .toSet();
+    if (statuses.length == 1) {
+      return statuses.first;
+    }
+    if (statuses.contains('estimated') || statuses.contains('mixed')) {
+      return 'mixed';
+    }
+    return 'actual';
+  }
+
+  double _dataCompleteness(TargetDayResult result) {
+    double score = 0;
+    if (result.referenceDaysCount > 0) {
+      score += 0.2;
+    }
+    if (result.validIntakeDays > 0) {
+      score += 0.25;
+    }
+    if (result.validWeightDays > 0 || result.weightRefKg != null) {
+      score += 0.25;
+    }
+    if (result.activity.statusCode == 'actual') {
+      score += 0.3;
+    } else if (result.activity.statusCode == 'mixed') {
+      score += 0.2;
+    } else if (result.activity.statusCode == 'estimated') {
+      score += 0.1;
+    }
+    return score.clamp(0, 1).toDouble();
   }
 
   double _intakeReliabilityForMode(String mode) {
