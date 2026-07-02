@@ -1860,39 +1860,188 @@ class _BodyMeasurementsPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final double w = size.width;
+    final double h = size.height;
+    final Offset center = Offset(w / 2, h * 0.09);
+
+    final Paint silhouette = Paint()
+      ..color = colorScheme.surfaceContainerHighest
+      ..style = PaintingStyle.fill;
     final Paint outline = Paint()
+      ..color = colorScheme.outlineVariant
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6
-      ..color = colorScheme.outlineVariant;
-    final Paint neutral = Paint()
-      ..style = PaintingStyle.fill
-      ..color = colorScheme.surfaceContainerHighest;
+      ..strokeWidth = 1.5;
 
-    canvas.drawCircle(
-      Offset(size.width * 0.5, size.height * 0.075),
-      size.width * 0.10,
-      neutral,
-    );
-    canvas.drawCircle(
-      Offset(size.width * 0.5, size.height * 0.075),
-      size.width * 0.10,
-      outline,
-    );
+    final Path body = Path();
+    body.addOval(Rect.fromCircle(center: center, radius: w * 0.11));
+    body.addRRect(RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: Offset(w / 2, h * 0.17),
+        width: w * 0.10,
+        height: h * 0.06,
+      ),
+      Radius.circular(w * 0.03),
+    ));
 
-    for (final _BodyRegionDefinition region in _bodyRegions) {
-      final Rect rect = region.rectFor(size);
-      final Paint fill = Paint()
-        ..style = PaintingStyle.fill
-        ..color = availableCodes.contains(region.code)
-            ? colorScheme.primaryContainer
-            : colorScheme.surfaceContainerHighest;
-      final RRect shape = RRect.fromRectAndRadius(
-        rect,
-        Radius.circular(size.width * 0.035),
-      );
-      canvas.drawRRect(shape, fill);
-      canvas.drawRRect(shape, outline);
+    final Path torso = Path()
+      ..moveTo(w * 0.34, h * 0.23)
+      ..quadraticBezierTo(w * 0.31, h * 0.35, w * 0.33, h * 0.46)
+      ..quadraticBezierTo(w * 0.35, h * 0.57, w * 0.41, h * 0.63)
+      ..quadraticBezierTo(w * 0.46, h * 0.67, w * 0.50, h * 0.69)
+      ..quadraticBezierTo(w * 0.54, h * 0.67, w * 0.59, h * 0.63)
+      ..quadraticBezierTo(w * 0.65, h * 0.57, w * 0.67, h * 0.46)
+      ..quadraticBezierTo(w * 0.69, h * 0.35, w * 0.66, h * 0.23)
+      ..quadraticBezierTo(w * 0.50, h * 0.18, w * 0.34, h * 0.23)
+      ..close();
+    body.addPath(torso, Offset.zero);
+
+    body.addRRect(_limb(
+        Rect.fromLTWH(w * 0.20, h * 0.25, w * 0.09, h * 0.24), w * 0.045));
+    body.addRRect(_limb(
+        Rect.fromLTWH(w * 0.71, h * 0.25, w * 0.09, h * 0.24), w * 0.045));
+    body.addRRect(
+        _limb(Rect.fromLTWH(w * 0.21, h * 0.47, w * 0.08, h * 0.20), w * 0.04));
+    body.addRRect(
+        _limb(Rect.fromLTWH(w * 0.71, h * 0.47, w * 0.08, h * 0.20), w * 0.04));
+    body.addRRect(
+        _limb(Rect.fromLTWH(w * 0.40, h * 0.68, w * 0.08, h * 0.22), w * 0.04));
+    body.addRRect(
+        _limb(Rect.fromLTWH(w * 0.52, h * 0.68, w * 0.08, h * 0.22), w * 0.04));
+    body.addRRect(_limb(
+        Rect.fromLTWH(w * 0.40, h * 0.87, w * 0.07, h * 0.11), w * 0.035));
+    body.addRRect(_limb(
+        Rect.fromLTWH(w * 0.53, h * 0.87, w * 0.07, h * 0.11), w * 0.035));
+    body.addRRect(_limb(
+        Rect.fromLTWH(w * 0.38, h * 0.97, w * 0.11, h * 0.025), w * 0.012));
+    body.addRRect(_limb(
+        Rect.fromLTWH(w * 0.52, h * 0.97, w * 0.11, h * 0.025), w * 0.012));
+
+    canvas.drawShadow(
+        body, colorScheme.shadow.withValues(alpha: 0.18), 10, false);
+    canvas.drawPath(body, silhouette);
+    canvas.drawPath(body, outline);
+
+    _drawZone(
+        canvas,
+        Rect.fromCenter(
+            center: Offset(w * 0.50, h * 0.18),
+            width: w * 0.17,
+            height: h * 0.06),
+        <String>['neck', 'collo']);
+    _drawZone(
+        canvas,
+        Rect.fromCenter(
+            center: Offset(w * 0.50, h * 0.29),
+            width: w * 0.25,
+            height: h * 0.08),
+        <String>['chest', 'torace', 'petto']);
+    _drawZone(
+        canvas,
+        Rect.fromCenter(
+            center: Offset(w * 0.50, h * 0.39),
+            width: w * 0.22,
+            height: h * 0.07),
+        <String>['biceps', 'arm', 'braccia']);
+    _drawZone(
+        canvas,
+        Rect.fromCenter(
+            center: Offset(w * 0.50, h * 0.49),
+            width: w * 0.19,
+            height: h * 0.07),
+        <String>['waist', 'vita']);
+    _drawZone(
+        canvas,
+        Rect.fromCenter(
+            center: Offset(w * 0.50, h * 0.59),
+            width: w * 0.24,
+            height: h * 0.08),
+        <String>['hips', 'hip', 'fianchi']);
+    _drawZone(
+        canvas,
+        Rect.fromCenter(
+            center: Offset(w * 0.25, h * 0.36),
+            width: w * 0.07,
+            height: h * 0.16),
+        <String>['leftArm', 'left_arm', 'braccio_sx', 'braccio']);
+    _drawZone(
+        canvas,
+        Rect.fromCenter(
+            center: Offset(w * 0.75, h * 0.36),
+            width: w * 0.07,
+            height: h * 0.16),
+        <String>['rightArm', 'right_arm', 'braccio_dx']);
+    _drawZone(
+        canvas,
+        Rect.fromCenter(
+            center: Offset(w * 0.25, h * 0.56),
+            width: w * 0.065,
+            height: h * 0.14),
+        <String>['leftForearm', 'left_forearm', 'avambraccio_sx', 'forearm']);
+    _drawZone(
+        canvas,
+        Rect.fromCenter(
+            center: Offset(w * 0.75, h * 0.56),
+            width: w * 0.065,
+            height: h * 0.14),
+        <String>['rightForearm', 'right_forearm', 'avambraccio_dx']);
+    _drawZone(
+        canvas,
+        Rect.fromCenter(
+            center: Offset(w * 0.44, h * 0.79),
+            width: w * 0.09,
+            height: h * 0.20),
+        <String>['leftThigh', 'left_thigh', 'coscia_sx', 'thigh']);
+    _drawZone(
+        canvas,
+        Rect.fromCenter(
+            center: Offset(w * 0.56, h * 0.79),
+            width: w * 0.09,
+            height: h * 0.20),
+        <String>['rightThigh', 'right_thigh', 'coscia_dx']);
+    _drawZone(
+        canvas,
+        Rect.fromCenter(
+            center: Offset(w * 0.44, h * 0.92),
+            width: w * 0.08,
+            height: h * 0.12),
+        <String>['leftCalf', 'left_calf', 'polpaccio_sx', 'calf']);
+    _drawZone(
+        canvas,
+        Rect.fromCenter(
+            center: Offset(w * 0.56, h * 0.92),
+            width: w * 0.08,
+            height: h * 0.12),
+        <String>['rightCalf', 'right_calf', 'polpaccio_dx']);
+  }
+
+  RRect _limb(Rect rect, double radius) {
+    return RRect.fromRectAndRadius(rect, Radius.circular(radius));
+  }
+
+  bool _matches(List<String> aliases) {
+    for (final String alias in aliases) {
+      if (availableCodes.contains(alias)) return true;
+      if (availableCodes.contains(alias.toLowerCase())) return true;
+      if (availableCodes.contains(alias.toUpperCase())) return true;
     }
+    return false;
+  }
+
+  void _drawZone(Canvas canvas, Rect rect, List<String> aliases) {
+    final bool active = _matches(aliases);
+    final Paint fill = Paint()
+      ..color = active
+          ? colorScheme.primaryContainer.withValues(alpha: 0.95)
+          : colorScheme.surface.withValues(alpha: 0.82)
+      ..style = PaintingStyle.fill;
+    final Paint border = Paint()
+      ..color = active ? colorScheme.primary : colorScheme.outlineVariant
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = active ? 1.8 : 1.2;
+    final rrect = RRect.fromRectAndRadius(
+        rect, Radius.circular(rect.shortestSide * 0.42));
+    canvas.drawRRect(rrect, fill);
+    canvas.drawRRect(rrect, border);
   }
 
   @override

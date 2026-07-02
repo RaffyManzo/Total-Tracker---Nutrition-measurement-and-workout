@@ -5,6 +5,7 @@ import '../../features/nutrition/mock/presentation/ingredient_list_screen.dart'
     as mock_nutrition;
 import '../../features/nutrition/presentation/food_v01_screens.dart';
 import '../../features/nutrition/presentation/measurement_screens.dart';
+import '../../features/profile/presentation/profile_settings_hub_screen.dart';
 import '../../features/profile/presentation/profile_settings_screen.dart';
 import '../../features/transfer/presentation/transfer_center_screen.dart';
 import '../../features/tracking/mock/presentation/tracking_hub_screen.dart'
@@ -95,6 +96,12 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: '/settings',
+      builder: (BuildContext context, GoRouterState state) {
+        return const ProfileSettingsHubScreen();
+      },
+    ),
+    GoRoute(
+      path: '/settings/legacy',
       builder: (BuildContext context, GoRouterState state) {
         return const ProfileSettingsScreen();
       },
