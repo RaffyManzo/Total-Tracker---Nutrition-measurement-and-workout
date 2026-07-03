@@ -65,14 +65,24 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/food/meals/:id',
       builder: (BuildContext context, GoRouterState state) {
+        final String mealId = state.pathParameters['id']!;
+        final String? initialDate = state.uri.queryParameters['date'];
+        final String? initialSlot = state.uri.queryParameters['slot'];
+
         return OpenNutritionImportOverlay(
           targetType: 'meal',
-          targetId: state.pathParameters['id']!,
-          child: FoodMealDetailScreen(
-            id: state.pathParameters['id']!,
-            initialDate: state.uri.queryParameters['date'],
-            initialSlot: state.uri.queryParameters['slot'],
-          ),
+          targetId: mealId,
+          childBuilder: (
+            BuildContext context,
+            int revision,
+          ) {
+            return FoodMealDetailScreen(
+              key: ValueKey<String>('meal-$mealId-$revision'),
+              id: mealId,
+              initialDate: initialDate,
+              initialSlot: initialSlot,
+            );
+          },
         );
       },
     ),
@@ -128,10 +138,20 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/food/recipes/:id',
       builder: (BuildContext context, GoRouterState state) {
+        final String recipeId = state.pathParameters['id']!;
+
         return OpenNutritionImportOverlay(
           targetType: 'recipe',
-          targetId: state.pathParameters['id']!,
-          child: RecipeDetailScreen(id: state.pathParameters['id']!),
+          targetId: recipeId,
+          childBuilder: (
+            BuildContext context,
+            int revision,
+          ) {
+            return RecipeDetailScreen(
+              key: ValueKey<String>('recipe-$recipeId-$revision'),
+              id: recipeId,
+            );
+          },
         );
       },
     ),

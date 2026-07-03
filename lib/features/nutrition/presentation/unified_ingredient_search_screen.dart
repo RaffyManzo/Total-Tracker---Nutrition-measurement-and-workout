@@ -854,17 +854,41 @@ class _ErrorCard extends StatelessWidget {
   }
 }
 
+typedef OpenNutritionImportChildBuilder = Widget Function(
+  BuildContext context,
+  int revision,
+);
+
+class OpenNutritionImportChildHost extends StatelessWidget {
+  const OpenNutritionImportChildHost({
+    required this.revision,
+    required this.builder,
+    super.key,
+  });
+
+  final int revision;
+  final OpenNutritionImportChildBuilder builder;
+
+  @override
+  Widget build(BuildContext context) {
+    return KeyedSubtree(
+      key: ValueKey<int>(revision),
+      child: builder(context, revision),
+    );
+  }
+}
+
 class OpenNutritionImportOverlay extends ConsumerStatefulWidget {
   const OpenNutritionImportOverlay({
     required this.targetType,
     required this.targetId,
-    required this.child,
+    required this.childBuilder,
     super.key,
   });
 
   final String targetType;
   final String targetId;
-  final Widget child;
+  final OpenNutritionImportChildBuilder childBuilder;
 
   @override
   ConsumerState<OpenNutritionImportOverlay> createState() =>
@@ -879,9 +903,9 @@ class _OpenNutritionImportOverlayState
   Widget build(BuildContext context) {
     return Stack(
       children: <Widget>[
-        KeyedSubtree(
-          key: ValueKey<int>(_revision),
-          child: widget.child,
+        OpenNutritionImportChildHost(
+          revision: _revision,
+          builder: widget.childBuilder,
         ),
         Positioned(
           right: 16,
