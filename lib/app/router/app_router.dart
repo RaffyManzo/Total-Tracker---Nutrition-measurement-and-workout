@@ -1,19 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/nutrition/data/services/open_food_facts_service.dart';
 import '../../features/nutrition/mock/presentation/ingredient_list_screen.dart'
     as mock_nutrition;
 import '../../features/nutrition/presentation/food_v01_screens.dart';
+import '../../features/nutrition/presentation/ingredient_create_screen.dart';
 import '../../features/nutrition/presentation/measurement_screens.dart';
+import '../../features/nutrition/presentation/open_food_facts_screens.dart';
 import '../../features/nutrition/presentation/open_nutrition_settings_screen.dart';
 import '../../features/nutrition/presentation/unified_ingredient_search_screen.dart';
+import '../../features/profile/presentation/app_navigation_settings_screen.dart';
 import '../../features/profile/presentation/food_service_settings_screen.dart';
 import '../../features/profile/presentation/notification_settings_screen.dart';
 import '../../features/profile/presentation/profile_settings_hub_screen.dart';
 import '../../features/profile/presentation/profile_settings_screen.dart';
-import '../../features/transfer/presentation/transfer_center_screen.dart';
 import '../../features/tracking/mock/presentation/tracking_hub_screen.dart'
     as mock_tracking;
+import '../../features/transfer/presentation/transfer_center_screen.dart';
 import '../../features/ui_preview/presentation/ui_foundation_preview_screen.dart';
 import '../../features/workout/mock/presentation/exercise_list_screen.dart'
     as mock_workout;
@@ -87,9 +91,26 @@ final GoRouter appRouter = GoRouter(
       },
     ),
     GoRoute(
+      path: '/food/ingredients/create',
+      builder: (BuildContext context, GoRouterState state) {
+        return const IngredientCreateScreen();
+      },
+    ),
+    GoRoute(
       path: '/food/ingredients/scan',
       builder: (BuildContext context, GoRouterState state) {
-        return const IngredientScannerScreen();
+        return const OpenFoodFactsScannerScreen();
+      },
+    ),
+    GoRoute(
+      path: '/food/ingredients/off/product/:barcode',
+      builder: (BuildContext context, GoRouterState state) {
+        return OpenFoodFactsProductPreviewScreen(
+          barcode: state.pathParameters['barcode']!,
+          initialProduct: state.extra is OpenFoodFactsProduct
+              ? state.extra! as OpenFoodFactsProduct
+              : null,
+        );
       },
     ),
     GoRoute(
@@ -150,6 +171,12 @@ final GoRouter appRouter = GoRouter(
       path: '/settings/food-services',
       builder: (BuildContext context, GoRouterState state) {
         return const FoodServiceSettingsScreen();
+      },
+    ),
+    GoRoute(
+      path: '/settings/navigation',
+      builder: (BuildContext context, GoRouterState state) {
+        return const AppNavigationSettingsScreen();
       },
     ),
     GoRoute(

@@ -6,6 +6,7 @@ import '../entities/ingredient_entity.dart';
 import '../entities/open_nutrition_food_entity.dart';
 import '../repositories/ingredient_repository.dart';
 import '../repositories/open_nutrition_catalog_repository.dart';
+import 'open_food_facts_service.dart';
 
 class UnifiedIngredientSearchScopeCodes {
   const UnifiedIngredientSearchScopeCodes._();
@@ -13,37 +14,87 @@ class UnifiedIngredientSearchScopeCodes {
   static const String all = 'all';
   static const String personal = 'personal';
   static const String openNutrition = 'open_nutrition';
+  static const String openFoodFacts = 'open_food_facts';
 }
 
 class UnifiedIngredientSearchItem {
-  const UnifiedIngredientSearchItem.personal(this.personalIngredient)
-      : openNutritionFood = null;
-  const UnifiedIngredientSearchItem.openNutrition(this.openNutritionFood)
-      : personalIngredient = null;
+  const UnifiedIngredientSearchItem.personal(
+    this.personalIngredient,
+  )   : openNutritionFood = null,
+        openFoodFactsProduct = null;
+
+  const UnifiedIngredientSearchItem.openNutrition(
+    this.openNutritionFood,
+  )   : personalIngredient = null,
+        openFoodFactsProduct = null;
+
+  const UnifiedIngredientSearchItem.openFoodFacts(
+    this.openFoodFactsProduct,
+  )   : personalIngredient = null,
+        openNutritionFood = null;
 
   final IngredientEntity? personalIngredient;
   final OpenNutritionFoodEntity? openNutritionFood;
+  final OpenFoodFactsProduct? openFoodFactsProduct;
 
   bool get isPersonal => personalIngredient != null;
+  bool get isOpenNutrition => openNutritionFood != null;
+  bool get isOpenFoodFacts => openFoodFactsProduct != null;
+
   String get displayName =>
-      personalIngredient?.name ?? openNutritionFood?.name ?? '';
+      personalIngredient?.name ??
+      openNutritionFood?.name ??
+      openFoodFactsProduct?.name ??
+      '';
+
   String get brand =>
-      personalIngredient?.brand ?? openNutritionFood?.brand ?? '';
+      personalIngredient?.brand ??
+      openNutritionFood?.brand ??
+      openFoodFactsProduct?.brand ??
+      '';
+
   String get imageUrl =>
-      personalIngredient?.imageUrl ?? openNutritionFood?.imageUrl ?? '';
-  String get sourceTypeCode => personalIngredient?.sourceTypeCode ??
-      IngredientSourceTypeCodes.openNutrition;
-  double get kcalPer100g => personalIngredient?.kcalPerReference ??
+      personalIngredient?.imageUrl ??
+      (openNutritionFood == null
+          ? null
+          : openNutritionFood!.imageSmallUrl.isNotEmpty
+              ? openNutritionFood!.imageSmallUrl
+              : openNutritionFood!.imageUrl) ??
+      openFoodFactsProduct?.preferredImageUrl ??
+      '';
+
+  String get sourceTypeCode {
+    if (personalIngredient != null) {
+      return personalIngredient!.sourceTypeCode;
+    }
+    if (openFoodFactsProduct != null) {
+      return IngredientSourceTypeCodes.openFoodFacts;
+    }
+    return IngredientSourceTypeCodes.openNutrition;
+  }
+
+  double get kcalPer100g =>
+      personalIngredient?.kcalPerReference ??
       openNutritionFood?.kcalPer100g ??
+      openFoodFactsProduct?.kcal100 ??
       0;
-  double get proteinPer100g => personalIngredient?.proteinPerReference ??
+
+  double get proteinPer100g =>
+      personalIngredient?.proteinPerReference ??
       openNutritionFood?.proteinPer100g ??
+      openFoodFactsProduct?.protein100 ??
       0;
-  double get carbsPer100g => personalIngredient?.carbsPerReference ??
+
+  double get carbsPer100g =>
+      personalIngredient?.carbsPerReference ??
       openNutritionFood?.carbsPer100g ??
+      openFoodFactsProduct?.carbs100 ??
       0;
-  double get fatPer100g => personalIngredient?.fatPerReference ??
+
+  double get fatPer100g =>
+      personalIngredient?.fatPerReference ??
       openNutritionFood?.fatPer100g ??
+      openFoodFactsProduct?.fat100 ??
       0;
 }
 
@@ -65,41 +116,40 @@ class UnifiedIngredientSearchPolicy {
   const UnifiedIngredientSearchPolicy._();
 
   static const int pageSize = 25;
+  static const int openFoodFactsPageSize = 20;
   static const int initialLocalLimit = 50;
 
-  /// Legacy compatibility for tests and callers that still modelled a single
-  /// mixed page. The new UI does not use this method because local and
-  /// OpenNutrition results now have independent sections and pagination.
   static int remainingAfterPersonal(int personalCount) {
     if (personalCount <= 0) return pageSize;
     if (personalCount >= pageSize) return 0;
     return pageSize - personalCount;
   }
 
-  /// Legacy compatibility for the former combined pagination policy.
-  /// New code must keep the two result sources independently paginated.
   static int externalOffsetForCombinedPage({
     required int page,
     required int externalAlreadyShown,
   }) {
-    final safePage = page < 1 ? 1 : page;
-    final safeAlreadyShown = externalAlreadyShown < 0
-        ? 0
-        : externalAlreadyShown;
+    final int safePage = page < 1 ? 1 : page;
+    final int safeAlreadyShown =
+        externalAlreadyShown < 0 ? 0 : externalAlreadyShown;
     return ((safePage - 1) * pageSize) + safeAlreadyShown;
   }
 
   static bool canSearchOpenNutrition(String query) => query.trim().length >= 2;
+
+  static bool canSearchOpenFoodFacts(String query) => query.trim().length >= 3;
 }
 
 class UnifiedIngredientSearchService {
   UnifiedIngredientSearchService({
     required this.personalRepository,
     required this.openNutritionRepository,
+    required this.openFoodFactsService,
   });
 
   final IngredientRepository personalRepository;
   final OpenNutritionCatalogRepository openNutritionRepository;
+  final OpenFoodFactsService openFoodFactsService;
 
   Future<bool> isOpenNutritionAvailable() async {
     if (!await FoodServicePreferences.isOpenNutritionSearchEnabled()) {
@@ -111,13 +161,17 @@ class UnifiedIngredientSearchService {
         await openNutritionRepository.countActive() > 0;
   }
 
+  Future<bool> isOpenFoodFactsAvailable() {
+    return FoodServicePreferences.isOpenFoodFactsEnabled();
+  }
+
   Future<UnifiedIngredientSearchPage> searchPersonal({
     required String query,
     int page = 0,
   }) async {
-    final safePage = page < 0 ? 0 : page;
+    final int safePage = page < 0 ? 0 : page;
     if (query.trim().isEmpty) {
-      final values = personalRepository.getRecentActive(
+      final List<IngredientEntity> values = personalRepository.getRecentActive(
         limit: UnifiedIngredientSearchPolicy.initialLocalLimit,
       );
       return UnifiedIngredientSearchPage(
@@ -127,12 +181,15 @@ class UnifiedIngredientSearchService {
         hasPrevious: false,
       );
     }
-    final values = personalRepository.searchByNameLimited(
+
+    final List<IngredientEntity> values =
+        personalRepository.searchByNameLimited(
       query,
       offset: safePage * UnifiedIngredientSearchPolicy.pageSize,
       limit: UnifiedIngredientSearchPolicy.pageSize + 1,
     );
-    final hasNext = values.length > UnifiedIngredientSearchPolicy.pageSize;
+    final bool hasNext = values.length > UnifiedIngredientSearchPolicy.pageSize;
+
     return UnifiedIngredientSearchPage(
       items: values
           .take(UnifiedIngredientSearchPolicy.pageSize)
@@ -148,7 +205,7 @@ class UnifiedIngredientSearchService {
     required String query,
     int page = 0,
   }) async {
-    final safePage = page < 0 ? 0 : page;
+    final int safePage = page < 0 ? 0 : page;
     if (!UnifiedIngredientSearchPolicy.canSearchOpenNutrition(query) ||
         !await isOpenNutritionAvailable()) {
       return UnifiedIngredientSearchPage(
@@ -158,12 +215,15 @@ class UnifiedIngredientSearchService {
         hasPrevious: safePage > 0,
       );
     }
-    final values = await openNutritionRepository.search(
+
+    final List<OpenNutritionFoodEntity> values =
+        await openNutritionRepository.search(
       query: query,
       offset: safePage * UnifiedIngredientSearchPolicy.pageSize,
       limit: UnifiedIngredientSearchPolicy.pageSize + 1,
     );
-    final hasNext = values.length > UnifiedIngredientSearchPolicy.pageSize;
+    final bool hasNext = values.length > UnifiedIngredientSearchPolicy.pageSize;
+
     return UnifiedIngredientSearchPage(
       items: values
           .take(UnifiedIngredientSearchPolicy.pageSize)
@@ -175,33 +235,75 @@ class UnifiedIngredientSearchService {
     );
   }
 
-  /// Compatibility method for existing callers. New UI should call the two
-  /// independent methods so the sections never share pagination.
+  Future<UnifiedIngredientSearchPage> searchOpenFoodFacts({
+    required String query,
+    int page = 0,
+  }) async {
+    final int safePage = page < 0 ? 0 : page;
+    if (!UnifiedIngredientSearchPolicy.canSearchOpenFoodFacts(query) ||
+        !await isOpenFoodFactsAvailable()) {
+      return UnifiedIngredientSearchPage(
+        items: const <UnifiedIngredientSearchItem>[],
+        page: safePage,
+        hasNext: false,
+        hasPrevious: safePage > 0,
+      );
+    }
+
+    final OpenFoodFactsSearchResponse response =
+        await openFoodFactsService.searchTextPage(
+      query,
+      page: safePage + 1,
+      pageSize: UnifiedIngredientSearchPolicy.openFoodFactsPageSize,
+    );
+
+    return UnifiedIngredientSearchPage(
+      items: response.products
+          .map(UnifiedIngredientSearchItem.openFoodFacts)
+          .toList(),
+      page: safePage,
+      hasNext: response.hasNext,
+      hasPrevious: safePage > 0,
+    );
+  }
+
   Future<UnifiedIngredientSearchPage> search({
     required String query,
     required String scopeCode,
     int page = 0,
   }) {
     if (scopeCode == UnifiedIngredientSearchScopeCodes.openNutrition) {
-      return searchOpenNutrition(query: query, page: page);
+      return searchOpenNutrition(
+        query: query,
+        page: page,
+      );
+    }
+    if (scopeCode == UnifiedIngredientSearchScopeCodes.openFoodFacts) {
+      return searchOpenFoodFacts(
+        query: query,
+        page: page,
+      );
     }
     return searchPersonal(query: query, page: page);
   }
 
   IngredientEntity promote(OpenNutritionFoodEntity food) {
-    final existing = personalRepository.findByExternalSource(
+    final IngredientEntity? existing = personalRepository.findByExternalSource(
       IngredientSourceTypeCodes.openNutrition,
       food.externalFoodId,
     );
     if (existing != null) return existing;
+
     if (food.barcode.trim().isNotEmpty) {
-      final byBarcode = personalRepository.findByBarcode(food.barcode);
+      final IngredientEntity? byBarcode =
+          personalRepository.findByBarcode(food.barcode);
       if (byBarcode != null) return byBarcode;
     }
 
-    final attribution = food.fromOpenFoodFacts
+    final String attribution = food.fromOpenFoodFacts
         ? 'OpenNutrition; © Open Food Facts contributors'
         : 'OpenNutrition';
+
     return personalRepository.save(
       IngredientEntity(
         uuid: const Uuid().v4(),
@@ -210,16 +312,15 @@ class UnifiedIngredientSearchService {
         barcode: food.barcode,
         sourceTypeCode: IngredientSourceTypeCodes.openNutrition,
         sourceName: 'OpenNutrition',
-        sourceUrl:
-            'https://www.opennutrition.app/search?search=${Uri.encodeQueryComponent(food.name)}',
+        sourceUrl: 'https://www.opennutrition.app/search?search='
+            '${Uri.encodeQueryComponent(food.name)}',
         sourceExternalId: food.externalFoodId,
         sourceDatasetVersion: food.datasetVersion,
         sourceLicenseCode: 'ODbL-1.0 / modified DbCL-1.0',
         sourceAttribution: attribution,
         wasModifiedByUser: false,
-        imageUrl: food.imageUrl.isNotEmpty
-            ? food.imageUrl
-            : food.imageSmallUrl,
+        imageUrl:
+            food.imageSmallUrl.isNotEmpty ? food.imageSmallUrl : food.imageUrl,
         nutritionReferenceAmount: 100,
         kcalPerReference: food.kcalPer100g,
         proteinPerReference: food.proteinPer100g,

@@ -8,11 +8,44 @@ import '../../../core/preferences/food_service_preferences.dart';
 class NotificationSettingsScreen extends ConsumerWidget {
   const NotificationSettingsScreen({super.key});
 
-  Future<void> _afterChange() => ReminderBackgroundJobs.reconcileRegistration();
+  Future<void> _reconcile() {
+    return ReminderBackgroundJobs.reconcileRegistration();
+  }
+
+  Future<void> _setMaster(
+    BuildContext context,
+    FoodServicePreferencesController preferences,
+    bool value,
+  ) async {
+    if (value) {
+      final bool granted = await LocalNotificationService.requestPermission();
+      if (!granted) {
+        await preferences.setNotificationsEnabled(false);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Permesso notifiche non concesso dal sistema.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+      await preferences.setNotificationsEnabled(true);
+    } else {
+      await preferences.setNotificationsEnabled(false);
+      await LocalNotificationService.cancelAll();
+    }
+    await _reconcile();
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final preferences = ref.watch(foodServicePreferencesProvider);
+    final FoodServicePreferencesController preferences =
+        ref.watch(foodServicePreferencesProvider);
+    final bool master = preferences.notificationsEnabled;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Notifiche')),
       body: preferences.loading
@@ -23,28 +56,14 @@ class NotificationSettingsScreen extends ConsumerWidget {
                 Card(
                   child: SwitchListTile(
                     title: const Text('Notifiche generali'),
-                    subtitle: const Text(
-                      'Interruttore principale per reminder e operazioni in background.',
+                    subtitle: Text(
+                      master
+                          ? 'Le categorie abilitate possono inviare notifiche.'
+                          : 'Reminder e notifiche operative sono disattivati.',
                     ),
-                    value: preferences.notificationsEnabled,
-                    onChanged: (bool value) async {
-                      if (value) {
-                        final granted =
-                            await LocalNotificationService.requestPermission();
-                        if (!granted && context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Permesso notifiche non concesso dal sistema.',
-                              ),
-                            ),
-                          );
-                          return;
-                        }
-                      }
-                      await preferences.setNotificationsEnabled(value);
-                      await _afterChange();
-                    },
+                    value: master,
+                    onChanged: (bool value) =>
+                        _setMaster(context, preferences, value),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -54,13 +73,15 @@ class NotificationSettingsScreen extends ConsumerWidget {
                       SwitchListTile(
                         title: const Text('Promemoria pasti'),
                         subtitle: const Text(
-                          'Dopo le 15:00, se non è stato registrato alcun pasto nella giornata.',
+                          'Dopo le 15:00, se non è stato registrato alcun pasto.',
                         ),
                         value: preferences.mealReminderEnabled,
-                        onChanged: (bool value) async {
-                          await preferences.setMealReminderEnabled(value);
-                          await _afterChange();
-                        },
+                        onChanged: master
+                            ? (bool value) async {
+                                await preferences.setMealReminderEnabled(value);
+                                await _reconcile();
+                              }
+                            : null,
                       ),
                       const Divider(height: 1),
                       SwitchListTile(
@@ -69,46 +90,49 @@ class NotificationSettingsScreen extends ConsumerWidget {
                           'Quando non viene registrato un peso da almeno 7 giorni.',
                         ),
                         value: preferences.weightReminderEnabled,
-                        onChanged: (bool value) async {
-                          await preferences.setWeightReminderEnabled(value);
-                          await _afterChange();
-                        },
+                        onChanged: master
+                            ? (bool value) async {
+                                await preferences
+                                    .setWeightReminderEnabled(value);
+                                await _reconcile();
+                              }
+                            : null,
                       ),
                       const Divider(height: 1),
                       SwitchListTile(
                         title: const Text('Misurazioni corporee'),
                         subtitle: const Text(
-                          'Quando sono trascorsi due mesi di calendario dall’ultima misura con metro.',
+                          'Quando sono trascorsi due mesi dall’ultima misura.',
                         ),
                         value: preferences.bodyReminderEnabled,
-                        onChanged: (bool value) async {
-                          await preferences.setBodyReminderEnabled(value);
-                          await _afterChange();
-                        },
+                        onChanged: master
+                            ? (bool value) async {
+                                await preferences.setBodyReminderEnabled(value);
+                                await _reconcile();
+                              }
+                            : null,
                       ),
                       const Divider(height: 1),
                       SwitchListTile(
                         title: const Text('Operazioni in background'),
                         subtitle: const Text(
-                          'Esito di download e importazione OpenNutrition.',
+                          'Avanzamento ed esito dell’importazione OpenNutrition.',
                         ),
                         value: preferences.backgroundOperationsEnabled,
-                        onChanged:
-                            preferences.setBackgroundOperationsEnabled,
+                        onChanged: master
+                            ? preferences.setBackgroundOperationsEnabled
+                            : null,
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text(
-                      'I controlli vengono riconciliati in background. Android e iOS possono '
-                      'ritardare l’esecuzione per risparmio energetico; la deduplicazione evita '
-                      'notifiche ripetute per lo stesso periodo.',
-                    ),
-                  ),
+                FilledButton.tonalIcon(
+                  onPressed: master
+                      ? LocalNotificationService.showTestNotification
+                      : null,
+                  icon: const Icon(Icons.notifications_active_outlined),
+                  label: const Text('Invia notifica di prova'),
                 ),
               ],
             ),

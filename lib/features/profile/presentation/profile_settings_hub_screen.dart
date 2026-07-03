@@ -40,6 +40,14 @@ class ProfileSettingsHubScreen extends StatelessWidget {
         directRoute: '/settings/opennutrition',
       ),
       const _SettingsSectionCardData(
+        code: 'navigation',
+        title: 'Navigazione',
+        subtitle: 'Dashboard iniziale e comportamento del pulsante Indietro.',
+        icon: Icons.navigation_outlined,
+        accent: Color(0xFF0F766E),
+        directRoute: '/settings/navigation',
+      ),
+      const _SettingsSectionCardData(
         code: 'notifications',
         title: 'Notifiche',
         subtitle:

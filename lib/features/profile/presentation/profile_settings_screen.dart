@@ -283,7 +283,8 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               'Lingua',
               profile.languageCode == 'en' ? 'English' : 'Italiano',
             ),
-            const _SettingRowData('Dashboard iniziale', 'Food Plan'),
+            const _SettingRowData(
+                'Dashboard iniziale', 'Configura in Navigazione'),
           ],
         ),
         const SizedBox(height: AppSpacing.md),
@@ -457,7 +458,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               'Lingua', profile.languageCode == 'en' ? 'English' : 'Italiano'),
           const _SettingRowData(
             'Dashboard iniziale',
-            'Food Plan',
+            'Configura in Navigazione',
           ),
         ],
       ),

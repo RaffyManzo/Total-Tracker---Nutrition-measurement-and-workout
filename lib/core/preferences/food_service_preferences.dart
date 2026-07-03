@@ -12,8 +12,7 @@ class FoodServicePreferenceKeys {
 
   static const notificationsEnabled = 'notifications.enabled';
   static const mealReminderEnabled = 'notifications.meal_reminder.enabled';
-  static const weightReminderEnabled =
-      'notifications.weight_reminder.enabled';
+  static const weightReminderEnabled = 'notifications.weight_reminder.enabled';
   static const bodyReminderEnabled = 'notifications.body_reminder.enabled';
   static const backgroundOperationsEnabled =
       'notifications.background_operations.enabled';
@@ -32,7 +31,10 @@ class FoodServicePreferences {
 
   static final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
 
-  static Future<bool> getBool(String key, {bool defaultValue = true}) async {
+  static Future<bool> getBool(
+    String key, {
+    bool defaultValue = true,
+  }) async {
     try {
       return await _preferences.getBool(key) ?? defaultValue;
     } catch (_) {
@@ -40,7 +42,10 @@ class FoodServicePreferences {
     }
   }
 
-  static Future<void> setBool(String key, bool value) {
+  static Future<void> setBool(
+    String key,
+    bool value,
+  ) {
     return _preferences.setBool(key, value);
   }
 
@@ -52,7 +57,10 @@ class FoodServicePreferences {
     }
   }
 
-  static Future<void> setInt(String key, int value) {
+  static Future<void> setInt(
+    String key,
+    int value,
+  ) {
     return _preferences.setInt(key, value);
   }
 
@@ -64,16 +72,23 @@ class FoodServicePreferences {
     }
   }
 
-  static Future<void> setString(String key, String value) {
+  static Future<void> setString(
+    String key,
+    String value,
+  ) {
     return _preferences.setString(key, value);
   }
 
   static Future<bool> isOpenNutritionSearchEnabled() {
-    return getBool(FoodServicePreferenceKeys.openNutritionSearchEnabled);
+    return getBool(
+      FoodServicePreferenceKeys.openNutritionSearchEnabled,
+    );
   }
 
   static Future<bool> isOpenFoodFactsEnabled() {
-    return getBool(FoodServicePreferenceKeys.openFoodFactsEnabled);
+    return getBool(
+      FoodServicePreferenceKeys.openFoodFactsEnabled,
+    );
   }
 }
 
@@ -120,49 +135,74 @@ class FoodServicePreferencesController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _set(String key, bool value, void Function() update) async {
+  Future<void> _set(
+    String key,
+    bool value,
+    void Function() update,
+  ) async {
     update();
     notifyListeners();
     await FoodServicePreferences.setBool(key, value);
   }
 
-  Future<void> setOpenNutritionSearchEnabled(bool value) => _set(
+  Future<void> setOpenNutritionSearchEnabled(
+    bool value,
+  ) =>
+      _set(
         FoodServicePreferenceKeys.openNutritionSearchEnabled,
         value,
         () => openNutritionSearchEnabled = value,
       );
 
-  Future<void> setOpenFoodFactsEnabled(bool value) => _set(
+  Future<void> setOpenFoodFactsEnabled(
+    bool value,
+  ) =>
+      _set(
         FoodServicePreferenceKeys.openFoodFactsEnabled,
         value,
         () => openFoodFactsEnabled = value,
       );
 
-  Future<void> setNotificationsEnabled(bool value) => _set(
+  Future<void> setNotificationsEnabled(
+    bool value,
+  ) =>
+      _set(
         FoodServicePreferenceKeys.notificationsEnabled,
         value,
         () => notificationsEnabled = value,
       );
 
-  Future<void> setMealReminderEnabled(bool value) => _set(
+  Future<void> setMealReminderEnabled(
+    bool value,
+  ) =>
+      _set(
         FoodServicePreferenceKeys.mealReminderEnabled,
         value,
         () => mealReminderEnabled = value,
       );
 
-  Future<void> setWeightReminderEnabled(bool value) => _set(
+  Future<void> setWeightReminderEnabled(
+    bool value,
+  ) =>
+      _set(
         FoodServicePreferenceKeys.weightReminderEnabled,
         value,
         () => weightReminderEnabled = value,
       );
 
-  Future<void> setBodyReminderEnabled(bool value) => _set(
+  Future<void> setBodyReminderEnabled(
+    bool value,
+  ) =>
+      _set(
         FoodServicePreferenceKeys.bodyReminderEnabled,
         value,
         () => bodyReminderEnabled = value,
       );
 
-  Future<void> setBackgroundOperationsEnabled(bool value) => _set(
+  Future<void> setBackgroundOperationsEnabled(
+    bool value,
+  ) =>
+      _set(
         FoodServicePreferenceKeys.backgroundOperationsEnabled,
         value,
         () => backgroundOperationsEnabled = value,
@@ -171,7 +211,8 @@ class FoodServicePreferencesController extends ChangeNotifier {
 
 final foodServicePreferencesProvider =
     ChangeNotifierProvider<FoodServicePreferencesController>((Ref ref) {
-  final controller = FoodServicePreferencesController();
+  final FoodServicePreferencesController controller =
+      FoodServicePreferencesController();
   controller.load();
   return controller;
 });
