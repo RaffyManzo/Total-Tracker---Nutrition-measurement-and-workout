@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../app/widgets/primary_bottom_navigation.dart';
 import '../../../core/database/objectbox_providers.dart';
 import '../../../core/preferences/food_service_preferences.dart';
 import '../data/entities/ingredient_entity.dart';
@@ -41,6 +42,7 @@ class _UnifiedIngredientSearchScreenState
   bool _offExpanded = true;
   bool _loading = true;
   bool _catalogAvailable = false;
+  OpenNutritionSearchMode _catalogMode = OpenNutritionSearchMode.unavailable;
   bool _offAvailable = false;
 
   Object? _localError;
@@ -92,6 +94,7 @@ class _UnifiedIngredientSearchScreenState
     Object? catalogError;
     Object? offError;
     bool catalogAvailable = false;
+    OpenNutritionSearchMode catalogMode = OpenNutritionSearchMode.unavailable;
     bool offAvailable = false;
 
     try {
@@ -104,7 +107,8 @@ class _UnifiedIngredientSearchScreenState
     }
 
     try {
-      catalogAvailable = await service.isOpenNutritionAvailable();
+      catalogMode = await service.openNutritionSearchMode();
+      catalogAvailable = catalogMode != OpenNutritionSearchMode.unavailable;
       catalog = _query.isNotEmpty && catalogAvailable
           ? await service.searchOpenNutrition(
               query: _query,
@@ -133,6 +137,7 @@ class _UnifiedIngredientSearchScreenState
       _catalog = catalog;
       _off = off;
       _catalogAvailable = catalogAvailable;
+      _catalogMode = catalogMode;
       _offAvailable = offAvailable;
       _localError = localError;
       _catalogError = catalogError;
@@ -176,6 +181,11 @@ class _UnifiedIngredientSearchScreenState
       return;
     }
 
+    if (item.isRemoteOpenNutrition) {
+      final bool confirmed = await _confirmRemoteOpenNutritionImport(item);
+      if (!confirmed || !mounted) return;
+    }
+
     final UnifiedIngredientSearchService service =
         ref.read(unifiedIngredientSearchServiceProvider);
     final IngredientEntity ingredient =
@@ -191,6 +201,55 @@ class _UnifiedIngredientSearchScreenState
       );
       await _reload();
     }
+  }
+
+  Future<bool> _confirmRemoteOpenNutritionImport(
+    UnifiedIngredientSearchItem item,
+  ) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) {
+            return AlertDialog(
+              title: Text(item.displayName),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  if (item.brand.isNotEmpty) Text(item.brand),
+                  const SizedBox(height: 12),
+                  Text(
+                    '${item.kcalPer100g.toStringAsFixed(0)} kcal · '
+                    'P ${item.proteinPer100g.toStringAsFixed(1)} · '
+                    'C ${item.carbsPer100g.toStringAsFixed(1)} · '
+                    'G ${item.fatPer100g.toStringAsFixed(1)} per 100 g',
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Il record verrà importato singolarmente da un gateway '
+                    'HTTPS. La risposta è accettata solo dopo verifica '
+                    'Ed25519, controllo temporale e validazione dello schema.',
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Fonte dati: OpenNutrition · ODbL 1.0 / DbCL modificata.',
+                  ),
+                ],
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Annulla'),
+                ),
+                FilledButton.icon(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  icon: const Icon(Icons.download_outlined),
+                  label: const Text('Importa'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
   }
 
   Future<void> _afterImported(
@@ -352,6 +411,9 @@ class _UnifiedIngredientSearchScreenState
         icon: const Icon(Icons.add),
         label: const Text('Nuovo'),
       ),
+      bottomNavigationBar: const PrimaryBottomNavigation(
+        currentSection: 'food',
+      ),
       body: RefreshIndicator(
         onRefresh: _reload,
         child: ListView(
@@ -397,10 +459,11 @@ class _UnifiedIngredientSearchScreenState
                   child: ListTile(
                     leading: const Icon(Icons.storage_outlined),
                     title: const Text(
-                      'Catalogo OpenNutrition locale non installato',
+                      'OpenNutrition non disponibile',
                     ),
                     subtitle: const Text(
-                      'La ricerca online resta disponibile tramite Open Food Facts.',
+                      'Installa il catalogo locale oppure configura il gateway '
+                      'online firmato nelle impostazioni.',
                     ),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => context.push(
@@ -486,10 +549,14 @@ class _UnifiedIngredientSearchScreenState
 
   Widget _buildCatalogSection() {
     return _SearchSection(
-      title: 'Catalogo OpenNutrition',
+      title: _catalogMode == OpenNutritionSearchMode.remote
+          ? 'OpenNutrition online verificato'
+          : 'Catalogo OpenNutrition locale',
       subtitle: _query.length < 2
           ? 'Digita almeno due caratteri'
-          : '${_catalog.items.length} risultati nella pagina',
+          : _catalogMode == OpenNutritionSearchMode.remote
+              ? '${_catalog.items.length} risultati firmati nella pagina'
+              : '${_catalog.items.length} risultati nella pagina',
       expanded: _catalogExpanded,
       onToggle: () {
         setState(
@@ -500,7 +567,9 @@ class _UnifiedIngredientSearchScreenState
       error: _catalogError,
       emptyMessage: _query.length < 2
           ? 'Digita almeno due caratteri.'
-          : 'Nessun risultato nel catalogo OpenNutrition.',
+          : _catalogMode == OpenNutritionSearchMode.remote
+              ? 'Nessun risultato dal gateway OpenNutrition.'
+              : 'Nessun risultato nel catalogo OpenNutrition.',
       items: _catalog.items,
       onItem: _select,
       pager: _Pager(
@@ -656,7 +725,9 @@ class _IngredientCard extends StatelessWidget {
   IconData get _sourceIcon {
     switch (item.sourceTypeCode) {
       case IngredientSourceTypeCodes.openNutrition:
-        return Icons.storage_outlined;
+        return item.isRemoteOpenNutrition
+            ? Icons.verified_user_outlined
+            : Icons.storage_outlined;
       case IngredientSourceTypeCodes.openFoodFacts:
         return Icons.qr_code_2_outlined;
       default:
@@ -667,7 +738,9 @@ class _IngredientCard extends StatelessWidget {
   String get _sourceLabel {
     switch (item.sourceTypeCode) {
       case IngredientSourceTypeCodes.openNutrition:
-        return 'OpenNutrition';
+        return item.isRemoteOpenNutrition
+            ? 'OpenNutrition online verificato'
+            : 'OpenNutrition';
       case IngredientSourceTypeCodes.openFoodFacts:
         return 'Open Food Facts';
       default:
@@ -854,41 +927,17 @@ class _ErrorCard extends StatelessWidget {
   }
 }
 
-typedef OpenNutritionImportChildBuilder = Widget Function(
-  BuildContext context,
-  int revision,
-);
-
-class OpenNutritionImportChildHost extends StatelessWidget {
-  const OpenNutritionImportChildHost({
-    required this.revision,
-    required this.builder,
-    super.key,
-  });
-
-  final int revision;
-  final OpenNutritionImportChildBuilder builder;
-
-  @override
-  Widget build(BuildContext context) {
-    return KeyedSubtree(
-      key: ValueKey<int>(revision),
-      child: builder(context, revision),
-    );
-  }
-}
-
 class OpenNutritionImportOverlay extends ConsumerStatefulWidget {
   const OpenNutritionImportOverlay({
     required this.targetType,
     required this.targetId,
-    required this.childBuilder,
+    required this.child,
     super.key,
   });
 
   final String targetType;
   final String targetId;
-  final OpenNutritionImportChildBuilder childBuilder;
+  final Widget child;
 
   @override
   ConsumerState<OpenNutritionImportOverlay> createState() =>
@@ -897,16 +946,11 @@ class OpenNutritionImportOverlay extends ConsumerStatefulWidget {
 
 class _OpenNutritionImportOverlayState
     extends ConsumerState<OpenNutritionImportOverlay> {
-  int _revision = 0;
-
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: <Widget>[
-        OpenNutritionImportChildHost(
-          revision: _revision,
-          builder: widget.childBuilder,
-        ),
+        widget.child,
         Positioned(
           right: 16,
           bottom: 104,
@@ -965,8 +1009,15 @@ class _OpenNutritionImportOverlayState
       );
     }
 
-    setState(() => _revision += 1);
     if (!mounted) return;
+
+    final Uri currentUri = GoRouterState.of(context).uri;
+    final Map<String, String> queryParameters =
+        Map<String, String>.from(currentUri.queryParameters)
+          ..['_refresh'] = DateTime.now().microsecondsSinceEpoch.toString();
+    final String refreshLocation =
+        currentUri.replace(queryParameters: queryParameters).toString();
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -975,6 +1026,10 @@ class _OpenNutritionImportOverlayState
         ),
       ),
     );
+
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+    context.replace(refreshLocation);
   }
 
   Future<double?> _askGrams(String name) async {

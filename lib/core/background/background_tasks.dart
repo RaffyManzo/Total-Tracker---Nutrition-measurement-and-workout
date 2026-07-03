@@ -21,10 +21,11 @@ import '../../features/nutrition/data/services/open_nutrition_import_service.dar
 class TotalTrackerBackgroundTaskNames {
   const TotalTrackerBackgroundTaskNames._();
 
-  static const openNutritionImport = 'total_tracker_open_nutrition_import';
-  static const reminderReconciliation =
+  static const String openNutritionImport =
+      'total_tracker_open_nutrition_import';
+  static const String reminderReconciliation =
       'total_tracker_notification_reconciliation';
-  static const reminderUniqueName =
+  static const String reminderUniqueName =
       'com.raffymanzo.totaltracker.reminders.reconcile';
 }
 
@@ -61,7 +62,22 @@ class OpenNutritionBackgroundJobState {
   final int heartbeatAtEpochMs;
   final int completedAtEpochMs;
 
-  bool get isRunning => status == 'queued' || status == 'running';
+  bool get isStale {
+    if (status != 'queued' && status != 'running') return false;
+    final int reference =
+        heartbeatAtEpochMs > 0 ? heartbeatAtEpochMs : queuedAtEpochMs;
+    if (reference <= 0) return true;
+
+    final Duration age = DateTime.now().difference(
+      DateTime.fromMillisecondsSinceEpoch(reference),
+    );
+    final Duration maximumAge = status == 'queued'
+        ? const Duration(minutes: 15)
+        : const Duration(minutes: 30);
+    return age > maximumAge;
+  }
+
+  bool get isRunning => (status == 'queued' || status == 'running') && !isStale;
   bool get isCompleted => status == 'completed';
   bool get isFailed => status == 'failed';
 
@@ -82,26 +98,34 @@ class OpenNutritionBackgroundJobs {
   static Future<void> enqueueDownload({
     required int licenseAcceptedAtEpochMs,
   }) async {
+    await cancelAndReset(deletePendingArchives: true);
     final Map<String, dynamic> metadata = await _newJobMetadata();
     await _writeQueued(metadata);
     await _showQueuedNotification();
-    await Workmanager().registerOneOffTask(
-      _uniqueName,
-      TotalTrackerBackgroundTaskNames.openNutritionImport,
-      existingWorkPolicy: ExistingWorkPolicy.replace,
-      constraints: Constraints(networkType: NetworkType.connected),
-      inputData: <String, dynamic>{
-        'mode': 'download',
-        'licenseAcceptedAtEpochMs': licenseAcceptedAtEpochMs,
-        ...metadata,
-      },
-    );
+    try {
+      await Workmanager().registerOneOffTask(
+        _uniqueName,
+        TotalTrackerBackgroundTaskNames.openNutritionImport,
+        existingWorkPolicy: ExistingWorkPolicy.replace,
+        constraints: Constraints(networkType: NetworkType.connected),
+        inputData: <String, dynamic>{
+          'mode': 'download',
+          'licenseAcceptedAtEpochMs': licenseAcceptedAtEpochMs,
+          ...metadata,
+        },
+      );
+    } catch (_) {
+      await _clearState();
+      rethrow;
+    }
   }
 
   static Future<void> enqueueLocalArchive({
     required File sourceFile,
     required int licenseAcceptedAtEpochMs,
   }) async {
+    await cancelAndReset(deletePendingArchives: true);
+
     final Directory support = await getApplicationSupportDirectory();
     final Directory directory =
         Directory(path.join(support.path, 'background_imports'));
@@ -117,17 +141,25 @@ class OpenNutritionBackgroundJobs {
     final Map<String, dynamic> metadata = await _newJobMetadata();
     await _writeQueued(metadata);
     await _showQueuedNotification();
-    await Workmanager().registerOneOffTask(
-      _uniqueName,
-      TotalTrackerBackgroundTaskNames.openNutritionImport,
-      existingWorkPolicy: ExistingWorkPolicy.replace,
-      inputData: <String, dynamic>{
-        'mode': 'local',
-        'archivePath': stableFile.path,
-        'licenseAcceptedAtEpochMs': licenseAcceptedAtEpochMs,
-        ...metadata,
-      },
-    );
+    try {
+      await Workmanager().registerOneOffTask(
+        _uniqueName,
+        TotalTrackerBackgroundTaskNames.openNutritionImport,
+        existingWorkPolicy: ExistingWorkPolicy.replace,
+        inputData: <String, dynamic>{
+          'mode': 'local',
+          'archivePath': stableFile.path,
+          'licenseAcceptedAtEpochMs': licenseAcceptedAtEpochMs,
+          ...metadata,
+        },
+      );
+    } catch (_) {
+      await _clearState();
+      if (await stableFile.exists()) {
+        await stableFile.delete();
+      }
+      rethrow;
+    }
   }
 
   static Future<Map<String, dynamic>> _newJobMetadata() async {
@@ -158,22 +190,56 @@ class OpenNutritionBackgroundJobs {
   }
 
   static Future<void> cancel() async {
-    await Workmanager().cancelByUniqueName(_uniqueName);
-    final int now = DateTime.now().millisecondsSinceEpoch;
-    await _setJobState(
-      status: 'cancelled',
-      stage: 'cancelled',
-      message: 'Operazione annullata.',
-      heartbeatAtEpochMs: now,
-      completedAtEpochMs: now,
+    await cancelAndReset(deletePendingArchives: true);
+  }
+
+  static Future<void> cancelAndReset({
+    bool deletePendingArchives = true,
+  }) async {
+    final String cancellationMarker = 'cancelled:${const Uuid().v4()}';
+    await _preferences.setString('on_job_id', cancellationMarker);
+    await _preferences.setString('on_job_status', 'cancelling');
+    await _preferences.setInt(
+      'on_job_heartbeat_at',
+      DateTime.now().millisecondsSinceEpoch,
     );
+
     try {
-      await LocalNotificationService.cancel(
-        LocalNotificationService.importNotificationId,
-      );
+      await Workmanager().cancelByUniqueName(_uniqueName);
+      await Future<void>.delayed(const Duration(milliseconds: 500));
     } catch (_) {
-      // La cancellazione del job non dipende dalla notifica.
+      // Un errore del plugin non deve lasciare lo stato locale bloccato.
+    } finally {
+      if (deletePendingArchives) {
+        await _deletePendingArchives();
+      }
+      await _clearState();
+
+      try {
+        await LocalNotificationService.cancel(
+          LocalNotificationService.importNotificationId,
+        );
+      } catch (_) {
+        // Lo stato del job non dipende dalla notifica.
+      }
     }
+  }
+
+  static Future<OpenNutritionBackgroundJobState> reconcileCachedState() async {
+    final OpenNutritionBackgroundJobState state = await readState();
+    final bool legacyCancellation = state.status == 'cancelled' ||
+        state.status == 'cancelling' ||
+        state.jobId.startsWith('cancelled:');
+    final bool malformedActiveState =
+        (state.status == 'queued' || state.status == 'running') &&
+            state.jobId.trim().isEmpty;
+
+    if (!state.isStale && !legacyCancellation && !malformedActiveState) {
+      return state;
+    }
+
+    await cancelAndReset(deletePendingArchives: true);
+    return readState();
   }
 
   static Future<OpenNutritionBackgroundJobState> readState() async {
@@ -213,7 +279,7 @@ class OpenNutritionBackgroundJobs {
     );
   }
 
-  static Future<void> _setJobState({
+  static Future<bool> _setJobState({
     required String status,
     required String stage,
     required String message,
@@ -228,7 +294,12 @@ class OpenNutritionBackgroundJobs {
     int? startedAtEpochMs,
     int? heartbeatAtEpochMs,
     int? completedAtEpochMs,
+    String? expectedJobId,
   }) async {
+    if (expectedJobId != null && !await _isCurrentJob(expectedJobId)) {
+      return false;
+    }
+
     await _preferences.setString('on_job_status', status);
     await _preferences.setString('on_job_stage', stage);
     await _preferences.setString('on_job_message', message);
@@ -258,6 +329,48 @@ class OpenNutritionBackgroundJobs {
     }
     if (completedAtEpochMs != null) {
       await _preferences.setInt('on_job_completed_at', completedAtEpochMs);
+    }
+    return true;
+  }
+
+  static Future<bool> _isCurrentJob(String jobId) async {
+    if (jobId.isEmpty) return false;
+    final String current = await _preferences.getString('on_job_id') ?? '';
+    return current == jobId;
+  }
+
+  static Future<void> _clearState() async {
+    await _setJobState(
+      status: 'idle',
+      stage: '',
+      message: '',
+      fraction: null,
+      parsedRows: 0,
+      importedRows: 0,
+      skippedRows: 0,
+      failedRows: 0,
+      jobId: '',
+      appVersion: '',
+      queuedAtEpochMs: 0,
+      startedAtEpochMs: 0,
+      heartbeatAtEpochMs: 0,
+      completedAtEpochMs: 0,
+    );
+  }
+
+  static Future<void> _deletePendingArchives() async {
+    try {
+      final Directory support = await getApplicationSupportDirectory();
+      final Directory directory =
+          Directory(path.join(support.path, 'background_imports'));
+      if (!await directory.exists()) return;
+      await for (final FileSystemEntity entry in directory.list()) {
+        if (entry is File) {
+          await entry.delete();
+        }
+      }
+    } catch (_) {
+      // La pulizia è best effort e non deve bloccare un nuovo job.
     }
   }
 
@@ -374,8 +487,12 @@ Future<bool> _runOpenNutritionImport(
   var lastNotificationStage = '';
 
   try {
+    if (!await OpenNutritionBackgroundJobs._isCurrentJob(jobId)) {
+      return true;
+    }
+
     final int startedAt = DateTime.now().millisecondsSinceEpoch;
-    await OpenNutritionBackgroundJobs._setJobState(
+    final bool accepted = await OpenNutritionBackgroundJobs._setJobState(
       status: 'running',
       stage: 'starting',
       message: 'Avvio importazione OpenNutrition.',
@@ -384,7 +501,9 @@ Future<bool> _runOpenNutritionImport(
       appVersion: appVersion,
       startedAtEpochMs: startedAt,
       heartbeatAtEpochMs: startedAt,
+      expectedJobId: jobId,
     );
+    if (!accepted) return true;
 
     try {
       await LocalNotificationService.initialize();
@@ -412,12 +531,17 @@ Future<bool> _runOpenNutritionImport(
 
     OpenNutritionImportProgress? last;
     await for (final OpenNutritionImportProgress progress in stream) {
+      if (!await OpenNutritionBackgroundJobs._isCurrentJob(jobId)) {
+        cancellation.cancel();
+        return true;
+      }
+
       last = progress;
       final int percent =
           ((progress.fraction ?? 0) * 100).round().clamp(0, 100).toInt();
       final int now = DateTime.now().millisecondsSinceEpoch;
 
-      await OpenNutritionBackgroundJobs._setJobState(
+      final bool updated = await OpenNutritionBackgroundJobs._setJobState(
         status: 'running',
         stage: progress.stageCode,
         message: progress.message,
@@ -429,7 +553,12 @@ Future<bool> _runOpenNutritionImport(
         jobId: jobId,
         appVersion: appVersion,
         heartbeatAtEpochMs: now,
+        expectedJobId: jobId,
       );
+      if (!updated) {
+        cancellation.cancel();
+        return true;
+      }
 
       if ((percent != lastNotificationPercent ||
               progress.stageCode != lastNotificationStage) &&
@@ -451,7 +580,7 @@ Future<bool> _runOpenNutritionImport(
     }
 
     final int completedAt = DateTime.now().millisecondsSinceEpoch;
-    await OpenNutritionBackgroundJobs._setJobState(
+    final bool completed = await OpenNutritionBackgroundJobs._setJobState(
       status: 'completed',
       stage: last?.stageCode ?? 'installed',
       message: last?.message ?? 'Catalogo installato.',
@@ -464,7 +593,9 @@ Future<bool> _runOpenNutritionImport(
       appVersion: appVersion,
       heartbeatAtEpochMs: completedAt,
       completedAtEpochMs: completedAt,
+      expectedJobId: jobId,
     );
+    if (!completed) return true;
 
     if (await OpenNutritionBackgroundJobs._operationNotificationsEnabled()) {
       try {
@@ -476,25 +607,31 @@ Future<bool> _runOpenNutritionImport(
       }
     }
     return true;
+  } on OpenNutritionImportCancelled {
+    return true;
   } catch (error) {
     final int failedAt = DateTime.now().millisecondsSinceEpoch;
-    await OpenNutritionBackgroundJobs._setJobState(
-      status: 'failed',
-      stage: 'failed',
-      message: error.toString(),
-      jobId: jobId,
-      appVersion: appVersion,
-      heartbeatAtEpochMs: failedAt,
-      completedAtEpochMs: failedAt,
-    );
+    final bool current = await OpenNutritionBackgroundJobs._isCurrentJob(jobId);
+    if (current) {
+      await OpenNutritionBackgroundJobs._setJobState(
+        status: 'failed',
+        stage: 'failed',
+        message: error.toString(),
+        jobId: jobId,
+        appVersion: appVersion,
+        heartbeatAtEpochMs: failedAt,
+        completedAtEpochMs: failedAt,
+        expectedJobId: jobId,
+      );
 
-    if (await OpenNutritionBackgroundJobs._operationNotificationsEnabled()) {
-      try {
-        await LocalNotificationService.showImportFailed(
-          'Apri le impostazioni OpenNutrition per i dettagli.',
-        );
-      } catch (_) {
-        // Lo stato persistente espone comunque il dettaglio.
+      if (await OpenNutritionBackgroundJobs._operationNotificationsEnabled()) {
+        try {
+          await LocalNotificationService.showImportFailed(
+            'Apri le impostazioni OpenNutrition per i dettagli.',
+          );
+        } catch (_) {
+          // Lo stato persistente espone comunque il dettaglio.
+        }
       }
     }
 
@@ -502,7 +639,7 @@ Future<bool> _runOpenNutritionImport(
     if (retryable && localPath.isNotEmpty) {
       deleteLocalArchive = false;
     }
-    return !retryable;
+    return current ? !retryable : true;
   } finally {
     service.dispose();
     database.close();

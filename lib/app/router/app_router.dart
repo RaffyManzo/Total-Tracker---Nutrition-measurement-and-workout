@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../back_navigation.dart';
+
+import '../widgets/primary_bottom_navigation.dart';
+
 import '../../features/nutrition/data/services/open_food_facts_service.dart';
 import '../../features/nutrition/mock/presentation/ingredient_list_screen.dart'
     as mock_nutrition;
@@ -26,256 +30,251 @@ import '../../features/workout/presentation/workout_screens.dart';
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
   routes: <RouteBase>[
-    GoRoute(
-      path: '/',
-      builder: (BuildContext context, GoRouterState state) {
-        return const FoodHubScreen();
+    ShellRoute(
+      builder: (
+        BuildContext context,
+        GoRouterState state,
+        Widget child,
+      ) {
+        return DashboardBackGuard(child: child);
       },
-    ),
-    GoRoute(
-      path: '/food',
-      builder: (BuildContext context, GoRouterState state) {
-        return const FoodHubScreen();
-      },
-    ),
-    GoRoute(
-      path: '/food/week',
-      builder: (BuildContext context, GoRouterState state) {
-        return const FoodWeekScreen();
-      },
-    ),
-    GoRoute(
-      path: '/food/days',
-      builder: (BuildContext context, GoRouterState state) {
-        return const FoodDaysScreen();
-      },
-    ),
-    GoRoute(
-      path: '/food/days/:date',
-      builder: (BuildContext context, GoRouterState state) {
-        return FoodDayDetailScreen(date: state.pathParameters['date']!);
-      },
-    ),
-    GoRoute(
-      path: '/food/meals',
-      builder: (BuildContext context, GoRouterState state) {
-        return const FoodMealsScreen();
-      },
-    ),
-    GoRoute(
-      path: '/food/meals/:id',
-      builder: (BuildContext context, GoRouterState state) {
-        final String mealId = state.pathParameters['id']!;
-        final String? initialDate = state.uri.queryParameters['date'];
-        final String? initialSlot = state.uri.queryParameters['slot'];
-
-        return OpenNutritionImportOverlay(
-          targetType: 'meal',
-          targetId: mealId,
-          childBuilder: (
-            BuildContext context,
-            int revision,
-          ) {
-            return FoodMealDetailScreen(
-              key: ValueKey<String>('meal-$mealId-$revision'),
-              id: mealId,
-              initialDate: initialDate,
-              initialSlot: initialSlot,
+      routes: <RouteBase>[
+        GoRoute(
+          path: '/',
+          builder: (BuildContext context, GoRouterState state) {
+            return const FoodHubScreen();
+          },
+        ),
+        GoRoute(
+          path: '/food',
+          builder: (BuildContext context, GoRouterState state) {
+            return const FoodHubScreen();
+          },
+        ),
+        GoRoute(
+          path: '/food/week',
+          builder: (BuildContext context, GoRouterState state) {
+            return const FoodWeekScreen();
+          },
+        ),
+        GoRoute(
+          path: '/food/days',
+          builder: (BuildContext context, GoRouterState state) {
+            return const FoodDaysScreen();
+          },
+        ),
+        GoRoute(
+          path: '/food/days/:date',
+          builder: (BuildContext context, GoRouterState state) {
+            return FoodDayDetailScreen(date: state.pathParameters['date']!);
+          },
+        ),
+        GoRoute(
+          path: '/food/meals',
+          builder: (BuildContext context, GoRouterState state) {
+            return const FoodMealsScreen();
+          },
+        ),
+        GoRoute(
+          path: '/food/meals/:id',
+          builder: (BuildContext context, GoRouterState state) {
+            return OpenNutritionImportOverlay(
+              targetType: 'meal',
+              targetId: state.pathParameters['id']!,
+              child: FoodMealDetailScreen(
+                id: state.pathParameters['id']!,
+                initialDate: state.uri.queryParameters['date'],
+                initialSlot: state.uri.queryParameters['slot'],
+              ),
             );
           },
-        );
-      },
-    ),
-    GoRoute(
-      path: '/food/ingredients',
-      builder: (BuildContext context, GoRouterState state) {
-        return const UnifiedIngredientSearchScreen();
-      },
-    ),
-    GoRoute(
-      path: '/food/ingredients/search',
-      builder: (BuildContext context, GoRouterState state) {
-        return UnifiedIngredientSearchScreen(
-          selectionMode: state.uri.queryParameters['select'] == '1',
-        );
-      },
-    ),
-    GoRoute(
-      path: '/food/ingredients/create',
-      builder: (BuildContext context, GoRouterState state) {
-        return const IngredientCreateScreen();
-      },
-    ),
-    GoRoute(
-      path: '/food/ingredients/scan',
-      builder: (BuildContext context, GoRouterState state) {
-        return const OpenFoodFactsScannerScreen();
-      },
-    ),
-    GoRoute(
-      path: '/food/ingredients/off/product/:barcode',
-      builder: (BuildContext context, GoRouterState state) {
-        return OpenFoodFactsProductPreviewScreen(
-          barcode: state.pathParameters['barcode']!,
-          initialProduct: state.extra is OpenFoodFactsProduct
-              ? state.extra! as OpenFoodFactsProduct
-              : null,
-        );
-      },
-    ),
-    GoRoute(
-      path: '/food/ingredients/:id',
-      builder: (BuildContext context, GoRouterState state) {
-        return IngredientDetailScreen(id: state.pathParameters['id']!);
-      },
-    ),
-    GoRoute(
-      path: '/food/recipes',
-      builder: (BuildContext context, GoRouterState state) {
-        return const RecipesScreen();
-      },
-    ),
-    GoRoute(
-      path: '/food/recipes/:id',
-      builder: (BuildContext context, GoRouterState state) {
-        final String recipeId = state.pathParameters['id']!;
-
-        return OpenNutritionImportOverlay(
-          targetType: 'recipe',
-          targetId: recipeId,
-          childBuilder: (
-            BuildContext context,
-            int revision,
-          ) {
-            return RecipeDetailScreen(
-              key: ValueKey<String>('recipe-$recipeId-$revision'),
-              id: recipeId,
+        ),
+        GoRoute(
+          path: '/food/ingredients',
+          builder: (BuildContext context, GoRouterState state) {
+            return const UnifiedIngredientSearchScreen();
+          },
+        ),
+        GoRoute(
+          path: '/food/ingredients/search',
+          builder: (BuildContext context, GoRouterState state) {
+            return UnifiedIngredientSearchScreen(
+              selectionMode: state.uri.queryParameters['select'] == '1',
             );
           },
-        );
-      },
-    ),
-    GoRoute(
-      path: '/settings',
-      builder: (BuildContext context, GoRouterState state) {
-        return const ProfileSettingsHubScreen();
-      },
-    ),
-    GoRoute(
-      path: '/settings/section',
-      builder: (BuildContext context, GoRouterState state) {
-        return ProfileSettingsScreen(
-          sectionCode: state.uri.queryParameters['section'],
-        );
-      },
-    ),
-    GoRoute(
-      path: '/settings/legacy',
-      builder: (BuildContext context, GoRouterState state) {
-        return const ProfileSettingsScreen();
-      },
-    ),
-    GoRoute(
-      path: '/settings/opennutrition',
-      builder: (BuildContext context, GoRouterState state) {
-        return const OpenNutritionSettingsScreen();
-      },
-    ),
-    GoRoute(
-      path: '/settings/notifications',
-      builder: (BuildContext context, GoRouterState state) {
-        return const NotificationSettingsScreen();
-      },
-    ),
-    GoRoute(
-      path: '/settings/food-services',
-      builder: (BuildContext context, GoRouterState state) {
-        return const FoodServiceSettingsScreen();
-      },
-    ),
-    GoRoute(
-      path: '/settings/navigation',
-      builder: (BuildContext context, GoRouterState state) {
-        return const AppNavigationSettingsScreen();
-      },
-    ),
-    GoRoute(
-      path: '/settings/transfer',
-      builder: (BuildContext context, GoRouterState state) {
-        return const TransferCenterScreen();
-      },
-    ),
-    GoRoute(
-      path: '/measurements',
-      builder: (BuildContext context, GoRouterState state) {
-        return const MeasurementsHubScreen();
-      },
-    ),
-    GoRoute(
-      path: '/measurements/scale',
-      builder: (BuildContext context, GoRouterState state) {
-        return const ScaleMeasurementsScreen();
-      },
-    ),
-    GoRoute(
-      path: '/measurements/tape',
-      builder: (BuildContext context, GoRouterState state) {
-        return const TapeMeasurementsScreen();
-      },
-    ),
-    GoRoute(
-      path: '/workout',
-      builder: (BuildContext context, GoRouterState state) {
-        return const WorkoutHubScreen();
-      },
-    ),
-    GoRoute(
-      path: '/workout/exercises',
-      builder: (BuildContext context, GoRouterState state) {
-        return const WorkoutDisabledScreen();
-      },
-    ),
-    GoRoute(
-      path: '/workout/routines',
-      builder: (BuildContext context, GoRouterState state) {
-        return const WorkoutDisabledScreen();
-      },
-    ),
-    GoRoute(
-      path: '/workout/plans',
-      builder: (BuildContext context, GoRouterState state) {
-        return const WorkoutDisabledScreen();
-      },
-    ),
-    GoRoute(
-      path: '/workout/sessions',
-      builder: (BuildContext context, GoRouterState state) {
-        return const WorkoutDisabledScreen();
-      },
-    ),
-    GoRoute(
-      path: '/ui-preview',
-      builder: (BuildContext context, GoRouterState state) {
-        return const UiFoundationPreviewScreen();
-      },
-    ),
-    GoRoute(
-      path: '/dev/mock/tracking',
-      builder: (BuildContext context, GoRouterState state) {
-        return const mock_tracking.TrackingHubScreen();
-      },
-    ),
-    GoRoute(
-      path: '/dev/mock/ingredients',
-      builder: (BuildContext context, GoRouterState state) {
-        return const mock_nutrition.IngredientListScreen();
-      },
-    ),
-    GoRoute(
-      path: '/dev/mock/exercises',
-      builder: (BuildContext context, GoRouterState state) {
-        return const mock_workout.ExerciseListScreen();
-      },
+        ),
+        GoRoute(
+          path: '/food/ingredients/create',
+          builder: (BuildContext context, GoRouterState state) {
+            return const IngredientCreateScreen();
+          },
+        ),
+        GoRoute(
+          path: '/food/ingredients/scan',
+          builder: (BuildContext context, GoRouterState state) {
+            return const OpenFoodFactsScannerScreen();
+          },
+        ),
+        GoRoute(
+          path: '/food/ingredients/off/product/:barcode',
+          builder: (BuildContext context, GoRouterState state) {
+            return OpenFoodFactsProductPreviewScreen(
+              barcode: state.pathParameters['barcode']!,
+              initialProduct: state.extra is OpenFoodFactsProduct
+                  ? state.extra! as OpenFoodFactsProduct
+                  : null,
+            );
+          },
+        ),
+        GoRoute(
+          path: '/food/ingredients/:id',
+          builder: (BuildContext context, GoRouterState state) {
+            return FoodNavigationShell(
+              child: IngredientDetailScreen(
+                id: state.pathParameters['id']!,
+              ),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/food/recipes',
+          builder: (BuildContext context, GoRouterState state) {
+            return const RecipesScreen();
+          },
+        ),
+        GoRoute(
+          path: '/food/recipes/:id',
+          builder: (BuildContext context, GoRouterState state) {
+            return OpenNutritionImportOverlay(
+              targetType: 'recipe',
+              targetId: state.pathParameters['id']!,
+              child: RecipeDetailScreen(id: state.pathParameters['id']!),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/settings',
+          builder: (BuildContext context, GoRouterState state) {
+            return const ProfileSettingsHubScreen();
+          },
+        ),
+        GoRoute(
+          path: '/settings/section',
+          builder: (BuildContext context, GoRouterState state) {
+            return ProfileSettingsScreen(
+              sectionCode: state.uri.queryParameters['section'],
+            );
+          },
+        ),
+        GoRoute(
+          path: '/settings/legacy',
+          builder: (BuildContext context, GoRouterState state) {
+            return const ProfileSettingsScreen();
+          },
+        ),
+        GoRoute(
+          path: '/settings/opennutrition',
+          builder: (BuildContext context, GoRouterState state) {
+            return const OpenNutritionSettingsScreen();
+          },
+        ),
+        GoRoute(
+          path: '/settings/notifications',
+          builder: (BuildContext context, GoRouterState state) {
+            return const NotificationSettingsScreen();
+          },
+        ),
+        GoRoute(
+          path: '/settings/food-services',
+          builder: (BuildContext context, GoRouterState state) {
+            return const FoodServiceSettingsScreen();
+          },
+        ),
+        GoRoute(
+          path: '/settings/navigation',
+          builder: (BuildContext context, GoRouterState state) {
+            return const AppNavigationSettingsScreen();
+          },
+        ),
+        GoRoute(
+          path: '/settings/transfer',
+          builder: (BuildContext context, GoRouterState state) {
+            return const TransferCenterScreen();
+          },
+        ),
+        GoRoute(
+          path: '/measurements',
+          builder: (BuildContext context, GoRouterState state) {
+            return const MeasurementsHubScreen();
+          },
+        ),
+        GoRoute(
+          path: '/measurements/scale',
+          builder: (BuildContext context, GoRouterState state) {
+            return const ScaleMeasurementsScreen();
+          },
+        ),
+        GoRoute(
+          path: '/measurements/tape',
+          builder: (BuildContext context, GoRouterState state) {
+            return const TapeMeasurementsScreen();
+          },
+        ),
+        GoRoute(
+          path: '/workout',
+          builder: (BuildContext context, GoRouterState state) {
+            return const WorkoutHubScreen();
+          },
+        ),
+        GoRoute(
+          path: '/workout/exercises',
+          builder: (BuildContext context, GoRouterState state) {
+            return const WorkoutDisabledScreen();
+          },
+        ),
+        GoRoute(
+          path: '/workout/routines',
+          builder: (BuildContext context, GoRouterState state) {
+            return const WorkoutDisabledScreen();
+          },
+        ),
+        GoRoute(
+          path: '/workout/plans',
+          builder: (BuildContext context, GoRouterState state) {
+            return const WorkoutDisabledScreen();
+          },
+        ),
+        GoRoute(
+          path: '/workout/sessions',
+          builder: (BuildContext context, GoRouterState state) {
+            return const WorkoutDisabledScreen();
+          },
+        ),
+        GoRoute(
+          path: '/ui-preview',
+          builder: (BuildContext context, GoRouterState state) {
+            return const UiFoundationPreviewScreen();
+          },
+        ),
+        GoRoute(
+          path: '/dev/mock/tracking',
+          builder: (BuildContext context, GoRouterState state) {
+            return const mock_tracking.TrackingHubScreen();
+          },
+        ),
+        GoRoute(
+          path: '/dev/mock/ingredients',
+          builder: (BuildContext context, GoRouterState state) {
+            return const mock_nutrition.IngredientListScreen();
+          },
+        ),
+        GoRoute(
+          path: '/dev/mock/exercises',
+          builder: (BuildContext context, GoRouterState state) {
+            return const mock_workout.ExerciseListScreen();
+          },
+        ),
+      ],
     ),
   ],
 );

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../app/widgets/primary_bottom_navigation.dart';
 import '../../../core/database/objectbox_providers.dart';
 import '../data/entities/ingredient_entity.dart';
 import '../data/services/open_food_facts_import_service.dart';
@@ -238,23 +239,32 @@ class _OpenFoodFactsProductPreviewScreenState
                         ),
                       ],
                     ),
-      bottomNavigationBar: product == null
-          ? null
-          : SafeArea(
-              minimum: const EdgeInsets.all(16),
-              child: FilledButton.icon(
-                onPressed: _importing ? null : _import,
-                icon: _importing
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Icon(Icons.download_outlined),
-                label: const Text('Importa alimento'),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (product != null)
+            SafeArea(
+              bottom: false,
+              minimum: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _importing ? null : _import,
+                  icon: _importing
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Icon(Icons.download_outlined),
+                  label: const Text('Importa alimento'),
+                ),
               ),
             ),
+          const PrimaryBottomNavigation(currentSection: 'food'),
+        ],
+      ),
     );
   }
 }
@@ -384,6 +394,9 @@ class _OpenFoodFactsScannerScreenState
             tooltip: 'Inserisci barcode',
           ),
         ],
+      ),
+      bottomNavigationBar: const PrimaryBottomNavigation(
+        currentSection: 'food',
       ),
       body: Stack(
         children: <Widget>[
