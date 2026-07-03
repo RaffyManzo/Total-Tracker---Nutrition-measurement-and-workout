@@ -89,9 +89,8 @@ class FoodPlanningService {
     final double safeGrams = (grams ?? 0) <= 0 ? 100 : grams!;
     final double totalKcal =
         recipe.caloriesTotal ?? ((recipe.kcalPerServing ?? 0) * safeServings);
-    final double factor = gramsMode
-        ? safeGrams / recipeWeightGrams!
-        : safePortions / safeServings;
+    final double factor =
+        gramsMode ? safeGrams / recipeWeightGrams : safePortions / safeServings;
     final double protein = recipe.proteinTotalGrams ?? 0;
     final double carbs = recipe.carbsTotalGrams ?? 0;
     final double fat = recipe.fatTotalGrams ?? 0;

@@ -263,7 +263,7 @@ class _IngredientCreateScreenState
     }
 
     final Uri? uri = Uri.tryParse(value);
-    final Widget image;
+    Widget image;
     if (uri != null && uri.isScheme('https')) {
       try {
         final String safeUrl =

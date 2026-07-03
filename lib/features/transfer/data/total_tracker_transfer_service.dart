@@ -113,7 +113,22 @@ class TotalTrackerTransferService {
       'total-tracker-$timestamp.totaltracker',
     );
     final File file = File(filePath);
-    await file.writeAsBytes(bytes, flush: true);
+    final File temporaryFile = File('$filePath.part');
+    try {
+      if (await temporaryFile.exists()) {
+        await temporaryFile.delete();
+      }
+      await temporaryFile.writeAsBytes(bytes, flush: true);
+      if (await file.exists()) {
+        await file.delete();
+      }
+      await temporaryFile.rename(filePath);
+    } on Object {
+      if (await temporaryFile.exists()) {
+        await temporaryFile.delete();
+      }
+      rethrow;
+    }
     return TransferExportResult(
       path: file.path,
       counts: counts,
@@ -127,9 +142,15 @@ class TotalTrackerTransferService {
       throw FileSystemException(
           'File di importazione non trovato.', sourcePath);
     }
-    final TransferArchivePayload payload = _codec.decode(
-      await file.readAsBytes(),
-    );
+    final int archiveLength = await file.length();
+    if (archiveLength <= 0 ||
+        archiveLength > totalTrackerMaxCompressedArchiveBytes) {
+      throw const FormatException(
+        'Dimensione archivio non valida o superiore al limite consentito.',
+      );
+    }
+    final List<int> archiveBytes = await file.readAsBytes();
+    final TransferArchivePayload payload = _codec.decode(archiveBytes);
     return _store.runInTransaction(
       TxMode.read,
       () => _buildImportAnalysis(sourcePath, payload),

@@ -51,34 +51,39 @@ class _AppNavigationSettingsScreenState
       appBar: AppBar(title: const Text('Navigazione')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: <Widget>[
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text(
-                      'Quando premi Indietro e non esiste una schermata '
-                      'precedente, Total Tracker torna alla dashboard scelta. '
-                      'Dalla dashboard scelta, Indietro può chiudere l’app.',
+          : RadioGroup<String>(
+              groupValue: _selectedRoute,
+              onChanged: (String? route) {
+                if (route != null) {
+                  _select(route);
+                }
+              },
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: <Widget>[
+                  const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text(
+                        'Quando premi Indietro e non esiste una schermata '
+                        'precedente, Total Tracker torna alla dashboard scelta. '
+                        'Dalla dashboard scelta, Indietro può chiudere l’app.',
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                for (final AppDashboardOption option
-                    in AppNavigationPreferences.dashboardOptions)
-                  Card(
-                    child: RadioListTile<String>(
-                      value: option.route,
-                      groupValue: _selectedRoute,
-                      title: Text(option.label),
-                      subtitle: Text(option.description),
-                      onChanged: (String? route) {
-                        if (route != null) _select(route);
-                      },
+                  const SizedBox(height: 12),
+                  for (final AppDashboardOption option
+                      in AppNavigationPreferences.dashboardOptions)
+                    Card(
+                      child: RadioListTile<String>(
+                        value: option.route,
+                        selected: option.route == _selectedRoute,
+                        title: Text(option.label),
+                        subtitle: Text(option.description),
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
     );
   }

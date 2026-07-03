@@ -13,20 +13,11 @@ foundation and the first domain primitives.
 
 ## Project Status
 
-Initial Flutter project scaffold with the first bottom-up data layer:
+Total Tracker is in active pre-release development. The current Android build includes local ObjectBox persistence, food and ingredient management, meals, recipes, body measurements, profile settings, configurable notifications, portable data transfer, Open Food Facts integration, local OpenNutrition catalog import, and an optional signed OpenNutrition gateway.
 
-- local ObjectBox database configuration;
-- default user profile;
-- ingredients;
-- muscle catalog;
-- exercises;
-- exercise-muscle associations;
-- foundational repositories;
-- idempotent muscle catalog seeding;
-- data-layer tests.
+The workout module is intentionally deferred to a later phase. The release-hardening checklist is documented in `docs/SECURITY_AND_RELEASE_CHECKLIST.md`.
 
-The fridge/inventory concept is intentionally not part of the application and
-is not represented in the schema.
+Portable `.totaltracker` exports are validated with SHA-256 checksums and strict archive limits, but they are not encrypted. Treat exported files as sensitive data and store or share them only through trusted channels.
 
 ## Technology Stack
 
@@ -129,10 +120,7 @@ schema documentation.
 
 ## Future Development
 
-Future work will progressively import and translate the existing Obsidian rules
-and data into app features. Meals, recipes, body measurements, routines,
-sessions, Health Connect, online synchronization, and backend services are not
-implemented in this phase.
+The next release work is limited to the remaining items in the security and release checklist: encrypted password-protected exports, production deployment and key rotation for the OpenNutrition gateway, and complete device regression testing. Workout tracking remains outside the current scope.
 
 ## Official Repository
 

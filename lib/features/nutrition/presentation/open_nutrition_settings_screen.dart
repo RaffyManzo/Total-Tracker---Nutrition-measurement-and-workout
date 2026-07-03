@@ -186,20 +186,29 @@ class _OpenNutritionSettingsScreenState
   Future<void> _configureGateway() async {
     if (!OpenNutritionGatewayConfig.allowsRuntimeConfiguration) return;
 
+    final List<String> gatewayValues = await Future.wait<String>(
+      <Future<String>>[
+        FoodServicePreferences.getString(
+          FoodServicePreferenceKeys.openNutritionGatewayUrl,
+        ),
+        FoodServicePreferences.getString(
+          FoodServicePreferenceKeys.openNutritionGatewayPublicKey,
+        ),
+        FoodServicePreferences.getString(
+          FoodServicePreferenceKeys.openNutritionGatewayKeyId,
+        ),
+      ],
+    );
+    if (!mounted) return;
+
     final TextEditingController url = TextEditingController(
-      text: await FoodServicePreferences.getString(
-        FoodServicePreferenceKeys.openNutritionGatewayUrl,
-      ),
+      text: gatewayValues[0],
     );
     final TextEditingController publicKey = TextEditingController(
-      text: await FoodServicePreferences.getString(
-        FoodServicePreferenceKeys.openNutritionGatewayPublicKey,
-      ),
+      text: gatewayValues[1],
     );
     final TextEditingController keyId = TextEditingController(
-      text: await FoodServicePreferences.getString(
-        FoodServicePreferenceKeys.openNutritionGatewayKeyId,
-      ),
+      text: gatewayValues[2],
     );
 
     try {
@@ -533,9 +542,7 @@ class _OpenNutritionSettingsScreenState
                     ),
                     const SizedBox(height: 8),
                     LinearProgressIndicator(
-                      value: job.fraction == null
-                          ? null
-                          : job.fraction!.clamp(0.0, 1.0).toDouble(),
+                      value: job.fraction?.clamp(0.0, 1.0).toDouble(),
                     ),
                     const SizedBox(height: 8),
                     Text(job.message),

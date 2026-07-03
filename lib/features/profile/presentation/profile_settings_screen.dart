@@ -2222,30 +2222,6 @@ class _ProfileExplanationCard extends StatelessWidget {
   }
 }
 
-class _MutedTile extends StatelessWidget {
-  const _MutedTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    return ListTile(
-      leading: Icon(icon, color: colors.outline),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      enabled: false,
-      contentPadding: EdgeInsets.zero,
-    );
-  }
-}
-
 Widget _field(
   TextEditingController controller,
   String label, {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 
@@ -72,8 +73,8 @@ class OpenNutritionBackgroundJobState {
       DateTime.fromMillisecondsSinceEpoch(reference),
     );
     final Duration maximumAge = status == 'queued'
-        ? const Duration(minutes: 15)
-        : const Duration(minutes: 30);
+        ? const Duration(hours: 24)
+        : const Duration(hours: 2);
     return age > maximumAge;
   }
 
@@ -89,6 +90,7 @@ class OpenNutritionBackgroundJobs {
 
   static const String _uniqueName =
       'com.raffymanzo.totaltracker.opennutrition.import';
+  static const String _stateKey = 'on_job_state_v2';
   static final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
 
   static Future<void> initialize() async {
@@ -197,16 +199,21 @@ class OpenNutritionBackgroundJobs {
     bool deletePendingArchives = true,
   }) async {
     final String cancellationMarker = 'cancelled:${const Uuid().v4()}';
-    await _preferences.setString('on_job_id', cancellationMarker);
-    await _preferences.setString('on_job_status', 'cancelling');
-    await _preferences.setInt(
-      'on_job_heartbeat_at',
-      DateTime.now().millisecondsSinceEpoch,
+    final int cancellationAt = DateTime.now().millisecondsSinceEpoch;
+    await _setJobState(
+      status: 'cancelling',
+      stage: 'cancelling',
+      message: 'Annullamento in corso.',
+      fraction: null,
+      parsedRows: 0,
+      importedRows: 0,
+      skippedRows: 0,
+      failedRows: 0,
+      jobId: cancellationMarker,
+      heartbeatAtEpochMs: cancellationAt,
     );
-
     try {
       await Workmanager().cancelByUniqueName(_uniqueName);
-      await Future<void>.delayed(const Duration(milliseconds: 500));
     } catch (_) {
       // Un errore del plugin non deve lasciare lo stato locale bloccato.
     } finally {
@@ -243,7 +250,27 @@ class OpenNutritionBackgroundJobs {
   }
 
   static Future<OpenNutritionBackgroundJobState> readState() async {
-    return OpenNutritionBackgroundJobState(
+    final String? encoded = await _preferences.getString(_stateKey);
+    if (encoded != null && encoded.isNotEmpty) {
+      try {
+        final Object? decoded = jsonDecode(encoded);
+        if (decoded is Map) {
+          return _stateFromMap(
+            decoded.map<String, dynamic>(
+              (Object? key, Object? value) => MapEntry<String, dynamic>(
+                key.toString(),
+                value,
+              ),
+            ),
+          );
+        }
+      } on Object {
+        await _preferences.remove(_stateKey);
+      }
+    }
+
+    final OpenNutritionBackgroundJobState legacy =
+        OpenNutritionBackgroundJobState(
       status: await _preferences.getString('on_job_status') ?? 'idle',
       stage: await _preferences.getString('on_job_stage') ?? '',
       message: await _preferences.getString('on_job_message') ?? '',
@@ -259,6 +286,92 @@ class OpenNutritionBackgroundJobs {
       heartbeatAtEpochMs: await _preferences.getInt('on_job_heartbeat_at') ?? 0,
       completedAtEpochMs: await _preferences.getInt('on_job_completed_at') ?? 0,
     );
+    if (legacy.status != 'idle' || legacy.jobId.isNotEmpty) {
+      await _persistState(legacy);
+    }
+    return legacy;
+  }
+
+  static OpenNutritionBackgroundJobState _stateFromMap(
+    Map<String, dynamic> map,
+  ) {
+    return OpenNutritionBackgroundJobState(
+      status: map['status']?.toString() ?? 'idle',
+      stage: map['stage']?.toString() ?? '',
+      message: map['message']?.toString() ?? '',
+      fraction: _stateDouble(map['fraction']),
+      parsedRows: _stateInt(map['parsedRows']),
+      importedRows: _stateInt(map['importedRows']),
+      skippedRows: _stateInt(map['skippedRows']),
+      failedRows: _stateInt(map['failedRows']),
+      jobId: map['jobId']?.toString() ?? '',
+      appVersion: map['appVersion']?.toString() ?? '',
+      queuedAtEpochMs: _stateInt(map['queuedAtEpochMs']),
+      startedAtEpochMs: _stateInt(map['startedAtEpochMs']),
+      heartbeatAtEpochMs: _stateInt(map['heartbeatAtEpochMs']),
+      completedAtEpochMs: _stateInt(map['completedAtEpochMs']),
+    );
+  }
+
+  static int _stateInt(Object? value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static double? _stateDouble(Object? value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+    return double.tryParse(value?.toString() ?? '');
+  }
+
+  static Future<void> _persistState(
+    OpenNutritionBackgroundJobState state,
+  ) async {
+    final String encoded = jsonEncode(<String, Object?>{
+      'status': state.status,
+      'stage': state.stage,
+      'message': state.message,
+      'fraction': state.fraction,
+      'parsedRows': state.parsedRows,
+      'importedRows': state.importedRows,
+      'skippedRows': state.skippedRows,
+      'failedRows': state.failedRows,
+      'jobId': state.jobId,
+      'appVersion': state.appVersion,
+      'queuedAtEpochMs': state.queuedAtEpochMs,
+      'startedAtEpochMs': state.startedAtEpochMs,
+      'heartbeatAtEpochMs': state.heartbeatAtEpochMs,
+      'completedAtEpochMs': state.completedAtEpochMs,
+    });
+    await _preferences.setString(_stateKey, encoded);
+    await _removeLegacyState();
+  }
+
+  static Future<void> _removeLegacyState() async {
+    for (final String key in <String>[
+      'on_job_status',
+      'on_job_stage',
+      'on_job_message',
+      'on_job_fraction',
+      'on_job_parsed',
+      'on_job_imported',
+      'on_job_skipped',
+      'on_job_failed',
+      'on_job_id',
+      'on_job_app_version',
+      'on_job_queued_at',
+      'on_job_started_at',
+      'on_job_heartbeat_at',
+      'on_job_completed_at',
+    ]) {
+      await _preferences.remove(key);
+    }
   }
 
   static Future<void> _writeQueued(
@@ -296,65 +409,57 @@ class OpenNutritionBackgroundJobs {
     int? completedAtEpochMs,
     String? expectedJobId,
   }) async {
-    if (expectedJobId != null && !await _isCurrentJob(expectedJobId)) {
+    final OpenNutritionBackgroundJobState current = await readState();
+    if (expectedJobId != null && current.jobId != expectedJobId) {
       return false;
     }
-
-    await _preferences.setString('on_job_status', status);
-    await _preferences.setString('on_job_stage', stage);
-    await _preferences.setString('on_job_message', message);
-    if (fraction == null) {
-      await _preferences.remove('on_job_fraction');
-    } else {
-      await _preferences.setDouble('on_job_fraction', fraction);
-    }
-    await _preferences.setInt('on_job_parsed', parsedRows);
-    await _preferences.setInt('on_job_imported', importedRows);
-    await _preferences.setInt('on_job_skipped', skippedRows);
-    await _preferences.setInt('on_job_failed', failedRows);
-    if (jobId != null) {
-      await _preferences.setString('on_job_id', jobId);
-    }
-    if (appVersion != null) {
-      await _preferences.setString('on_job_app_version', appVersion);
-    }
-    if (queuedAtEpochMs != null) {
-      await _preferences.setInt('on_job_queued_at', queuedAtEpochMs);
-    }
-    if (startedAtEpochMs != null) {
-      await _preferences.setInt('on_job_started_at', startedAtEpochMs);
-    }
-    if (heartbeatAtEpochMs != null) {
-      await _preferences.setInt('on_job_heartbeat_at', heartbeatAtEpochMs);
-    }
-    if (completedAtEpochMs != null) {
-      await _preferences.setInt('on_job_completed_at', completedAtEpochMs);
-    }
+    final OpenNutritionBackgroundJobState next =
+        OpenNutritionBackgroundJobState(
+      status: status,
+      stage: stage,
+      message: message,
+      fraction: fraction,
+      parsedRows: parsedRows,
+      importedRows: importedRows,
+      skippedRows: skippedRows,
+      failedRows: failedRows,
+      jobId: jobId ?? current.jobId,
+      appVersion: appVersion ?? current.appVersion,
+      queuedAtEpochMs: queuedAtEpochMs ?? current.queuedAtEpochMs,
+      startedAtEpochMs: startedAtEpochMs ?? current.startedAtEpochMs,
+      heartbeatAtEpochMs: heartbeatAtEpochMs ?? current.heartbeatAtEpochMs,
+      completedAtEpochMs: completedAtEpochMs ?? current.completedAtEpochMs,
+    );
+    await _persistState(next);
     return true;
   }
 
   static Future<bool> _isCurrentJob(String jobId) async {
-    if (jobId.isEmpty) return false;
-    final String current = await _preferences.getString('on_job_id') ?? '';
-    return current == jobId;
+    if (jobId.isEmpty) {
+      return false;
+    }
+    final OpenNutritionBackgroundJobState state = await readState();
+    return state.jobId == jobId;
   }
 
   static Future<void> _clearState() async {
-    await _setJobState(
-      status: 'idle',
-      stage: '',
-      message: '',
-      fraction: null,
-      parsedRows: 0,
-      importedRows: 0,
-      skippedRows: 0,
-      failedRows: 0,
-      jobId: '',
-      appVersion: '',
-      queuedAtEpochMs: 0,
-      startedAtEpochMs: 0,
-      heartbeatAtEpochMs: 0,
-      completedAtEpochMs: 0,
+    await _persistState(
+      OpenNutritionBackgroundJobState(
+        status: 'idle',
+        stage: '',
+        message: '',
+        fraction: null,
+        parsedRows: 0,
+        importedRows: 0,
+        skippedRows: 0,
+        failedRows: 0,
+        jobId: '',
+        appVersion: '',
+        queuedAtEpochMs: 0,
+        startedAtEpochMs: 0,
+        heartbeatAtEpochMs: 0,
+        completedAtEpochMs: 0,
+      ),
     );
   }
 

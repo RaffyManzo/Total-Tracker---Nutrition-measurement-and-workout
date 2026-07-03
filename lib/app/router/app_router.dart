@@ -6,8 +6,6 @@ import '../back_navigation.dart';
 import '../widgets/primary_bottom_navigation.dart';
 
 import '../../features/nutrition/data/services/open_food_facts_service.dart';
-import '../../features/nutrition/mock/presentation/ingredient_list_screen.dart'
-    as mock_nutrition;
 import '../../features/nutrition/presentation/food_v01_screens.dart';
 import '../../features/nutrition/presentation/ingredient_create_screen.dart';
 import '../../features/nutrition/presentation/measurement_screens.dart';
@@ -19,12 +17,7 @@ import '../../features/profile/presentation/food_service_settings_screen.dart';
 import '../../features/profile/presentation/notification_settings_screen.dart';
 import '../../features/profile/presentation/profile_settings_hub_screen.dart';
 import '../../features/profile/presentation/profile_settings_screen.dart';
-import '../../features/tracking/mock/presentation/tracking_hub_screen.dart'
-    as mock_tracking;
 import '../../features/transfer/presentation/transfer_center_screen.dart';
-import '../../features/ui_preview/presentation/ui_foundation_preview_screen.dart';
-import '../../features/workout/mock/presentation/exercise_list_screen.dart'
-    as mock_workout;
 import '../../features/workout/presentation/workout_screens.dart';
 
 final GoRouter appRouter = GoRouter(
@@ -248,30 +241,6 @@ final GoRouter appRouter = GoRouter(
           path: '/workout/sessions',
           builder: (BuildContext context, GoRouterState state) {
             return const WorkoutDisabledScreen();
-          },
-        ),
-        GoRoute(
-          path: '/ui-preview',
-          builder: (BuildContext context, GoRouterState state) {
-            return const UiFoundationPreviewScreen();
-          },
-        ),
-        GoRoute(
-          path: '/dev/mock/tracking',
-          builder: (BuildContext context, GoRouterState state) {
-            return const mock_tracking.TrackingHubScreen();
-          },
-        ),
-        GoRoute(
-          path: '/dev/mock/ingredients',
-          builder: (BuildContext context, GoRouterState state) {
-            return const mock_nutrition.IngredientListScreen();
-          },
-        ),
-        GoRoute(
-          path: '/dev/mock/exercises',
-          builder: (BuildContext context, GoRouterState state) {
-            return const mock_workout.ExerciseListScreen();
           },
         ),
       ],

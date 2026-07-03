@@ -340,8 +340,6 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
               latest == null ? DateTime.now() : DateTime.parse(latest.dateKey),
           days: data.days,
           meals: data.allMeals,
-          analytics: data.analytics,
-          profile: data.profile,
           adaptiveSummary: data.adaptiveSummary,
         ),
         const SizedBox(height: AppSpacing.md),
@@ -948,8 +946,7 @@ class FoodWeekScreen extends ConsumerWidget {
             for (final DailyRecordEntity day in weekDays)
               TtChartPoint(
                 label: _shortWeekdayLabel(DateTime.parse(day.dateKey)),
-                value:
-                    (day.stepGoal ?? profile?.defaultStepGoal ?? 0).toDouble(),
+                value: day.stepGoal.toDouble(),
               ),
           ];
           return ListView(
@@ -1577,6 +1574,9 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
       },
     );
     if (saved != true) {
+      return;
+    }
+    if (!mounted) {
       return;
     }
     final String? sleepError = _sleepTotalError(deep.text, light.text);
@@ -7421,16 +7421,12 @@ class _MonthCalendarCard extends StatefulWidget {
     required this.reference,
     required this.days,
     required this.meals,
-    required this.analytics,
-    required this.profile,
     required this.adaptiveSummary,
   });
 
   final DateTime reference;
   final List<DailyRecordEntity> days;
   final List<MealWithItems> meals;
-  final FoodAnalyticsService analytics;
-  final UserProfileEntity? profile;
   final WeekAdaptiveSummary adaptiveSummary;
 
   @override
@@ -7575,11 +7571,6 @@ class _MonthCalendarCardState extends State<_MonthCalendarCard> {
                     final DailyRecordEntity? day = byDate[dateKey];
                     final List<MealWithItems> meals =
                         mealsByDate[dateKey] ?? const <MealWithItems>[];
-                    final double kcal = meals.fold<double>(
-                      0,
-                      (double sum, MealWithItems meal) =>
-                          sum + meal.totals.kcal,
-                    );
                     final bool hasFood = meals.any(
                       (MealWithItems meal) => meal.items.isNotEmpty,
                     );
@@ -7590,17 +7581,6 @@ class _MonthCalendarCardState extends State<_MonthCalendarCard> {
                     return _CalendarDayCell(
                       date: date,
                       day: day,
-                      mealsCount: meals
-                          .where((MealWithItems meal) => meal.items.isNotEmpty)
-                          .length,
-                      kcal: kcal,
-                      targetKcal: day == null
-                          ? null
-                          : widget.analytics.targetForDay(
-                              day: day,
-                              allDays: widget.days,
-                              profile: widget.profile,
-                            ),
                       hasFood: hasFood,
                       hasCompleteMeals: hasCompleteMeals,
                       hasFreeMeal: hasFreeMeal,
@@ -7807,26 +7787,16 @@ class _CalendarDayCell extends StatelessWidget {
   const _CalendarDayCell({
     required this.date,
     required this.day,
-    required this.mealsCount,
-    required this.kcal,
-    this.targetKcal,
-    this.compact = true,
     this.hasFood = false,
     this.hasCompleteMeals = false,
     this.hasFreeMeal = false,
-    this.weight,
   });
 
   final DateTime date;
   final DailyRecordEntity? day;
-  final int mealsCount;
-  final double kcal;
-  final double? targetKcal;
-  final bool compact;
   final bool hasFood;
   final bool hasCompleteMeals;
   final bool hasFreeMeal;
-  final double? weight;
 
   @override
   Widget build(BuildContext context) {
@@ -7864,81 +7834,38 @@ class _CalendarDayCell extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: borderColor),
           ),
-          padding: EdgeInsets.all(compact ? 6 : 10),
-          child: compact
-              ? Stack(
-                  fit: StackFit.expand,
-                  children: <Widget>[
-                    Center(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          date.day.toString(),
-                          maxLines: 1,
-                          style:
-                              Theme.of(context).textTheme.labelLarge?.copyWith(
-                                    color: hasData
-                                        ? textColor
-                                        : colors.onSurfaceVariant,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+          padding: const EdgeInsets.all(6),
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    date.day.toString(),
+                    maxLines: 1,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: hasData ? textColor : colors.onSurfaceVariant,
+                          fontWeight: FontWeight.w700,
                         ),
-                      ),
-                    ),
-                    if (hasFood)
-                      Align(
-                        alignment: Alignment.bottomCenter,
-                        child: SizedBox.square(
-                          dimension: 4,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: borderColor,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                )
-              : Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      date.day.toString(),
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color:
-                                hasData ? textColor : colors.onSurfaceVariant,
-                            fontWeight: FontWeight.w700,
-                          ),
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      _weekdayFromDate(date).substring(0, 3),
-                      style: Theme.of(context).textTheme.labelMedium,
-                    ),
-                    const Spacer(),
-                    if (kcal > 0)
-                      Text(
-                        _fmtKcal(kcal),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelSmall,
-                      ),
-                    Text(
-                      '$mealsCount pasti',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelSmall,
-                    ),
-                    Text(
-                      weight == null ? 'Peso n/d' : '${_fmt(weight!)} kg',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelSmall,
-                    ),
-                  ],
+                  ),
                 ),
+              ),
+              if (hasFood)
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: SizedBox.square(
+                    dimension: 4,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: borderColor,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -9021,7 +8948,7 @@ class _RecipeStepsSheetState extends State<_RecipeStepsSheet> {
                       physics: const NeverScrollableScrollPhysics(),
                       buildDefaultDragHandles: false,
                       itemCount: _steps.length,
-                      onReorder: _reorder,
+                      onReorderItem: _reorderItem,
                       itemBuilder: (BuildContext context, int index) {
                         return Padding(
                           key: ValueKey<int>(_steps[index].id),
@@ -9095,11 +9022,8 @@ class _RecipeStepsSheetState extends State<_RecipeStepsSheet> {
     });
   }
 
-  void _reorder(int oldIndex, int newIndex) {
+  void _reorderItem(int oldIndex, int newIndex) {
     setState(() {
-      if (newIndex > oldIndex) {
-        newIndex -= 1;
-      }
       final _EditableRecipeStep item = _steps.removeAt(oldIndex);
       _steps.insert(newIndex, item);
       _editingIndex = null;
