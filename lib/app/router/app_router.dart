@@ -13,6 +13,7 @@ import '../../features/nutrition/presentation/open_food_facts_screens.dart';
 import '../../features/nutrition/presentation/open_nutrition_settings_screen.dart';
 import '../../features/nutrition/presentation/unified_ingredient_search_screen.dart';
 import '../../features/profile/presentation/app_navigation_settings_screen.dart';
+import '../../features/profile/presentation/device_permissions_screen.dart';
 import '../../features/profile/presentation/food_service_settings_screen.dart';
 import '../../features/profile/presentation/notification_settings_screen.dart';
 import '../../features/profile/presentation/profile_settings_hub_screen.dart';
@@ -175,6 +176,12 @@ final GoRouter appRouter = GoRouter(
           path: '/settings/notifications',
           builder: (BuildContext context, GoRouterState state) {
             return const NotificationSettingsScreen();
+          },
+        ),
+        GoRoute(
+          path: '/settings/device-permissions',
+          builder: (BuildContext context, GoRouterState state) {
+            return const DevicePermissionsScreen();
           },
         ),
         GoRoute(

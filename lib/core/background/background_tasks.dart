@@ -127,19 +127,97 @@ class OpenNutritionBackgroundJobs {
     required int licenseAcceptedAtEpochMs,
   }) async {
     await cancelAndReset(deletePendingArchives: true);
+    if (!await sourceFile.exists()) {
+      throw StateError('Il file ZIP selezionato non è più disponibile.');
+    }
+    final int sourceBytes = await sourceFile.length();
+    _validateLocalArchiveLength(sourceBytes);
 
+    final File stableFile = await _createStableArchiveFile();
+    try {
+      await sourceFile.copy(stableFile.path);
+      await _enqueueStableLocalArchive(
+        stableFile: stableFile,
+        licenseAcceptedAtEpochMs: licenseAcceptedAtEpochMs,
+      );
+    } catch (_) {
+      if (await stableFile.exists()) await stableFile.delete();
+      rethrow;
+    }
+  }
+
+  static Future<void> enqueueLocalArchiveStream({
+    required Stream<List<int>> source,
+    required int declaredBytes,
+    required int licenseAcceptedAtEpochMs,
+  }) async {
+    await cancelAndReset(deletePendingArchives: true);
+    if (declaredBytes > 0) {
+      _validateLocalArchiveLength(declaredBytes);
+    }
+
+    final File stableFile = await _createStableArchiveFile();
+    IOSink? sink;
+    try {
+      sink = stableFile.openWrite();
+      var written = 0;
+      await for (final List<int> chunk in source) {
+        if (chunk.isEmpty) continue;
+        written += chunk.length;
+        _validateLocalArchiveLength(written);
+        sink.add(chunk);
+      }
+      await sink.flush();
+      await sink.close();
+      sink = null;
+
+      if (written <= 0) {
+        throw StateError('Il file ZIP selezionato è vuoto.');
+      }
+      if (declaredBytes > 0 && written != declaredBytes) {
+        throw StateError(
+          'Lettura incompleta del file ZIP: attesi $declaredBytes byte, '
+          'letti $written.',
+        );
+      }
+
+      await _enqueueStableLocalArchive(
+        stableFile: stableFile,
+        licenseAcceptedAtEpochMs: licenseAcceptedAtEpochMs,
+      );
+    } catch (_) {
+      await sink?.close();
+      if (await stableFile.exists()) await stableFile.delete();
+      rethrow;
+    }
+  }
+
+  static void _validateLocalArchiveLength(int bytes) {
+    if (bytes <= 0 ||
+        bytes > OpenNutritionDatasetConstants.maximumArchiveBytes) {
+      throw StateError(
+        'Dimensione ZIP OpenNutrition non consentita: $bytes byte.',
+      );
+    }
+  }
+
+  static Future<File> _createStableArchiveFile() async {
     final Directory support = await getApplicationSupportDirectory();
     final Directory directory =
         Directory(path.join(support.path, 'background_imports'));
     await directory.create(recursive: true);
-    final File stableFile = File(
+    return File(
       path.join(
         directory.path,
         'opennutrition-${DateTime.now().millisecondsSinceEpoch}.zip',
       ),
     );
-    await sourceFile.copy(stableFile.path);
+  }
 
+  static Future<void> _enqueueStableLocalArchive({
+    required File stableFile,
+    required int licenseAcceptedAtEpochMs,
+  }) async {
     final Map<String, dynamic> metadata = await _newJobMetadata();
     await _writeQueued(metadata);
     await _showQueuedNotification();
@@ -157,9 +235,6 @@ class OpenNutritionBackgroundJobs {
       );
     } catch (_) {
       await _clearState();
-      if (await stableFile.exists()) {
-        await stableFile.delete();
-      }
       rethrow;
     }
   }

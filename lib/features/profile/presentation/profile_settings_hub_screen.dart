@@ -57,6 +57,15 @@ class ProfileSettingsHubScreen extends StatelessWidget {
         directRoute: '/settings/notifications',
       ),
       const _SettingsSectionCardData(
+        code: 'device_permissions',
+        title: 'Permessi dispositivo',
+        subtitle:
+            'Stato reale di notifiche, fotocamera e ottimizzazione batteria.',
+        icon: Icons.admin_panel_settings_outlined,
+        accent: Color(0xFF7C3AED),
+        directRoute: '/settings/device-permissions',
+      ),
+      const _SettingsSectionCardData(
         code: 'food_services',
         title: 'Servizi alimentari online',
         subtitle: 'Abilita o disabilita Open Food Facts e i relativi pulsanti.',

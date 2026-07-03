@@ -8,6 +8,7 @@ class LocalNotificationService {
   static final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
+  static Future<void>? _initialization;
 
   static const AndroidNotificationChannel _reminderChannel =
       AndroidNotificationChannel(
@@ -29,8 +30,26 @@ class LocalNotificationService {
 
   static Future<void> initialize() async {
     if (_initialized) return;
+    final Future<void>? pending = _initialization;
+    if (pending != null) {
+      await pending;
+      return;
+    }
+
+    final Future<void> operation = _initializePlugin();
+    _initialization = operation;
+    try {
+      await operation;
+      _initialized = true;
+    } catch (_) {
+      _initialization = null;
+      rethrow;
+    }
+  }
+
+  static Future<void> _initializePlugin() async {
     const InitializationSettings settings = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      android: AndroidInitializationSettings('ic_stat_total_tracker'),
       iOS: DarwinInitializationSettings(
         requestAlertPermission: false,
         requestBadgePermission: false,
@@ -42,13 +61,8 @@ class LocalNotificationService {
     final AndroidFlutterLocalNotificationsPlugin? android =
         _plugin.resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
-    await android?.createNotificationChannel(
-      _reminderChannel,
-    );
-    await android?.createNotificationChannel(
-      _operationChannel,
-    );
-    _initialized = true;
+    await android?.createNotificationChannel(_reminderChannel);
+    await android?.createNotificationChannel(_operationChannel);
   }
 
   static Future<bool> requestPermission() async {

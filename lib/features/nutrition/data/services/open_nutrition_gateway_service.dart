@@ -41,7 +41,7 @@ class OpenNutritionGatewayConfig {
   );
   static const bool _allowCustomGateway = bool.fromEnvironment(
     'OPENNUTRITION_ALLOW_CUSTOM_GATEWAY',
-    defaultValue: false,
+    defaultValue: true,
   );
 
   final Uri baseUri;

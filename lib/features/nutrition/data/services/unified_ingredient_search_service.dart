@@ -1,5 +1,6 @@
 import 'package:uuid/uuid.dart';
 
+import '../../../../core/background/background_tasks.dart';
 import '../../../../core/preferences/food_service_preferences.dart';
 import '../../domain/nutrition_codes.dart';
 import '../entities/ingredient_entity.dart';
@@ -168,11 +169,20 @@ class UnifiedIngredientSearchService {
       return OpenNutritionSearchMode.unavailable;
     }
 
-    final state = await openNutritionRepository.getState();
-    final bool localAvailable = state.activeBatchId.isNotEmpty &&
-        state.importStatusCode == 'installed' &&
-        await openNutritionRepository.countActive() > 0;
-    if (localAvailable) return OpenNutritionSearchMode.local;
+    final OpenNutritionBackgroundJobState backgroundJob =
+        await OpenNutritionBackgroundJobs.readState();
+    if (!backgroundJob.isRunning) {
+      try {
+        final state = await openNutritionRepository.getState();
+        final bool localAvailable = state.activeBatchId.isNotEmpty &&
+            state.importStatusCode == 'installed' &&
+            await openNutritionRepository.countActive() > 0;
+        if (localAvailable) return OpenNutritionSearchMode.local;
+      } catch (_) {
+        // Il catalogo può essere temporaneamente esclusivo del worker.
+        // In questo caso si tenta il gateway senza interrompere la ricerca.
+      }
+    }
 
     if (await openNutritionGatewayService.isConfigured()) {
       return OpenNutritionSearchMode.remote;

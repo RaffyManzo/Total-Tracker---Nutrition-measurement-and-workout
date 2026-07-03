@@ -8,21 +8,21 @@ import '../services/open_nutrition_import_service.dart';
 import '../services/unified_ingredient_search_service.dart';
 
 final openNutritionCatalogDatabaseProvider =
-    Provider<OpenNutritionCatalogDatabase>((Ref ref) {
+    Provider.autoDispose<OpenNutritionCatalogDatabase>((Ref ref) {
   final OpenNutritionCatalogDatabase database = OpenNutritionCatalogDatabase();
   ref.onDispose(database.close);
   return database;
 });
 
 final openNutritionCatalogRepositoryProvider =
-    Provider<OpenNutritionCatalogRepository>((Ref ref) {
+    Provider.autoDispose<OpenNutritionCatalogRepository>((Ref ref) {
   return OpenNutritionCatalogRepository(
     ref.watch(openNutritionCatalogDatabaseProvider),
   );
 });
 
 final openNutritionImportServiceProvider =
-    Provider<OpenNutritionImportService>((Ref ref) {
+    Provider.autoDispose<OpenNutritionImportService>((Ref ref) {
   final OpenNutritionImportService service = OpenNutritionImportService(
     ref.watch(openNutritionCatalogRepositoryProvider),
   );
@@ -31,14 +31,14 @@ final openNutritionImportServiceProvider =
 });
 
 final openNutritionGatewayServiceProvider =
-    Provider<OpenNutritionGatewayService>((Ref ref) {
+    Provider.autoDispose<OpenNutritionGatewayService>((Ref ref) {
   final OpenNutritionGatewayService service = OpenNutritionGatewayService();
   ref.onDispose(service.dispose);
   return service;
 });
 
 final unifiedIngredientSearchServiceProvider =
-    Provider<UnifiedIngredientSearchService>((Ref ref) {
+    Provider.autoDispose<UnifiedIngredientSearchService>((Ref ref) {
   return UnifiedIngredientSearchService(
     personalRepository: ref.watch(ingredientRepositoryProvider),
     openNutritionRepository: ref.watch(
@@ -51,15 +51,17 @@ final unifiedIngredientSearchServiceProvider =
   );
 });
 
-final openNutritionCatalogStateProvider = FutureProvider((Ref ref) async {
+final openNutritionCatalogStateProvider =
+    FutureProvider.autoDispose((Ref ref) async {
   return ref.watch(openNutritionCatalogRepositoryProvider).getState();
 });
 
-final openNutritionCatalogCountProvider = FutureProvider<int>((Ref ref) async {
+final openNutritionCatalogCountProvider =
+    FutureProvider.autoDispose<int>((Ref ref) async {
   return ref.watch(openNutritionCatalogRepositoryProvider).countActive();
 });
 
 final openNutritionGatewayConfiguredProvider =
-    FutureProvider<bool>((Ref ref) async {
+    FutureProvider.autoDispose<bool>((Ref ref) async {
   return ref.watch(openNutritionGatewayServiceProvider).isConfigured();
 });

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/background/background_tasks.dart';
 import '../../../core/notifications/local_notification_service.dart';
+import '../../../core/platform/device_permission_service.dart';
 import '../../../core/preferences/food_service_preferences.dart';
 
 class NotificationSettingsScreen extends ConsumerStatefulWidget {
@@ -19,6 +21,39 @@ class _NotificationSettingsScreenState
 
   Future<void> _reconcile() {
     return ReminderBackgroundJobs.reconcileRegistration();
+  }
+
+  Future<void> _sendTestNotification() async {
+    try {
+      final DevicePermissionSnapshot status =
+          await DevicePermissionService.readStatus();
+      if (!status.reminderNotificationsOperational) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Android non consente ancora le notifiche. Apri la sezione '
+              'Permessi dispositivo e abilita il permesso effettivo.',
+            ),
+            duration: Duration(seconds: 5),
+          ),
+        );
+        return;
+      }
+      await LocalNotificationService.showTestNotification();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Notifica di prova inviata.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Notifica di prova non riuscita: $error'),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    }
   }
 
   Future<void> _setMaster(
@@ -50,8 +85,12 @@ class _NotificationSettingsScreenState
 
       bool granted = false;
       try {
-        granted = await LocalNotificationService.requestPermission()
+        await LocalNotificationService.initialize();
+        await DevicePermissionService.requestNotifications()
             .timeout(const Duration(seconds: 12));
+        final DevicePermissionSnapshot status =
+            await DevicePermissionService.readStatus();
+        granted = status.allNotificationChannelsOperational;
       } catch (_) {
         granted = false;
       }
@@ -133,6 +172,19 @@ class _NotificationSettingsScreenState
                 ),
                 const SizedBox(height: 12),
                 Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.admin_panel_settings_outlined),
+                    title: const Text('Permessi effettivi del dispositivo'),
+                    subtitle: const Text(
+                      'Controlla lo stato Android, i canali, la fotocamera e '
+                      'l’ottimizzazione batteria.',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => context.push('/settings/device-permissions'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Card(
                   child: Column(
                     children: <Widget>[
                       SwitchListTile(
@@ -193,9 +245,8 @@ class _NotificationSettingsScreenState
                 ),
                 const SizedBox(height: 12),
                 FilledButton.tonalIcon(
-                  onPressed: master && !_changingMaster
-                      ? LocalNotificationService.showTestNotification
-                      : null,
+                  onPressed:
+                      master && !_changingMaster ? _sendTestNotification : null,
                   icon: const Icon(Icons.notifications_active_outlined),
                   label: const Text('Invia notifica di prova'),
                 ),

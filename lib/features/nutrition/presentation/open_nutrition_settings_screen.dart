@@ -8,6 +8,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../core/background/background_tasks.dart';
 import '../../../core/notifications/local_notification_service.dart';
+import '../../../core/platform/device_permission_service.dart';
 import '../../../core/preferences/food_service_preferences.dart';
 import '../data/providers/open_nutrition_providers.dart';
 import '../data/services/open_nutrition_gateway_service.dart';
@@ -25,6 +26,7 @@ class _OpenNutritionSettingsScreenState
   bool _licenseAccepted = false;
   bool _resetting = false;
   bool _testingGateway = false;
+  bool _startingJob = false;
   Timer? _poller;
   OpenNutritionBackgroundJobState? _job;
   late final Future<PackageInfo> _packageInfo = PackageInfo.fromPlatform();
@@ -69,61 +71,147 @@ class _OpenNutritionSettingsScreenState
     final FoodServicePreferencesController preferences =
         ref.read(foodServicePreferencesProvider);
     if (!preferences.notificationsEnabled) {
-      await preferences.setAllNotificationsEnabled(true);
-      final bool granted = await LocalNotificationService.requestPermission();
-      if (!granted && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'L’importazione può partire, ma Android ha negato il permesso '
-              'per mostrare l’avanzamento persistente.',
-            ),
-          ),
-        );
-      }
+      await preferences.setNotificationsEnabled(true);
     }
     if (!preferences.backgroundOperationsEnabled) {
       await preferences.setBackgroundOperationsEnabled(true);
     }
-    return true;
+
+    bool operational = true;
+    try {
+      await LocalNotificationService.initialize();
+      DevicePermissionSnapshot status =
+          await DevicePermissionService.readStatus();
+      if (!status.notificationRuntimeGranted) {
+        await DevicePermissionService.requestNotifications();
+        status = await DevicePermissionService.readStatus();
+      }
+      operational = status.backgroundNotificationsOperational;
+    } catch (_) {
+      operational = false;
+    }
+
+    if (!operational && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'L’importazione può partire, ma Android non consente le '
+            'notifiche. Verifica i permessi del dispositivo.',
+          ),
+          action: SnackBarAction(
+            label: 'APRI',
+            onPressed: () {
+              DevicePermissionService.openNotificationSettings();
+            },
+          ),
+          duration: const Duration(seconds: 7),
+        ),
+      );
+    }
+    return operational;
   }
 
   Future<void> _prepareCatalogDatabaseForWorker() async {
-    ref.read(openNutritionCatalogDatabaseProvider).close();
+    try {
+      ref.read(openNutritionCatalogDatabaseProvider).close();
+    } catch (_) {
+      // Il provider può essere già stato eliminato da autoDispose.
+    }
     ref.invalidate(openNutritionCatalogRepositoryProvider);
     ref.invalidate(openNutritionCatalogDatabaseProvider);
     ref.invalidate(openNutritionCatalogStateProvider);
     ref.invalidate(openNutritionCatalogCountProvider);
-    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(const Duration(milliseconds: 80));
   }
 
   Future<void> _startDownload() async {
-    if (!_licenseAccepted) return;
-    await _ensureProgressNotifications();
-    await _prepareCatalogDatabaseForWorker();
-    await OpenNutritionBackgroundJobs.enqueueDownload(
-      licenseAcceptedAtEpochMs: DateTime.now().millisecondsSinceEpoch,
-    );
-    await _refreshJob();
+    if (!_licenseAccepted || _startingJob) return;
+    setState(() => _startingJob = true);
+    try {
+      await _ensureProgressNotifications();
+      await _prepareCatalogDatabaseForWorker();
+      await OpenNutritionBackgroundJobs.enqueueDownload(
+        licenseAcceptedAtEpochMs: DateTime.now().millisecondsSinceEpoch,
+      );
+      await _refreshJob();
+    } catch (error) {
+      await _showStartError(error);
+    } finally {
+      if (mounted) setState(() => _startingJob = false);
+    }
   }
 
   Future<void> _startLocalImport() async {
-    if (!_licenseAccepted) return;
+    if (!_licenseAccepted || _startingJob) return;
 
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['zip'],
+      type: FileType.any,
+      allowMultiple: false,
+      withData: false,
+      withReadStream: true,
     );
-    final String? selectedPath = result?.files.single.path;
-    if (selectedPath == null) return;
+    if (result == null || result.files.isEmpty) return;
 
-    await _ensureProgressNotifications();
-    await _prepareCatalogDatabaseForWorker();
-    await OpenNutritionBackgroundJobs.enqueueLocalArchive(
-      sourceFile: File(selectedPath),
-      licenseAcceptedAtEpochMs: DateTime.now().millisecondsSinceEpoch,
+    final PlatformFile selected = result.files.single;
+    if (!selected.name.toLowerCase().endsWith('.zip')) {
+      await _showStartError(
+        StateError('Seleziona l’archivio ZIP ufficiale di OpenNutrition.'),
+      );
+      return;
+    }
+
+    setState(() => _startingJob = true);
+    try {
+      await _ensureProgressNotifications();
+      await _prepareCatalogDatabaseForWorker();
+
+      final String? selectedPath = selected.path;
+      final File? selectedFile =
+          selectedPath == null ? null : File(selectedPath);
+      if (selectedFile != null && await selectedFile.exists()) {
+        await OpenNutritionBackgroundJobs.enqueueLocalArchive(
+          sourceFile: selectedFile,
+          licenseAcceptedAtEpochMs: DateTime.now().millisecondsSinceEpoch,
+        );
+      } else {
+        final Stream<List<int>>? stream = selected.readStream;
+        if (stream == null) {
+          throw StateError(
+            'Android non ha fornito un percorso o uno stream leggibile per '
+            'l’archivio selezionato.',
+          );
+        }
+        await OpenNutritionBackgroundJobs.enqueueLocalArchiveStream(
+          source: stream,
+          declaredBytes: selected.size,
+          licenseAcceptedAtEpochMs: DateTime.now().millisecondsSinceEpoch,
+        );
+      }
+      await _refreshJob();
+    } catch (error) {
+      await _showStartError(error);
+    } finally {
+      if (mounted) setState(() => _startingJob = false);
+    }
+  }
+
+  Future<void> _showStartError(Object error) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Importazione non avviata'),
+          content: SelectableText(error.toString()),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Chiudi'),
+            ),
+          ],
+        );
+      },
     );
-    await _refreshJob();
   }
 
   Future<void> _resetPendingOperation({
@@ -230,9 +318,9 @@ class _OpenNutritionSettingsScreenState
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
                         const Text(
-                          'In release è preferibile configurare URL e chiave '
-                          'con dart-define. L’override runtime è disponibile '
-                          'solo in debug o se abilitato esplicitamente.',
+                          'Inserisci l’URL HTTPS del gateway e la sua chiave '
+                          'pubblica Ed25519. I dati vengono accettati soltanto '
+                          'se la firma della risposta è valida.',
                         ),
                         const SizedBox(height: 12),
                         TextField(
@@ -367,14 +455,14 @@ class _OpenNutritionSettingsScreenState
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(openNutritionCatalogStateProvider);
-    final count = ref.watch(openNutritionCatalogCountProvider);
+    final OpenNutritionBackgroundJobState? job = _job;
+    final bool busy = _startingJob || (job?.isRunning ?? false);
+    final state = busy ? null : ref.watch(openNutritionCatalogStateProvider);
+    final count = busy ? null : ref.watch(openNutritionCatalogCountProvider);
     final AsyncValue<bool> gatewayConfigured =
         ref.watch(openNutritionGatewayConfiguredProvider);
     final FoodServicePreferencesController preferences =
         ref.watch(foodServicePreferencesProvider);
-    final OpenNutritionBackgroundJobState? job = _job;
-    final bool busy = job?.isRunning ?? false;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Catalogo OpenNutrition')),
@@ -461,7 +549,7 @@ class _OpenNutritionSettingsScreenState
                     leading: const Icon(Icons.tune_outlined),
                     title: const Text('Configura gateway'),
                     subtitle: const Text(
-                      'Disponibile per sviluppo. In release usa dart-define.',
+                      'URL HTTPS, chiave pubblica Ed25519 e identificativo chiave.',
                     ),
                     onTap: _configureGateway,
                   ),
@@ -484,18 +572,35 @@ class _OpenNutritionSettingsScreenState
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: state.when(
-                data: (value) => Text(
-                  'Dataset locale: '
-                  '${value.installedVersion.isEmpty ? "non installato" : value.installedVersion}\n'
-                  'Stato: ${value.importStatusCode}\n'
-                  'Record attivi: '
-                  '${count.asData?.value ?? value.importedRows}',
-                ),
-                loading: () => const LinearProgressIndicator(),
-                error: (Object error, StackTrace stack) =>
-                    Text(error.toString()),
-              ),
+              child: state == null
+                  ? const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'Database catalogo riservato al worker',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        SizedBox(height: 8),
+                        LinearProgressIndicator(),
+                        SizedBox(height: 8),
+                        Text(
+                          'Durante download e importazione la UI non riapre '
+                          'ObjectBox, evitando conflitti tra isolate.',
+                        ),
+                      ],
+                    )
+                  : state.when(
+                      data: (value) => Text(
+                        'Dataset locale: '
+                        '${value.installedVersion.isEmpty ? "non installato" : value.installedVersion}\n'
+                        'Stato: ${value.importStatusCode}\n'
+                        'Record attivi: '
+                        '${count?.asData?.value ?? value.importedRows}',
+                      ),
+                      loading: () => const LinearProgressIndicator(),
+                      error: (Object error, StackTrace stack) =>
+                          SelectableText(error.toString()),
+                    ),
             ),
           ),
           const SizedBox(height: 12),
@@ -545,7 +650,7 @@ class _OpenNutritionSettingsScreenState
                       value: job.fraction?.clamp(0.0, 1.0).toDouble(),
                     ),
                     const SizedBox(height: 8),
-                    Text(job.message),
+                    SelectableText(job.message),
                     const SizedBox(height: 8),
                     Text(
                       'Stato: ${job.status}\n'

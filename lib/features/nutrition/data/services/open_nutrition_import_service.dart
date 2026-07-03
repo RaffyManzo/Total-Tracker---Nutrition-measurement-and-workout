@@ -22,6 +22,8 @@ class OpenNutritionDatasetConstants {
   static const String sha256 =
       '30420802bbf0e29852c282e37a58c7e18ebc1b57e109706925ef969f0498ff47';
   static const String tsvName = 'opennutrition_foods.tsv';
+  static const int maximumArchiveBytes = 2 * 1024 * 1024 * 1024;
+  static const int maximumExtractedBytes = 8 * 1024 * 1024 * 1024;
   static const Set<String> allowedFiles = <String>{
     tsvName,
     'LICENSE-ODbL.txt',
@@ -86,19 +88,39 @@ class OpenNutritionImportService {
       final request = http.Request(
         'GET',
         Uri.parse(OpenNutritionDatasetConstants.archiveUrl),
-      );
-      final response = await _client.send(request);
+      )
+        ..followRedirects = false
+        ..maxRedirects = 0
+        ..headers.addAll(const <String, String>{
+          'Accept': 'application/zip, application/octet-stream',
+          'User-Agent': 'TotalTracker-OpenNutrition-Importer/1',
+        });
+      final response =
+          await _client.send(request).timeout(const Duration(seconds: 30));
+      if (response.isRedirect) {
+        throw const HttpException('Redirect download non consentito.');
+      }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException('Download HTTP ${response.statusCode}');
       }
       final total = response.contentLength ?? 0;
+      if (total > OpenNutritionDatasetConstants.maximumArchiveBytes) {
+        throw StateError(
+          'Archivio remoto troppo grande: $total byte.',
+        );
+      }
       var downloaded = 0;
       final sink = archiveFile.openWrite();
       try {
         await for (final chunk in response.stream) {
           cancellation.throwIfCancelled();
-          sink.add(chunk);
           downloaded += chunk.length;
+          if (downloaded > OpenNutritionDatasetConstants.maximumArchiveBytes) {
+            throw StateError(
+              'Download interrotto: archivio oltre il limite consentito.',
+            );
+          }
+          sink.add(chunk);
           yield OpenNutritionImportProgress(
             stageCode: OpenNutritionImportStatusCodes.downloading,
             message: 'Download del catalogo OpenNutrition',
@@ -166,10 +188,17 @@ class OpenNutritionImportService {
         stageCode: OpenNutritionImportStatusCodes.verifying,
         message: 'Verifica SHA-256 dell’archivio',
       );
+      final int archiveBytes = await archiveFile.length();
+      if (archiveBytes <= 0 ||
+          archiveBytes > OpenNutritionDatasetConstants.maximumArchiveBytes) {
+        throw StateError(
+          'Dimensione archivio non consentita: $archiveBytes byte.',
+        );
+      }
       final actualSha =
           (await sha256.bind(archiveFile.openRead()).first).toString();
       state.actualSha256 = actualSha;
-      state.archiveBytes = await archiveFile.length();
+      state.archiveBytes = archiveBytes;
       if (actualSha.toLowerCase() != expectedSha256.toLowerCase()) {
         throw StateError(
           'Checksum non valido. Atteso $expectedSha256, ottenuto $actualSha.',
@@ -384,6 +413,7 @@ class OpenNutritionImportService {
     try {
       final archive = ZipDecoder().decodeStream(input, verify: true);
       final result = <String, File>{};
+      var extractedBytes = 0;
       for (final item in archive) {
         cancellation.throwIfCancelled();
         final normalized = item.name.replaceAll('\\', '/');
@@ -396,12 +426,23 @@ class OpenNutritionImportService {
         if (!OpenNutritionDatasetConstants.allowedFiles.contains(basename)) {
           continue;
         }
+        if (result.containsKey(basename)) {
+          throw StateError('File duplicato nello ZIP: $basename');
+        }
         if (item.isSymbolicLink) {
           throw StateError(
             'Link simbolico non consentito nello ZIP: ${item.name}',
           );
         }
         if (!item.isFile) continue;
+        if (item.size < 0) {
+          throw StateError('Dimensione ZIP non valida: ${item.name}');
+        }
+        extractedBytes += item.size;
+        if (extractedBytes >
+            OpenNutritionDatasetConstants.maximumExtractedBytes) {
+          throw StateError('Contenuto ZIP oltre il limite consentito.');
+        }
         final output = File(path.join(outputDirectory.path, basename));
         await output.parent.create(recursive: true);
         final outputStream = OutputFileStream(output.path);
