@@ -140,8 +140,7 @@ jobs:
           file_count="$(find "$PUBLIC_DIR" -type f | wc -l | tr -d ' ')"
           max_bytes="$(
             find "$PUBLIC_DIR" -type f -printf '%s\n' \
-              | sort -nr \
-              | head -n1
+              | awk 'BEGIN { max = 0 } { if ($1 > max) max = $1 } END { print max }'
           )"
           test "$file_count" -gt 0
           test "$file_count" -lt 20000
