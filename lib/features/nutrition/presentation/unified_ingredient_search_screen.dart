@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/widgets/primary_bottom_navigation.dart';
 import '../../../core/database/objectbox_providers.dart';
+import '../../../core/network/open_nutrition_network_access.dart';
 import '../../../core/preferences/food_service_preferences.dart';
 import '../data/entities/ingredient_entity.dart';
 import '../data/providers/open_nutrition_providers.dart';
@@ -40,7 +41,11 @@ class _UnifiedIngredientSearchScreenState
   bool _localExpanded = true;
   bool _catalogExpanded = true;
   bool _offExpanded = true;
-  bool _loading = true;
+  bool _localLoading = true;
+  bool _offLoading = false;
+  bool _catalogLoading = false;
+  int _searchGeneration = 0;
+  String? _catalogBlockedMessage;
   bool _catalogAvailable = false;
   OpenNutritionSearchMode _catalogMode = OpenNutritionSearchMode.unavailable;
   bool _offAvailable = false;
@@ -78,72 +83,182 @@ class _UnifiedIngredientSearchScreenState
 
   Future<void> _reload() async {
     if (!mounted) return;
-    setState(() {
-      _loading = true;
-      _localError = null;
-      _catalogError = null;
-      _offError = null;
-    });
 
+    final int generation = ++_searchGeneration;
+    final String query = _query;
     final UnifiedIngredientSearchService service =
         ref.read(unifiedIngredientSearchServiceProvider);
-    UnifiedIngredientSearchPage local = _local;
-    UnifiedIngredientSearchPage catalog = _catalog;
-    UnifiedIngredientSearchPage off = _off;
-    Object? localError;
-    Object? catalogError;
-    Object? offError;
-    bool catalogAvailable = false;
-    OpenNutritionSearchMode catalogMode = OpenNutritionSearchMode.unavailable;
-    bool offAvailable = false;
 
-    try {
-      local = await service.searchPersonal(
-        query: _query,
-        page: _localPage,
-      );
-    } catch (error) {
-      localError = error;
-    }
-
-    try {
-      catalogMode = await service.openNutritionSearchMode();
-      catalogAvailable = catalogMode != OpenNutritionSearchMode.unavailable;
-      catalog = _query.isNotEmpty && catalogAvailable
-          ? await service.searchOpenNutrition(
-              query: _query,
-              page: _catalogPage,
-            )
-          : _emptyPage();
-    } catch (error) {
-      catalogError = error;
-    }
-
-    try {
-      offAvailable = await service.isOpenFoodFactsAvailable();
-      off = _query.isNotEmpty && offAvailable
-          ? await service.searchOpenFoodFacts(
-              query: _query,
-              page: _offPage,
-            )
-          : _emptyPage();
-    } catch (error) {
-      offError = error;
-    }
-
-    if (!mounted) return;
     setState(() {
-      _local = local;
-      _catalog = catalog;
-      _off = off;
-      _catalogAvailable = catalogAvailable;
-      _catalogMode = catalogMode;
-      _offAvailable = offAvailable;
-      _localError = localError;
-      _catalogError = catalogError;
-      _offError = offError;
-      _loading = false;
+      _localLoading = true;
+      _offLoading = query.isNotEmpty;
+      _catalogLoading = false;
+      _local = _emptyPage();
+      _off = _emptyPage();
+      _catalog = _emptyPage();
+      _localError = null;
+      _offError = null;
+      _catalogError = null;
+      _catalogBlockedMessage = null;
     });
+
+    try {
+      final UnifiedIngredientSearchPage local = await service
+          .searchPersonal(query: query, page: _localPage)
+          .timeout(const Duration(seconds: 8));
+      if (!_isCurrentSearch(generation)) return;
+      setState(() {
+        _local = local;
+        _localError = null;
+        _localLoading = false;
+      });
+    } on TimeoutException {
+      if (!_isCurrentSearch(generation)) return;
+      setState(() {
+        _localError = TimeoutException(
+          'La ricerca locale non ha risposto entro 8 secondi.',
+        );
+        _localLoading = false;
+      });
+    } catch (error) {
+      if (!_isCurrentSearch(generation)) return;
+      setState(() {
+        _localError = error;
+        _localLoading = false;
+      });
+    }
+
+    try {
+      final bool offAvailable = await service
+          .isOpenFoodFactsAvailable()
+          .timeout(const Duration(seconds: 5));
+      if (!_isCurrentSearch(generation)) return;
+      setState(() => _offAvailable = offAvailable);
+
+      if (offAvailable &&
+          UnifiedIngredientSearchPolicy.canSearchOpenFoodFacts(query)) {
+        final UnifiedIngredientSearchPage off = await service
+            .searchOpenFoodFacts(query: query, page: _offPage)
+            .timeout(const Duration(minutes: 10));
+        if (!_isCurrentSearch(generation)) return;
+        setState(() {
+          _off = off;
+          _offError = null;
+          _offLoading = false;
+        });
+      } else {
+        setState(() {
+          _off = _emptyPage();
+          _offError = null;
+          _offLoading = false;
+        });
+      }
+    } on TimeoutException {
+      if (!_isCurrentSearch(generation)) return;
+      setState(() {
+        _offError = TimeoutException(
+          'Open Food Facts non ha completato i 20 tentativi automatici '
+          'entro 10 minuti.',
+        );
+        _offLoading = false;
+      });
+    } catch (error) {
+      if (!_isCurrentSearch(generation)) return;
+      setState(() {
+        _offError = error;
+        _offLoading = false;
+      });
+    }
+
+    if (!_isCurrentSearch(generation)) return;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!_isCurrentSearch(generation)) return;
+
+    OpenNutritionSearchMode catalogMode = OpenNutritionSearchMode.unavailable;
+    try {
+      catalogMode = await service
+          .openNutritionSearchMode()
+          .timeout(const Duration(seconds: 8));
+      if (!_isCurrentSearch(generation)) return;
+      setState(() {
+        _catalogMode = catalogMode;
+        _catalogAvailable = catalogMode != OpenNutritionSearchMode.unavailable;
+      });
+    } on TimeoutException {
+      if (!_isCurrentSearch(generation)) return;
+      setState(() {
+        _catalogAvailable = false;
+        _catalogError = TimeoutException(
+          'La configurazione OpenNutrition non ha risposto entro 8 secondi.',
+        );
+        _catalogLoading = false;
+      });
+      return;
+    } catch (error) {
+      if (!_isCurrentSearch(generation)) return;
+      setState(() {
+        _catalogAvailable = false;
+        _catalogError = error;
+        _catalogLoading = false;
+      });
+      return;
+    }
+
+    if (catalogMode == OpenNutritionSearchMode.unavailable ||
+        !UnifiedIngredientSearchPolicy.canSearchOpenNutrition(query)) {
+      if (!_isCurrentSearch(generation)) return;
+      setState(() {
+        _catalog = _emptyPage();
+        _catalogLoading = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _catalogLoading = true;
+      _catalogError = null;
+      _catalogBlockedMessage = null;
+    });
+
+    try {
+      final UnifiedIngredientSearchPage catalog = await service
+          .searchOpenNutrition(query: query, page: _catalogPage)
+          .timeout(const Duration(minutes: 10));
+      if (!_isCurrentSearch(generation)) return;
+      setState(() {
+        _catalog = catalog;
+        _catalogError = null;
+        _catalogBlockedMessage = null;
+        _catalogLoading = false;
+      });
+    } on OpenNutritionNetworkPolicyException catch (error) {
+      if (!_isCurrentSearch(generation)) return;
+      setState(() {
+        _catalog = _emptyPage();
+        _catalogError = null;
+        _catalogBlockedMessage = error.message;
+        _catalogLoading = false;
+      });
+    } on TimeoutException {
+      if (!_isCurrentSearch(generation)) return;
+      setState(() {
+        _catalogError = TimeoutException(
+          'OpenNutrition non ha completato i 20 tentativi automatici entro '
+          '10 minuti. I risultati Open Food Facts restano disponibili.',
+        );
+        _catalogLoading = false;
+      });
+    } catch (error) {
+      if (!_isCurrentSearch(generation)) return;
+      setState(() {
+        _catalogError = error;
+        _catalogLoading = false;
+      });
+    }
+  }
+
+  bool _isCurrentSearch(int generation) {
+    return mounted && generation == _searchGeneration;
   }
 
   void _onQueryChanged(String value) {
@@ -458,11 +573,18 @@ class _UnifiedIngredientSearchScreenState
               ),
             ),
             const SizedBox(height: 16),
-            if (_loading) const LinearProgressIndicator(),
+            if (_localLoading) const LinearProgressIndicator(),
             if (!searching)
               _buildRecentSection()
             else ...<Widget>[
               _buildLocalSection(),
+              const SizedBox(height: 12),
+              if (_offAvailable)
+                _buildOpenFoodFactsSection()
+              else
+                const _EmptyCard(
+                  message: 'Open Food Facts è disabilitato nelle impostazioni.',
+                ),
               const SizedBox(height: 12),
               if (_catalogAvailable)
                 _buildCatalogSection()
@@ -470,25 +592,14 @@ class _UnifiedIngredientSearchScreenState
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.storage_outlined),
-                    title: const Text(
-                      'OpenNutrition non disponibile',
-                    ),
+                    title: const Text('OpenNutrition non disponibile'),
                     subtitle: const Text(
                       'La sorgente statica non è configurata nella build '
                       'oppure la ricerca è disabilitata nelle impostazioni.',
                     ),
                     trailing: const Icon(Icons.chevron_right),
-                    onTap: () => context.push(
-                      '/settings/opennutrition',
-                    ),
+                    onTap: () => context.push('/settings/opennutrition'),
                   ),
-                ),
-              const SizedBox(height: 12),
-              if (_offAvailable)
-                _buildOpenFoodFactsSection()
-              else
-                const _EmptyCard(
-                  message: 'Open Food Facts è disabilitato nelle impostazioni.',
                 ),
             ],
           ],
@@ -513,7 +624,7 @@ class _UnifiedIngredientSearchScreenState
             error: _localError!,
             onRetry: _reload,
           )
-        else if (_local.items.isEmpty && !_loading)
+        else if (_local.items.isEmpty && !_localLoading)
           const _EmptyCard(
             message: 'Nessun ingrediente presente. Usa “Nuovo”.',
           )
@@ -560,97 +671,135 @@ class _UnifiedIngredientSearchScreenState
   }
 
   Widget _buildCatalogSection() {
-    return _SearchSection(
-      title: switch (_catalogMode) {
-        OpenNutritionSearchMode.staticIndex =>
-          'OpenNutrition · indice statico verificato',
-        OpenNutritionSearchMode.remote => 'OpenNutrition online verificato',
-        OpenNutritionSearchMode.local => 'Catalogo OpenNutrition locale',
-        OpenNutritionSearchMode.unavailable => 'OpenNutrition',
-      },
-      subtitle: _query.length < 3 &&
-              _catalogMode == OpenNutritionSearchMode.staticIndex
-          ? 'Digita almeno tre caratteri'
-          : _query.length < 2
-              ? 'Digita almeno due caratteri'
-              : _catalogMode == OpenNutritionSearchMode.staticIndex
-                  ? _catalog.items.any(
-                      (UnifiedIngredientSearchItem item) =>
-                          item.isMachineTranslatedOpenNutrition,
-                    )
-                      ? '${_catalog.items.length} risultati verificati · '
-                          'traduzione automatica con Google Translate'
-                      : '${_catalog.items.length} risultati verificati '
-                          'nella pagina'
-                  : _catalogMode == OpenNutritionSearchMode.remote
-                      ? '${_catalog.items.length} risultati firmati nella pagina'
-                      : '${_catalog.items.length} risultati nella pagina',
-      expanded: _catalogExpanded,
-      onToggle: () {
-        setState(
-          () => _catalogExpanded = !_catalogExpanded,
-        );
-      },
-      onRetry: _reload,
-      error: _catalogError,
-      emptyMessage: _catalogMode == OpenNutritionSearchMode.staticIndex &&
-              _query.length < 3
-          ? 'Digita almeno tre caratteri.'
-          : _query.length < 2
-              ? 'Digita almeno due caratteri.'
-              : _catalogMode == OpenNutritionSearchMode.staticIndex
-                  ? 'Nessun match OpenNutrition sufficientemente affidabile.'
-                  : _catalogMode == OpenNutritionSearchMode.remote
-                      ? 'Nessun risultato dal gateway OpenNutrition.'
-                      : 'Nessun risultato nel catalogo OpenNutrition.',
-      items: _catalog.items,
-      onItem: _select,
-      pager: _Pager(
-        page: _catalog.page,
-        hasPrevious: _catalog.hasPrevious,
-        hasNext: _catalog.hasNext,
-        onPrevious: () {
-          setState(() => _catalogPage -= 1);
-          _reload();
-        },
-        onNext: () {
-          setState(() => _catalogPage += 1);
-          _reload();
-        },
-      ),
+    final String subtitle;
+    if (_catalogLoading) {
+      subtitle =
+          'Ricerca OpenNutrition in corso · fino a 20 tentativi automatici…';
+    } else if (_catalogBlockedMessage != null) {
+      subtitle = _catalogBlockedMessage!;
+    } else if (_query.length < 3 &&
+        _catalogMode == OpenNutritionSearchMode.staticIndex) {
+      subtitle = 'Digita almeno tre caratteri';
+    } else if (_query.length < 2) {
+      subtitle = 'Digita almeno due caratteri';
+    } else if (_catalogMode == OpenNutritionSearchMode.staticIndex) {
+      subtitle = _catalog.items.any(
+        (UnifiedIngredientSearchItem item) =>
+            item.isMachineTranslatedOpenNutrition,
+      )
+          ? '${_catalog.items.length} risultati verificati · '
+              'traduzione automatica con Google Translate'
+          : '${_catalog.items.length} risultati verificati nella pagina';
+    } else if (_catalogMode == OpenNutritionSearchMode.remote) {
+      subtitle = '${_catalog.items.length} risultati firmati nella pagina';
+    } else {
+      subtitle = '${_catalog.items.length} risultati nella pagina';
+    }
+
+    final String emptyMessage;
+    if (_catalogLoading) {
+      emptyMessage = 'OpenNutrition sta elaborando la richiesta.';
+    } else if (_catalogBlockedMessage != null) {
+      emptyMessage = _catalogBlockedMessage!;
+    } else if (_catalogMode == OpenNutritionSearchMode.staticIndex &&
+        _query.length < 3) {
+      emptyMessage = 'Digita almeno tre caratteri.';
+    } else if (_query.length < 2) {
+      emptyMessage = 'Digita almeno due caratteri.';
+    } else if (_catalogMode == OpenNutritionSearchMode.staticIndex) {
+      emptyMessage = 'Nessun match OpenNutrition sufficientemente affidabile.';
+    } else if (_catalogMode == OpenNutritionSearchMode.remote) {
+      emptyMessage = 'Nessun risultato dal gateway OpenNutrition.';
+    } else {
+      emptyMessage = 'Nessun risultato nel catalogo OpenNutrition.';
+    }
+
+    return Column(
+      children: <Widget>[
+        if (_catalogLoading) ...<Widget>[
+          const LinearProgressIndicator(),
+          const SizedBox(height: 8),
+        ],
+        _SearchSection(
+          title: switch (_catalogMode) {
+            OpenNutritionSearchMode.staticIndex =>
+              'OpenNutrition · indice statico verificato',
+            OpenNutritionSearchMode.remote => 'OpenNutrition online verificato',
+            OpenNutritionSearchMode.local => 'Catalogo OpenNutrition locale',
+            OpenNutritionSearchMode.unavailable => 'OpenNutrition',
+          },
+          subtitle: subtitle,
+          expanded: _catalogExpanded,
+          onToggle: () {
+            setState(() => _catalogExpanded = !_catalogExpanded);
+          },
+          onRetry: _reload,
+          error: _catalogError,
+          emptyMessage: emptyMessage,
+          items: _catalog.items,
+          onItem: _select,
+          pager: _Pager(
+            page: _catalog.page,
+            hasPrevious: _catalog.hasPrevious,
+            hasNext: _catalog.hasNext,
+            onPrevious: () {
+              setState(() => _catalogPage -= 1);
+              _reload();
+            },
+            onNext: () {
+              setState(() => _catalogPage += 1);
+              _reload();
+            },
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildOpenFoodFactsSection() {
-    return _SearchSection(
-      title: 'Open Food Facts online',
-      subtitle: _query.length < 3
-          ? 'Digita almeno tre caratteri'
-          : '${_off.items.length} risultati nella pagina',
-      expanded: _offExpanded,
-      onToggle: () {
-        setState(() => _offExpanded = !_offExpanded);
-      },
-      onRetry: _reload,
-      error: _offError,
-      emptyMessage: _query.length < 3
-          ? 'Digita almeno tre caratteri per cercare nome o brand.'
-          : 'Nessun risultato su Open Food Facts.',
-      items: _off.items,
-      onItem: _select,
-      pager: _Pager(
-        page: _off.page,
-        hasPrevious: _off.hasPrevious,
-        hasNext: _off.hasNext,
-        onPrevious: () {
-          setState(() => _offPage -= 1);
-          _reload();
-        },
-        onNext: () {
-          setState(() => _offPage += 1);
-          _reload();
-        },
-      ),
+    final String subtitle = _offLoading
+        ? 'Ricerca Open Food Facts in corso · fino a 20 tentativi automatici…'
+        : _query.length < 3
+            ? 'Digita almeno tre caratteri'
+            : '${_off.items.length} risultati nella pagina';
+
+    return Column(
+      children: <Widget>[
+        if (_offLoading) ...<Widget>[
+          const LinearProgressIndicator(),
+          const SizedBox(height: 8),
+        ],
+        _SearchSection(
+          title: 'Open Food Facts online',
+          subtitle: subtitle,
+          expanded: _offExpanded,
+          onToggle: () {
+            setState(() => _offExpanded = !_offExpanded);
+          },
+          onRetry: _reload,
+          error: _offError,
+          emptyMessage: _offLoading
+              ? 'Open Food Facts sta elaborando la richiesta.'
+              : _query.length < 3
+                  ? 'Digita almeno tre caratteri per cercare nome o brand.'
+                  : 'Nessun risultato su Open Food Facts.',
+          items: _off.items,
+          onItem: _select,
+          pager: _Pager(
+            page: _off.page,
+            hasPrevious: _off.hasPrevious,
+            hasNext: _off.hasNext,
+            onPrevious: () {
+              setState(() => _offPage -= 1);
+              _reload();
+            },
+            onNext: () {
+              setState(() => _offPage += 1);
+              _reload();
+            },
+          ),
+        ),
+      ],
     );
   }
 }

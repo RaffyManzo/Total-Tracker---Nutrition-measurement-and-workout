@@ -33,14 +33,14 @@ final openNutritionImportServiceProvider =
 });
 
 final openNutritionGatewayServiceProvider =
-    Provider.autoDispose<OpenNutritionGatewayService>((Ref ref) {
+    Provider<OpenNutritionGatewayService>((Ref ref) {
   final OpenNutritionGatewayService service = OpenNutritionGatewayService();
   ref.onDispose(service.dispose);
   return service;
 });
 
 final openNutritionStaticIndexServiceProvider =
-    Provider.autoDispose<OpenNutritionStaticIndexService>((Ref ref) {
+    Provider<OpenNutritionStaticIndexService>((Ref ref) {
   final OpenNutritionStaticIndexService service =
       OpenNutritionStaticIndexService();
   ref.onDispose(service.dispose);
@@ -48,12 +48,12 @@ final openNutritionStaticIndexServiceProvider =
 });
 
 final openNutritionTranslationServiceProvider =
-    Provider.autoDispose<OpenNutritionTranslationService>((Ref ref) {
+    Provider<OpenNutritionTranslationService>((Ref ref) {
   return OpenNutritionTranslationService();
 });
 
 final unifiedIngredientSearchServiceProvider =
-    Provider.autoDispose<UnifiedIngredientSearchService>((Ref ref) {
+    Provider<UnifiedIngredientSearchService>((Ref ref) {
   return UnifiedIngredientSearchService(
     personalRepository: ref.watch(ingredientRepositoryProvider),
     openNutritionRepository: ref.watch(

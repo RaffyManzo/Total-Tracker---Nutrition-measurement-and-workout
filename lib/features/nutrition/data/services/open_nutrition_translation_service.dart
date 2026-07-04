@@ -295,7 +295,7 @@ class OpenNutritionTranslationService {
 
       final bool downloaded = await _modelManager.downloadModel(
         language.bcpCode,
-        isWifiRequired: true,
+        isWifiRequired: false,
       );
 
       if (!downloaded) {

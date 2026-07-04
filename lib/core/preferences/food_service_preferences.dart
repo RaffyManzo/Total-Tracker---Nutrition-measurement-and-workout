@@ -3,11 +3,48 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+enum OpenNutritionNetworkPolicy {
+  wifiOnly(
+    code: 'wifi_only',
+    label: 'Solo Wi-Fi',
+    description: 'OpenNutrition usa Wi-Fi o Ethernet, mai i dati mobili.',
+  ),
+  mobileOnly(
+    code: 'mobile_only',
+    label: 'Solo dati mobili',
+    description: 'OpenNutrition usa la rete cellulare, non il Wi-Fi.',
+  ),
+  wifiAndMobile(
+    code: 'wifi_and_mobile',
+    label: 'Wi-Fi e dati mobili',
+    description: 'OpenNutrition può usare entrambe le connessioni.',
+  );
+
+  const OpenNutritionNetworkPolicy({
+    required this.code,
+    required this.label,
+    required this.description,
+  });
+
+  final String code;
+  final String label;
+  final String description;
+
+  static OpenNutritionNetworkPolicy fromCode(String code) {
+    return OpenNutritionNetworkPolicy.values.firstWhere(
+      (OpenNutritionNetworkPolicy value) => value.code == code,
+      orElse: () => OpenNutritionNetworkPolicy.wifiAndMobile,
+    );
+  }
+}
+
 class FoodServicePreferenceKeys {
   const FoodServicePreferenceKeys._();
 
   static const String openNutritionSearchEnabled =
       'food.open_nutrition.search_enabled';
+  static const String openNutritionNetworkPolicy =
+      'food.open_nutrition.network_policy';
   static const String openNutritionRemoteEnabled =
       'food.open_nutrition.remote_enabled';
   static const String openNutritionGatewayUrl =
@@ -93,6 +130,14 @@ class FoodServicePreferences {
     return getBool(FoodServicePreferenceKeys.openNutritionSearchEnabled);
   }
 
+  static Future<OpenNutritionNetworkPolicy>
+      getOpenNutritionNetworkPolicy() async {
+    final String code = await getString(
+      FoodServicePreferenceKeys.openNutritionNetworkPolicy,
+    );
+    return OpenNutritionNetworkPolicy.fromCode(code);
+  }
+
   static Future<bool> isOpenNutritionRemoteEnabled() {
     return getBool(
       FoodServicePreferenceKeys.openNutritionRemoteEnabled,
@@ -109,6 +154,8 @@ class FoodServicePreferencesController extends ChangeNotifier {
   bool loading = true;
 
   bool openNutritionSearchEnabled = true;
+  OpenNutritionNetworkPolicy openNutritionNetworkPolicy =
+      OpenNutritionNetworkPolicy.wifiAndMobile;
   bool openNutritionRemoteEnabled = true;
   bool openFoodFactsEnabled = true;
 
@@ -126,6 +173,8 @@ class FoodServicePreferencesController extends ChangeNotifier {
       openNutritionSearchEnabled = await FoodServicePreferences.getBool(
         FoodServicePreferenceKeys.openNutritionSearchEnabled,
       );
+      openNutritionNetworkPolicy =
+          await FoodServicePreferences.getOpenNutritionNetworkPolicy();
       openNutritionRemoteEnabled = await FoodServicePreferences.getBool(
         FoodServicePreferenceKeys.openNutritionRemoteEnabled,
         defaultValue: true,
@@ -170,6 +219,17 @@ class FoodServicePreferencesController extends ChangeNotifier {
         value,
         () => openNutritionSearchEnabled = value,
       );
+
+  Future<void> setOpenNutritionNetworkPolicy(
+    OpenNutritionNetworkPolicy value,
+  ) async {
+    openNutritionNetworkPolicy = value;
+    notifyListeners();
+    await FoodServicePreferences.setString(
+      FoodServicePreferenceKeys.openNutritionNetworkPolicy,
+      value.code,
+    );
+  }
 
   Future<void> setOpenNutritionRemoteEnabled(bool value) => _set(
         FoodServicePreferenceKeys.openNutritionRemoteEnabled,

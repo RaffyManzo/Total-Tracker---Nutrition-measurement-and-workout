@@ -531,6 +531,62 @@ class _OpenNutritionSettingsScreenState
           ),
           const SizedBox(height: 12),
           Card(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Row(
+                    children: <Widget>[
+                      Icon(Icons.network_check_outlined),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Rete consentita per OpenNutrition',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'La scelta riguarda soltanto OpenNutrition. '
+                    'Open Food Facts continua a usare la propria '
+                    'configurazione e viene mostrato per primo.',
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<OpenNutritionNetworkPolicy>(
+                    initialValue: preferences.openNutritionNetworkPolicy,
+                    decoration: const InputDecoration(
+                      labelText: 'Connessioni utilizzabili',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: OpenNutritionNetworkPolicy.values
+                        .map(
+                          (OpenNutritionNetworkPolicy policy) =>
+                              DropdownMenuItem<OpenNutritionNetworkPolicy>(
+                            value: policy,
+                            child: Text(policy.label),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: preferences.loading ||
+                            !preferences.openNutritionSearchEnabled
+                        ? null
+                        : (OpenNutritionNetworkPolicy? value) async {
+                            if (value == null) return;
+                            await preferences
+                                .setOpenNutritionNetworkPolicy(value);
+                          },
+                  ),
+                  const SizedBox(height: 8),
+                  Text(preferences.openNutritionNetworkPolicy.description),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
             child: staticIndexStatus == null
                 ? const ListTile(
                     leading: Icon(Icons.cloud_off_outlined),
@@ -613,8 +669,8 @@ class _OpenNutritionSettingsScreenState
                   } else {
                     subtitle =
                         'I modelli inglese e ${status.localeCode} verranno '
-                        'scaricati automaticamente al primo utilizzo, solo '
-                        'tramite Wi-Fi.';
+                        'scaricati automaticamente al primo utilizzo, '
+                        'rispettando la policy di rete OpenNutrition.';
                   }
 
                   return ListTile(

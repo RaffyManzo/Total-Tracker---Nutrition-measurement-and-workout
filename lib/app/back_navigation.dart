@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -20,6 +18,7 @@ class DashboardBackController {
 
   Future<bool> handle(GoRouter router) async {
     if (_handling) return true;
+
     _handling = true;
     try {
       if (router.canPop()) {
@@ -35,8 +34,10 @@ class DashboardBackController {
       final String currentRoute = rawCurrent == '/' ? '/food' : rawCurrent;
 
       if (currentRoute != preferredRoute) {
-        _lastExitAttempt = DateTime.now();
+        // Tornare alla dashboard non deve armare immediatamente l'uscita.
+        _lastExitAttempt = null;
         router.go(preferredRoute);
+
         final ScaffoldMessengerState? messenger =
             appScaffoldMessengerKey.currentState;
         messenger
@@ -44,8 +45,8 @@ class DashboardBackController {
           ..showSnackBar(
             const SnackBar(
               content: Text(
-                'Dashboard aperta. Premi ancora Indietro entro 2 secondi '
-                'per chiudere Total Tracker.',
+                'Dashboard aperta. Premi Indietro altre due volte per '
+                'chiudere Total Tracker.',
               ),
               duration: exitConfirmationWindow,
             ),
@@ -82,27 +83,14 @@ class DashboardBackController {
   }
 }
 
-class DashboardBackGuard extends StatelessWidget {
-  const DashboardBackGuard({
-    required this.child,
-    super.key,
-  });
+ChildBackButtonDispatcher? _dashboardBackDispatcher;
 
-  final Widget child;
+void installDashboardBackDispatcher(GoRouter router) {
+  if (_dashboardBackDispatcher != null) return;
 
-  @override
-  Widget build(BuildContext context) {
-    final GoRouter router = GoRouter.of(context);
-    final bool canPop = router.canPop();
-
-    return PopScope<Object?>(
-      canPop: canPop,
-      onPopInvokedWithResult: (bool didPop, Object? result) {
-        if (!didPop) {
-          unawaited(dashboardBackController.handle(router));
-        }
-      },
-      child: child,
-    );
-  }
+  final ChildBackButtonDispatcher dispatcher =
+      router.backButtonDispatcher.createChildBackButtonDispatcher();
+  dispatcher.addCallback(() => dashboardBackController.handle(router));
+  dispatcher.takePriority();
+  _dashboardBackDispatcher = dispatcher;
 }

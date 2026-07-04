@@ -1,6 +1,11 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/background/background_tasks.dart';
+import '../../../../core/network/open_nutrition_network_access.dart';
 import '../../../../core/preferences/food_service_preferences.dart';
 import '../../domain/nutrition_codes.dart';
 import '../config/open_nutrition_rollout_config.dart';
@@ -167,6 +172,24 @@ class UnifiedIngredientSearchPolicy {
   static bool canSearchOpenFoodFacts(String query) => query.trim().length >= 3;
 }
 
+class ExternalSearchRetryException implements Exception {
+  const ExternalSearchRetryException({
+    required this.sourceName,
+    required this.retryCount,
+    required this.lastError,
+  });
+
+  final String sourceName;
+  final int retryCount;
+  final Object lastError;
+
+  @override
+  String toString() {
+    return '$sourceName non disponibile dopo $retryCount tentativi '
+        'automatici. Ultimo errore: $lastError';
+  }
+}
+
 class UnifiedIngredientSearchService {
   UnifiedIngredientSearchService({
     required this.personalRepository,
@@ -287,46 +310,66 @@ class UnifiedIngredientSearchService {
       );
     }
 
-    if (mode == OpenNutritionSearchMode.staticIndex) {
-      final String canonicalQuery =
-          await openNutritionTranslationService.translateQueryToEnglish(
-        query,
-      );
-      final OpenNutritionStaticSearchPage response =
-          await openNutritionStaticIndexService.search(
-        query: canonicalQuery,
-        page: safePage,
-        limit: UnifiedIngredientSearchPolicy.openNutritionRemotePageSize,
-      );
-      final List<OpenNutritionFoodEntity> translatedFoods =
-          await openNutritionTranslationService.translateFoodsFromEnglish(
-        response.foods,
-      );
+    if (mode == OpenNutritionSearchMode.staticIndex ||
+        mode == OpenNutritionSearchMode.remote) {
+      final OpenNutritionNetworkPolicy policy =
+          await FoodServicePreferences.getOpenNutritionNetworkPolicy();
+      final OpenNutritionNetworkDecision decision =
+          await OpenNutritionNetworkAccess.evaluate(policy);
+      if (!decision.allowed) {
+        throw OpenNutritionNetworkPolicyException(decision.message);
+      }
+    }
 
-      return UnifiedIngredientSearchPage(
-        items: translatedFoods
-            .map(UnifiedIngredientSearchItem.openNutrition)
-            .toList(),
-        page: response.page,
-        hasNext: response.hasNext,
-        hasPrevious: safePage > 0,
+    if (mode == OpenNutritionSearchMode.staticIndex) {
+      return _withNetworkRetries<UnifiedIngredientSearchPage>(
+        sourceName: 'OpenNutrition',
+        action: () async {
+          final String canonicalQuery =
+              await openNutritionTranslationService.translateQueryToEnglish(
+            query,
+          );
+          final OpenNutritionStaticSearchPage response =
+              await openNutritionStaticIndexService.search(
+            query: canonicalQuery,
+            page: safePage,
+            limit: UnifiedIngredientSearchPolicy.openNutritionRemotePageSize,
+          );
+          final List<OpenNutritionFoodEntity> translatedFoods =
+              await openNutritionTranslationService.translateFoodsFromEnglish(
+            response.foods,
+          );
+          return UnifiedIngredientSearchPage(
+            items: translatedFoods
+                .map(UnifiedIngredientSearchItem.openNutrition)
+                .toList(growable: false),
+            page: response.page,
+            hasNext: response.hasNext,
+            hasPrevious: safePage > 0,
+          );
+        },
       );
     }
 
     if (mode == OpenNutritionSearchMode.remote) {
-      final OpenNutritionGatewaySearchPage response =
-          await openNutritionGatewayService.search(
-        query: query,
-        page: safePage,
-        limit: UnifiedIngredientSearchPolicy.openNutritionRemotePageSize,
-      );
-      return UnifiedIngredientSearchPage(
-        items: response.foods
-            .map(UnifiedIngredientSearchItem.openNutrition)
-            .toList(),
-        page: response.page,
-        hasNext: response.hasNext,
-        hasPrevious: safePage > 0,
+      return _withNetworkRetries<UnifiedIngredientSearchPage>(
+        sourceName: 'OpenNutrition',
+        action: () async {
+          final OpenNutritionGatewaySearchPage response =
+              await openNutritionGatewayService.search(
+            query: query,
+            page: safePage,
+            limit: UnifiedIngredientSearchPolicy.openNutritionRemotePageSize,
+          );
+          return UnifiedIngredientSearchPage(
+            items: response.foods
+                .map(UnifiedIngredientSearchItem.openNutrition)
+                .toList(growable: false),
+            page: response.page,
+            hasNext: response.hasNext,
+            hasPrevious: safePage > 0,
+          );
+        },
       );
     }
 
@@ -337,12 +380,11 @@ class UnifiedIngredientSearchService {
       limit: UnifiedIngredientSearchPolicy.pageSize + 1,
     );
     final bool hasNext = values.length > UnifiedIngredientSearchPolicy.pageSize;
-
     return UnifiedIngredientSearchPage(
       items: values
           .take(UnifiedIngredientSearchPolicy.pageSize)
           .map(UnifiedIngredientSearchItem.openNutrition)
-          .toList(),
+          .toList(growable: false),
       page: safePage,
       hasNext: hasNext,
       hasPrevious: safePage > 0,
@@ -364,21 +406,135 @@ class UnifiedIngredientSearchService {
       );
     }
 
-    final OpenFoodFactsSearchResponse response =
-        await openFoodFactsService.searchTextPage(
-      query,
-      page: safePage + 1,
-      pageSize: UnifiedIngredientSearchPolicy.openFoodFactsPageSize,
+    return _withNetworkRetries<UnifiedIngredientSearchPage>(
+      sourceName: 'Open Food Facts',
+      action: () async {
+        final OpenFoodFactsSearchResponse response =
+            await openFoodFactsService.searchTextPage(
+          query,
+          page: safePage + 1,
+          pageSize: UnifiedIngredientSearchPolicy.openFoodFactsPageSize,
+        );
+        return UnifiedIngredientSearchPage(
+          items: response.products
+              .map(UnifiedIngredientSearchItem.openFoodFacts)
+              .toList(growable: false),
+          page: safePage,
+          hasNext: response.hasNext,
+          hasPrevious: safePage > 0,
+        );
+      },
     );
+  }
 
-    return UnifiedIngredientSearchPage(
-      items: response.products
-          .map(UnifiedIngredientSearchItem.openFoodFacts)
-          .toList(),
-      page: safePage,
-      hasNext: response.hasNext,
-      hasPrevious: safePage > 0,
+  static const int _networkRetryCount = 20;
+  static const Duration _networkRetryBaseDelay = Duration(milliseconds: 250);
+  static const Duration _networkRetryMaximumDelay = Duration(seconds: 2);
+
+  Future<T> _withNetworkRetries<T>({
+    required String sourceName,
+    required Future<T> Function() action,
+  }) async {
+    Object? lastError;
+    StackTrace? lastStackTrace;
+
+    for (int attempt = 0; attempt <= _networkRetryCount; attempt++) {
+      try {
+        return await action();
+      } catch (error, stackTrace) {
+        if (!_isTransientNetworkError(error)) {
+          Error.throwWithStackTrace(error, stackTrace);
+        }
+
+        lastError = error;
+        lastStackTrace = stackTrace;
+        if (attempt >= _networkRetryCount) break;
+        await Future<void>.delayed(_retryDelay(attempt + 1));
+      }
+    }
+
+    final ExternalSearchRetryException exhausted = ExternalSearchRetryException(
+      sourceName: sourceName,
+      retryCount: _networkRetryCount,
+      lastError: lastError ?? StateError('Errore di rete non specificato.'),
     );
+    if (lastStackTrace != null) {
+      Error.throwWithStackTrace(exhausted, lastStackTrace);
+    }
+    throw exhausted;
+  }
+
+  Duration _retryDelay(int retryNumber) {
+    final int linearMilliseconds =
+        _networkRetryBaseDelay.inMilliseconds * retryNumber;
+    final int cappedMilliseconds = linearMilliseconds
+        .clamp(
+          _networkRetryBaseDelay.inMilliseconds,
+          _networkRetryMaximumDelay.inMilliseconds,
+        )
+        .toInt();
+    final int deterministicJitter = (retryNumber * 73) % 200;
+    return Duration(milliseconds: cappedMilliseconds + deterministicJitter);
+  }
+
+  bool _isTransientNetworkError(Object error) {
+    if (error is TimeoutException ||
+        error is SocketException ||
+        error is HttpException ||
+        error is http.ClientException) {
+      return true;
+    }
+    if (error is OpenNutritionNetworkPolicyException) return false;
+
+    final String message = error.toString().toLowerCase();
+    const List<String> permanentMarkers = <String>[
+      'non configurato',
+      'hash manifest',
+      'hash o dimensione shard',
+      'schema manifest',
+      'schema shard',
+      'manifest incompatibile',
+      'descrittore shard',
+      'redirect opennutrition',
+      'url opennutrition non sicuro',
+      'shard opennutrition non valido o danneggiato',
+      'dimensione risposta opennutrition non consentita',
+      'risposta opennutrition oltre il limite consentito',
+    ];
+    if (permanentMarkers.any(message.contains)) return false;
+
+    final RegExpMatch? statusMatch =
+        RegExp(r'http[^0-9]*(\d{3})').firstMatch(message);
+    if (statusMatch != null) {
+      final int? statusCode = int.tryParse(statusMatch.group(1)!);
+      if (statusCode != null) {
+        return statusCode == 408 ||
+            statusCode == 425 ||
+            statusCode == 429 ||
+            statusCode >= 500;
+      }
+    }
+
+    const List<String> transientMarkers = <String>[
+      'client is already closed',
+      'connection reset',
+      'connection refused',
+      'connection aborted',
+      'connection closed',
+      'closed before full header',
+      'failed host lookup',
+      'network is unreachable',
+      'network unreachable',
+      'temporary failure',
+      'timed out',
+      'timeout',
+      'handshakeexception',
+      'socketexception',
+      'clientexception',
+      'http request failed',
+      'risposta opennutrition vuota',
+    ];
+    return transientMarkers.any(message.contains);
   }
 
   Future<UnifiedIngredientSearchPage> search({
