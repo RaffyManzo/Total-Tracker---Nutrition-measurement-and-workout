@@ -1043,7 +1043,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               DropdownMenuItem<String>(value: 'it', child: Text('Italiano')),
               DropdownMenuItem<String>(
                 value: 'en',
-                child: Text('English - prossimamente'),
+                child: Text('English'),
               ),
             ],
             onChanged: (String? value) {

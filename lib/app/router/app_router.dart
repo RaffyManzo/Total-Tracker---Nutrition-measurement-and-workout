@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../back_navigation.dart';
-
-import '../widgets/primary_bottom_navigation.dart';
-
 import '../../features/nutrition/data/services/open_food_facts_service.dart';
 import '../../features/nutrition/presentation/food_v01_screens.dart';
 import '../../features/nutrition/presentation/ingredient_create_screen.dart';
@@ -126,10 +123,8 @@ GoRouter _createAppRouter() {
           GoRoute(
             path: '/food/ingredients/:id',
             builder: (BuildContext context, GoRouterState state) {
-              return FoodNavigationShell(
-                child: IngredientDetailScreen(
-                  id: state.pathParameters['id']!,
-                ),
+              return IngredientDetailScreen(
+                id: state.pathParameters['id']!,
               );
             },
           ),

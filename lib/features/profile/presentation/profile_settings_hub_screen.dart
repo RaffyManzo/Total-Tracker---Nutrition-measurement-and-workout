@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../l10n/l10n.dart';
 import '../../../shared/widgets/tt_global_nav_fab.dart';
 
 class ProfileSettingsHubScreen extends StatelessWidget {
@@ -8,117 +9,107 @@ class ProfileSettingsHubScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final sections = <_SettingsSectionCardData>[
-      const _SettingsSectionCardData(
+      _SettingsSectionCardData(
         code: 'personal',
-        title: 'Dati personali',
-        subtitle: 'Nome, et\u00E0, sesso, altezza e peso iniziale.',
+        title: l10n.personalData,
+        subtitle: l10n.personalDataSubtitle,
         icon: Icons.badge_outlined,
-        accent: Color(0xFF4F46E5),
+        accent: const Color(0xFF4F46E5),
       ),
-      const _SettingsSectionCardData(
+      _SettingsSectionCardData(
         code: 'target_activity',
-        title: 'Target e attivit\u00E0',
-        subtitle:
-            'Target calorico, sorgenti attivit\u00E0 e dettaglio dei calcoli.',
+        title: l10n.targetAndActivity,
+        subtitle: l10n.targetAndActivitySubtitle,
         icon: Icons.local_fire_department_outlined,
-        accent: Color(0xFFEA580C),
+        accent: const Color(0xFFEA580C),
       ),
-      const _SettingsSectionCardData(
+      _SettingsSectionCardData(
         code: 'meals',
-        title: 'Pasti e macro',
-        subtitle: 'Quote per pasto, macronutrienti, fibre e zuccheri.',
+        title: l10n.mealsAndMacros,
+        subtitle: l10n.mealsAndMacrosSubtitle,
         icon: Icons.restaurant_menu_outlined,
-        accent: Color(0xFF059669),
+        accent: const Color(0xFF059669),
       ),
-      const _SettingsSectionCardData(
-        code: 'opennutrition',
-        title: 'OpenNutrition',
-        subtitle: 'Fonte complementare, stato della migrazione e attribuzioni.',
-        icon: Icons.storage,
-        accent: Color(0xFF0F766E),
-        directRoute: '/settings/opennutrition',
-      ),
-      const _SettingsSectionCardData(
+      _SettingsSectionCardData(
         code: 'navigation',
-        title: 'Navigazione',
-        subtitle: 'Dashboard iniziale e comportamento del pulsante Indietro.',
+        title: l10n.navigation,
+        subtitle: l10n.navigationSubtitle,
         icon: Icons.navigation_outlined,
-        accent: Color(0xFF0F766E),
+        accent: const Color(0xFF0F766E),
         directRoute: '/settings/navigation',
       ),
-      const _SettingsSectionCardData(
+      _SettingsSectionCardData(
         code: 'notifications',
-        title: 'Notifiche',
-        subtitle:
-            'Reminder pasti, peso, misurazioni e operazioni in background.',
+        title: l10n.notifications,
+        subtitle: l10n.notificationsSubtitle,
         icon: Icons.notifications_outlined,
-        accent: Color(0xFFB45309),
+        accent: const Color(0xFFB45309),
         directRoute: '/settings/notifications',
       ),
-      const _SettingsSectionCardData(
+      _SettingsSectionCardData(
         code: 'device_permissions',
-        title: 'Permessi dispositivo',
-        subtitle:
-            'Stato reale di notifiche, fotocamera e ottimizzazione batteria.',
+        title: l10n.devicePermissions,
+        subtitle: l10n.devicePermissionsSubtitle,
         icon: Icons.admin_panel_settings_outlined,
-        accent: Color(0xFF7C3AED),
+        accent: const Color(0xFF7C3AED),
         directRoute: '/settings/device-permissions',
       ),
-      const _SettingsSectionCardData(
+      _SettingsSectionCardData(
         code: 'food_services',
-        title: 'Servizi alimentari online',
-        subtitle: 'Abilita o disabilita Open Food Facts e i relativi pulsanti.',
+        title: l10n.onlineFoodSources,
+        subtitle: l10n.onlineFoodSourcesSubtitle,
         icon: Icons.cloud_outlined,
-        accent: Color(0xFF2563EB),
+        accent: const Color(0xFF2563EB),
         directRoute: '/settings/food-services',
       ),
-      const _SettingsSectionCardData(
+      _SettingsSectionCardData(
         code: 'transfer',
-        title: 'Import / Export',
-        subtitle: 'Archivi .totaltracker, cartella export e import selettivo.',
+        title: l10n.transfer,
+        subtitle: l10n.transferSubtitle,
         icon: Icons.import_export_rounded,
-        accent: Color(0xFF0284C7),
+        accent: const Color(0xFF0284C7),
         directRoute: '/settings/transfer',
       ),
-      const _SettingsSectionCardData(
+      _SettingsSectionCardData(
         code: 'app',
-        title: 'App e dati',
-        subtitle: 'Tema, lingua, versione, directory e dati locali.',
+        title: l10n.appAndData,
+        subtitle: l10n.appAndDataSubtitle,
         icon: Icons.settings_outlined,
-        accent: Color(0xFF7C3AED),
+        accent: const Color(0xFF7C3AED),
       ),
     ];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Impostazioni')),
+      appBar: AppBar(title: Text(l10n.settings)),
       bottomNavigationBar: const TtFoodBottomNavBar(
         activeItem: TtFoodNavItem.settings,
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
-        children: <Widget>[
+        children: [
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: const <Widget>[
+                children: [
                   Text(
-                    'Sezioni impostazioni',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                    l10n.settingsSections,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Ogni scheda apre una pagina dedicata. Le chiavi di navigazione '
-                    'sono codici ASCII stabili e non dipendono dal testo visualizzato.',
-                  ),
+                  const SizedBox(height: 8),
+                  Text(l10n.settingsIntro),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 12),
-          for (final section in sections) ...<Widget>[
+          for (final section in sections) ...[
             _SettingsSectionCard(
               data: section,
               onTap: () {
@@ -129,7 +120,7 @@ class ProfileSettingsHubScreen extends StatelessWidget {
                 }
                 final location = Uri(
                   path: '/settings/section',
-                  queryParameters: <String, String>{'section': section.code},
+                  queryParameters: {'section': section.code},
                 ).toString();
                 context.push(location);
               },
@@ -181,7 +172,7 @@ class _SettingsSectionCard extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(18),
           child: Row(
-            children: <Widget>[
+            children: [
               Container(
                 width: 52,
                 height: 52,
@@ -195,7 +186,7 @@ class _SettingsSectionCard extends StatelessWidget {
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
+                  children: [
                     Text(
                       data.title,
                       style: const TextStyle(

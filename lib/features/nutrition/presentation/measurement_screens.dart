@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_spacing.dart';
+import '../../../l10n/l10n.dart';
 import '../../../core/database/objectbox_providers.dart';
 import '../../../shared/widgets/tt_app_card.dart';
 import '../../../shared/widgets/tt_global_nav_fab.dart';
@@ -1734,7 +1737,7 @@ Widget _field(
   );
 }
 
-class _InteractiveBodyMeasurementsCard extends StatelessWidget {
+class _InteractiveBodyMeasurementsCard extends StatefulWidget {
   const _InteractiveBodyMeasurementsCard({
     required this.data,
     required this.onRegionTap,
@@ -1744,17 +1747,103 @@ class _InteractiveBodyMeasurementsCard extends StatelessWidget {
   final ValueChanged<String> onRegionTap;
 
   @override
+  State<_InteractiveBodyMeasurementsCard> createState() =>
+      _InteractiveBodyMeasurementsCardState();
+}
+
+class _InteractiveBodyMeasurementsCardState
+    extends State<_InteractiveBodyMeasurementsCard> {
+  String? _hoveredCode;
+
+  @override
   Widget build(BuildContext context) {
-    final Set<String> availableCodes = <String>{
-      for (final TapeMeasurementEntryEntity entry in data.latestTapeEntries())
-        if (entry.valueCm != null) entry.measurementCode,
+    final Map<String, double> latestValues = <String, double>{
+      for (final TapeMeasurementEntryEntity entry
+          in widget.data.latestTapeEntries())
+        if (entry.valueCm != null) entry.measurementCode: entry.valueCm!,
     };
+    final Set<String> availableCodes = latestValues.keys.toSet();
+
+    final Widget bodyMap = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 330),
+      child: AspectRatio(
+        aspectRatio: 0.64,
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final Size size = constraints.biggest;
+            return Semantics(
+              image: true,
+              label: context.l10n.bodyMapSemantics,
+              child: MouseRegion(
+                onHover: (PointerHoverEvent event) {
+                  final String? code = _bodyRegionAt(event.localPosition, size);
+                  if (code != _hoveredCode) {
+                    setState(() => _hoveredCode = code);
+                  }
+                },
+                onExit: (_) {
+                  if (_hoveredCode != null) {
+                    setState(() => _hoveredCode = null);
+                  }
+                },
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: (TapUpDetails details) {
+                    final String? code =
+                        _bodyRegionAt(details.localPosition, size);
+                    if (code != null) {
+                      widget.onRegionTap(code);
+                    }
+                  },
+                  child: CustomPaint(
+                    painter: _BodyMeasurementsPainter(
+                      availableCodes: availableCodes,
+                      latestValues: latestValues,
+                      highlightedCode: _hoveredCode,
+                      colorScheme: Theme.of(context).colorScheme,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    final Widget regionList = Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      children: <Widget>[
+        for (final String code in tapeMeasurementCodes)
+          ActionChip(
+            avatar: Icon(
+              latestValues.containsKey(code)
+                  ? Icons.check_circle_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              size: 18,
+              color: latestValues.containsKey(code)
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.outline,
+            ),
+            label: Text(
+              latestValues.containsKey(code)
+                  ? '${_localizedBodyLabel(context, code)} · '
+                      '${latestValues[code]!.toStringAsFixed(1)} cm'
+                  : _localizedBodyLabel(context, code),
+            ),
+            onPressed: () => widget.onRegionTap(code),
+          ),
+      ],
+    );
+
     return TtAppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
+        children: [
           Row(
-            children: <Widget>[
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Icon(
                 Icons.accessibility_new_rounded,
                 color: Theme.of(context).colorScheme.primary,
@@ -1763,13 +1852,13 @@ class _InteractiveBodyMeasurementsCard extends StatelessWidget {
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
+                  children: [
                     Text(
-                      'Corpo interattivo',
+                      context.l10n.interactiveBody,
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     Text(
-                      'Tocca una zona per vedere ultimo valore, variazione e storico.',
+                      context.l10n.interactiveBodySubtitle,
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
@@ -1778,44 +1867,41 @@ class _InteractiveBodyMeasurementsCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.lg),
-          Center(
-            child: SizedBox(
-              width: 260,
-              child: AspectRatio(
-                aspectRatio: 0.58,
-                child: LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints constraints) {
-                    final Size size = constraints.biggest;
-                    return GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTapUp: (TapUpDetails details) {
-                        final String? code =
-                            _bodyRegionAt(details.localPosition, size);
-                        if (code != null) onRegionTap(code);
-                      },
-                      child: CustomPaint(
-                        painter: _BodyMeasurementsPainter(
-                          availableCodes: availableCodes,
-                          colorScheme: Theme.of(context).colorScheme,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              if (constraints.maxWidth >= 720) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(child: Center(child: bodyMap)),
+                    const SizedBox(width: AppSpacing.xl),
+                    Expanded(child: regionList),
+                  ],
+                );
+              }
+              return Column(
+                children: [
+                  Center(child: bodyMap),
+                  const SizedBox(height: AppSpacing.lg),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: regionList,
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: AppSpacing.md),
           Wrap(
             spacing: AppSpacing.sm,
             runSpacing: AppSpacing.xs,
-            children: <Widget>[
+            children: [
               _BodyLegendChip(
-                label: 'Misura disponibile',
+                label: context.l10n.measurementAvailable,
                 color: Theme.of(context).colorScheme.primaryContainer,
               ),
               _BodyLegendChip(
-                label: 'Nessun dato',
+                label: context.l10n.noData,
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
               ),
             ],
@@ -1851,40 +1937,44 @@ class _BodyLegendChip extends StatelessWidget {
 class _BodyMeasurementsPainter extends CustomPainter {
   const _BodyMeasurementsPainter({
     required this.availableCodes,
+    required this.latestValues,
+    required this.highlightedCode,
     required this.colorScheme,
   });
 
   final Set<String> availableCodes;
+  final Map<String, double> latestValues;
+  final String? highlightedCode;
   final ColorScheme colorScheme;
 
   @override
   void paint(Canvas canvas, Size size) {
     final double w = size.width;
     final double h = size.height;
-    final double centerX = w / 2;
+    final double cx = w / 2;
 
     final RRect stage = RRect.fromRectAndRadius(
-      Rect.fromLTWH(w * 0.05, h * 0.025, w * 0.90, h * 0.95),
-      Radius.circular(w * 0.12),
+      Rect.fromLTWH(w * 0.035, h * 0.018, w * 0.93, h * 0.965),
+      Radius.circular(w * 0.09),
     );
     final Paint stagePaint = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
-        colors: <Color>[
-          colorScheme.primaryContainer.withValues(alpha: 0.34),
-          colorScheme.surfaceContainerHighest.withValues(alpha: 0.72),
-          colorScheme.tertiaryContainer.withValues(alpha: 0.24),
+        colors: [
+          colorScheme.primaryContainer.withValues(alpha: 0.30),
+          colorScheme.surfaceContainerHighest.withValues(alpha: 0.64),
+          colorScheme.tertiaryContainer.withValues(alpha: 0.20),
         ],
       ).createShader(stage.outerRect);
     canvas.drawRRect(stage, stagePaint);
 
     final Paint guidePaint = Paint()
-      ..color = colorScheme.outlineVariant.withValues(alpha: 0.52)
+      ..color = colorScheme.outlineVariant.withValues(alpha: 0.38)
       ..strokeWidth = 1;
     canvas.drawLine(
-      Offset(centerX, h * 0.08),
-      Offset(centerX, h * 0.94),
+      Offset(cx, h * 0.07),
+      Offset(cx, h * 0.955),
       guidePaint,
     );
 
@@ -1892,305 +1982,266 @@ class _BodyMeasurementsPainter extends CustomPainter {
       ..shader = LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
-        colors: <Color>[
-          colorScheme.surface,
-          colorScheme.surfaceContainerHighest,
+        colors: [
+          colorScheme.primaryContainer.withValues(alpha: 0.92),
+          colorScheme.secondaryContainer.withValues(alpha: 0.86),
         ],
-      ).createShader(
-        Rect.fromLTWH(w * 0.20, h * 0.08, w * 0.60, h * 0.86),
-      );
-    final Paint bodyOutline = Paint()
-      ..color = colorScheme.outline.withValues(alpha: 0.68)
+      ).createShader(Rect.fromLTWH(w * 0.18, h * 0.07, w * 0.64, h * 0.88));
+    final Paint outline = Paint()
+      ..color = colorScheme.outline.withValues(alpha: 0.78)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.55;
+      ..strokeWidth = 1.7
+      ..strokeJoin = StrokeJoin.round;
 
-    final Path silhouette = Path();
-    silhouette.addOval(
-      Rect.fromCircle(
-        center: Offset(centerX, h * 0.125),
-        radius: w * 0.095,
-      ),
-    );
-    silhouette.addRRect(
-      RRect.fromRectAndRadius(
+    final Path silhouette = Path()
+      ..addOval(
         Rect.fromCenter(
-          center: Offset(centerX, h * 0.205),
-          width: w * 0.085,
-          height: h * 0.065,
+          center: Offset(cx, h * 0.105),
+          width: w * 0.19,
+          height: h * 0.12,
         ),
-        Radius.circular(w * 0.03),
-      ),
-    );
+      )
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset(cx, h * 0.185),
+            width: w * 0.09,
+            height: h * 0.07,
+          ),
+          Radius.circular(w * 0.025),
+        ),
+      );
 
     final Path torso = Path()
-      ..moveTo(w * 0.36, h * 0.235)
-      ..cubicTo(w * 0.31, h * 0.30, w * 0.33, h * 0.42, w * 0.36, h * 0.50)
-      ..cubicTo(w * 0.38, h * 0.57, w * 0.40, h * 0.62, w * 0.43, h * 0.66)
-      ..quadraticBezierTo(centerX, h * 0.70, w * 0.57, h * 0.66)
-      ..cubicTo(w * 0.60, h * 0.62, w * 0.62, h * 0.57, w * 0.64, h * 0.50)
-      ..cubicTo(w * 0.67, h * 0.42, w * 0.69, h * 0.30, w * 0.64, h * 0.235)
-      ..quadraticBezierTo(centerX, h * 0.195, w * 0.36, h * 0.235)
+      ..moveTo(w * 0.34, h * 0.205)
+      ..cubicTo(w * 0.29, h * 0.25, w * 0.31, h * 0.34, w * 0.35, h * 0.42)
+      ..cubicTo(w * 0.38, h * 0.49, w * 0.37, h * 0.57, w * 0.35, h * 0.62)
+      ..quadraticBezierTo(cx, h * 0.675, w * 0.65, h * 0.62)
+      ..cubicTo(w * 0.63, h * 0.57, w * 0.62, h * 0.49, w * 0.65, h * 0.42)
+      ..cubicTo(w * 0.69, h * 0.34, w * 0.71, h * 0.25, w * 0.66, h * 0.205)
+      ..quadraticBezierTo(cx, h * 0.17, w * 0.34, h * 0.205)
       ..close();
     silhouette.addPath(torso, Offset.zero);
 
-    _addLimb(
-        silhouette, Rect.fromLTWH(w * 0.235, h * 0.255, w * 0.085, h * 0.235));
-    _addLimb(
-        silhouette, Rect.fromLTWH(w * 0.680, h * 0.255, w * 0.085, h * 0.235));
-    _addLimb(
-        silhouette, Rect.fromLTWH(w * 0.225, h * 0.455, w * 0.075, h * 0.205));
-    _addLimb(
-        silhouette, Rect.fromLTWH(w * 0.700, h * 0.455, w * 0.075, h * 0.205));
-    _addLimb(
-        silhouette, Rect.fromLTWH(w * 0.405, h * 0.655, w * 0.078, h * 0.225));
-    _addLimb(
-        silhouette, Rect.fromLTWH(w * 0.517, h * 0.655, w * 0.078, h * 0.225));
-    _addLimb(
-        silhouette, Rect.fromLTWH(w * 0.410, h * 0.845, w * 0.068, h * 0.105));
-    _addLimb(
-        silhouette, Rect.fromLTWH(w * 0.522, h * 0.845, w * 0.068, h * 0.105));
+    silhouette.addPath(_leftArmPath(w, h), Offset.zero);
+    silhouette.addPath(_rightArmPath(w, h), Offset.zero);
+    silhouette.addPath(_leftLegPath(w, h), Offset.zero);
+    silhouette.addPath(_rightLegPath(w, h), Offset.zero);
 
     canvas.drawShadow(
       silhouette,
-      colorScheme.shadow.withValues(alpha: 0.22),
+      colorScheme.shadow.withValues(alpha: 0.24),
       12,
       false,
     );
     canvas.drawPath(silhouette, bodyFill);
-    canvas.drawPath(silhouette, bodyOutline);
+    canvas.drawPath(silhouette, outline);
 
-    _drawHorizontalTape(
-      canvas,
-      y: h * 0.205,
-      left: w * 0.43,
-      right: w * 0.57,
-      aliases: const <String>['neck', 'neck_cm', 'collo'],
-    );
-    _drawHorizontalTape(
-      canvas,
-      y: h * 0.285,
-      left: w * 0.33,
-      right: w * 0.67,
-      aliases: const <String>['shoulders', 'shoulders_cm', 'spalle'],
-    );
-    _drawHorizontalTape(
-      canvas,
-      y: h * 0.345,
-      left: w * 0.345,
-      right: w * 0.655,
-      aliases: const <String>['chest', 'chest_cm', 'torace', 'petto'],
-    );
-    _drawHorizontalTape(
-      canvas,
-      y: h * 0.455,
-      left: w * 0.39,
-      right: w * 0.61,
-      aliases: const <String>['waist', 'waist_cm', 'vita'],
-    );
-    _drawHorizontalTape(
-      canvas,
-      y: h * 0.515,
-      left: w * 0.385,
-      right: w * 0.615,
-      aliases: const <String>['abdomen', 'abdomen_cm', 'addome'],
-    );
-    _drawHorizontalTape(
-      canvas,
-      y: h * 0.615,
-      left: w * 0.365,
-      right: w * 0.635,
-      aliases: const <String>['hips', 'hips_cm', 'hip', 'fianchi'],
-    );
+    final Paint shortsPaint = Paint()
+      ..color = colorScheme.secondary.withValues(alpha: 0.84);
+    final Path shorts = Path()
+      ..moveTo(w * 0.35, h * 0.585)
+      ..lineTo(w * 0.65, h * 0.585)
+      ..lineTo(w * 0.61, h * 0.69)
+      ..lineTo(cx, h * 0.665)
+      ..lineTo(w * 0.39, h * 0.69)
+      ..close();
+    canvas.drawPath(shorts, shortsPaint);
+    canvas.drawPath(shorts, outline);
 
-    _drawVerticalTape(
-      canvas,
-      x: w * 0.275,
-      top: h * 0.30,
-      bottom: h * 0.445,
-      aliases: const <String>[
-        'left_arm',
-        'left_arm_cm',
-        'leftArm',
-        'braccio_sx'
-      ],
-    );
-    _drawVerticalTape(
-      canvas,
-      x: w * 0.725,
-      top: h * 0.30,
-      bottom: h * 0.445,
-      aliases: const <String>[
-        'right_arm',
-        'right_arm_cm',
-        'rightArm',
-        'braccio_dx'
-      ],
-    );
-    _drawVerticalTape(
-      canvas,
-      x: w * 0.262,
-      top: h * 0.50,
-      bottom: h * 0.625,
-      aliases: const <String>[
-        'left_forearm',
-        'left_forearm_cm',
-        'leftForearm',
-        'avambraccio_sx'
-      ],
-    );
-    _drawVerticalTape(
-      canvas,
-      x: w * 0.738,
-      top: h * 0.50,
-      bottom: h * 0.625,
-      aliases: const <String>[
-        'right_forearm',
-        'right_forearm_cm',
-        'rightForearm',
-        'avambraccio_dx'
-      ],
-    );
-    _drawVerticalTape(
-      canvas,
-      x: w * 0.445,
-      top: h * 0.705,
-      bottom: h * 0.825,
-      aliases: const <String>[
-        'left_thigh',
-        'left_thigh_cm',
-        'leftThigh',
-        'coscia_sx'
-      ],
-    );
-    _drawVerticalTape(
-      canvas,
-      x: w * 0.555,
-      top: h * 0.705,
-      bottom: h * 0.825,
-      aliases: const <String>[
-        'right_thigh',
-        'right_thigh_cm',
-        'rightThigh',
-        'coscia_dx'
-      ],
-    );
-    _drawVerticalTape(
-      canvas,
-      x: w * 0.445,
-      top: h * 0.865,
-      bottom: h * 0.935,
-      aliases: const <String>[
-        'left_calf',
-        'left_calf_cm',
-        'leftCalf',
-        'polpaccio_sx'
-      ],
-    );
-    _drawVerticalTape(
-      canvas,
-      x: w * 0.555,
-      top: h * 0.865,
-      bottom: h * 0.935,
-      aliases: const <String>[
-        'right_calf',
-        'right_calf_cm',
-        'rightCalf',
-        'polpaccio_dx'
-      ],
-    );
-  }
-
-  void _addLimb(Path path, Rect rect) {
-    path.addRRect(
-      RRect.fromRectAndRadius(
-        rect,
-        Radius.circular(rect.width * 0.48),
+    final Paint anatomy = Paint()
+      ..color = colorScheme.outline.withValues(alpha: 0.34)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.15
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCenter(
+        center: Offset(w * 0.43, h * 0.31),
+        width: w * 0.15,
+        height: h * 0.07,
       ),
+      0.15,
+      2.6,
+      false,
+      anatomy,
     );
-  }
-
-  bool _matches(List<String> aliases) {
-    for (final String alias in aliases) {
-      if (availableCodes.contains(alias) ||
-          availableCodes.contains(alias.toLowerCase()) ||
-          availableCodes.contains(alias.toUpperCase())) {
-        return true;
-      }
+    canvas.drawArc(
+      Rect.fromCenter(
+        center: Offset(w * 0.57, h * 0.31),
+        width: w * 0.15,
+        height: h * 0.07,
+      ),
+      0.4,
+      2.6,
+      false,
+      anatomy,
+    );
+    for (final double y in <double>[0.405, 0.455, 0.505]) {
+      canvas.drawLine(
+        Offset(w * 0.43, h * y),
+        Offset(w * 0.57, h * y),
+        anatomy,
+      );
     }
-    return false;
+
+    _drawBand(canvas, 'neck_cm', w * 0.445, w * 0.555, h * 0.185);
+    _drawBand(canvas, 'shoulders_cm', w * 0.31, w * 0.69, h * 0.235);
+    _drawBand(canvas, 'chest_cm', w * 0.33, w * 0.67, h * 0.325);
+    _drawBand(canvas, 'waist_cm', w * 0.385, w * 0.615, h * 0.455);
+    _drawBand(canvas, 'abdomen_cm', w * 0.37, w * 0.63, h * 0.515);
+    _drawBand(canvas, 'hips_cm', w * 0.345, w * 0.655, h * 0.585);
+
+    _drawBand(canvas, 'left_arm_cm', w * 0.235, w * 0.325, h * 0.335);
+    _drawBand(canvas, 'right_arm_cm', w * 0.675, w * 0.765, h * 0.335);
+    _drawBand(canvas, 'left_forearm_cm', w * 0.205, w * 0.285, h * 0.505);
+    _drawBand(canvas, 'right_forearm_cm', w * 0.715, w * 0.795, h * 0.505);
+
+    _drawBand(canvas, 'left_thigh_cm', w * 0.37, w * 0.485, h * 0.735);
+    _drawBand(canvas, 'right_thigh_cm', w * 0.515, w * 0.63, h * 0.735);
+    _drawBand(canvas, 'left_calf_cm', w * 0.39, w * 0.475, h * 0.865);
+    _drawBand(canvas, 'right_calf_cm', w * 0.525, w * 0.61, h * 0.865);
+
+    if (highlightedCode != null && latestValues[highlightedCode] != null) {
+      _drawValueCallout(
+          canvas, size, highlightedCode!, latestValues[highlightedCode]!);
+    }
   }
 
-  void _drawHorizontalTape(
-    Canvas canvas, {
-    required double y,
-    required double left,
-    required double right,
-    required List<String> aliases,
-  }) {
-    final bool active = _matches(aliases);
-    final Color color = active
-        ? colorScheme.primary
-        : colorScheme.outline.withValues(alpha: 0.44);
+  Path _leftArmPath(double w, double h) {
+    return Path()
+      ..moveTo(w * 0.34, h * 0.22)
+      ..cubicTo(w * 0.29, h * 0.25, w * 0.26, h * 0.34, w * 0.245, h * 0.43)
+      ..cubicTo(w * 0.225, h * 0.51, w * 0.20, h * 0.59, w * 0.215, h * 0.64)
+      ..cubicTo(w * 0.225, h * 0.675, w * 0.265, h * 0.67, w * 0.275, h * 0.63)
+      ..cubicTo(w * 0.29, h * 0.54, w * 0.30, h * 0.46, w * 0.325, h * 0.38)
+      ..cubicTo(w * 0.35, h * 0.30, w * 0.38, h * 0.245, w * 0.40, h * 0.22)
+      ..close();
+  }
+
+  Path _rightArmPath(double w, double h) {
+    return Path()
+      ..moveTo(w * 0.66, h * 0.22)
+      ..cubicTo(w * 0.71, h * 0.25, w * 0.74, h * 0.34, w * 0.755, h * 0.43)
+      ..cubicTo(w * 0.775, h * 0.51, w * 0.80, h * 0.59, w * 0.785, h * 0.64)
+      ..cubicTo(w * 0.775, h * 0.675, w * 0.735, h * 0.67, w * 0.725, h * 0.63)
+      ..cubicTo(w * 0.71, h * 0.54, w * 0.70, h * 0.46, w * 0.675, h * 0.38)
+      ..cubicTo(w * 0.65, h * 0.30, w * 0.62, h * 0.245, w * 0.60, h * 0.22)
+      ..close();
+  }
+
+  Path _leftLegPath(double w, double h) {
+    return Path()
+      ..moveTo(w * 0.365, h * 0.61)
+      ..cubicTo(w * 0.355, h * 0.71, w * 0.37, h * 0.80, w * 0.385, h * 0.89)
+      ..lineTo(w * 0.375, h * 0.945)
+      ..quadraticBezierTo(w * 0.41, h * 0.97, w * 0.465, h * 0.945)
+      ..cubicTo(w * 0.46, h * 0.84, w * 0.475, h * 0.75, w * 0.49, h * 0.655)
+      ..lineTo(w * 0.50, h * 0.625)
+      ..close();
+  }
+
+  Path _rightLegPath(double w, double h) {
+    return Path()
+      ..moveTo(w * 0.635, h * 0.61)
+      ..cubicTo(w * 0.645, h * 0.71, w * 0.63, h * 0.80, w * 0.615, h * 0.89)
+      ..lineTo(w * 0.625, h * 0.945)
+      ..quadraticBezierTo(w * 0.59, h * 0.97, w * 0.535, h * 0.945)
+      ..cubicTo(w * 0.54, h * 0.84, w * 0.525, h * 0.75, w * 0.51, h * 0.655)
+      ..lineTo(w * 0.50, h * 0.625)
+      ..close();
+  }
+
+  void _drawBand(
+    Canvas canvas,
+    String code,
+    double left,
+    double right,
+    double y,
+  ) {
+    final bool available = availableCodes.contains(code);
+    final bool highlighted = highlightedCode == code;
+    final Color color = highlighted
+        ? colorScheme.tertiary
+        : available
+            ? colorScheme.primary
+            : colorScheme.outline.withValues(alpha: 0.42);
+    final Paint glow = Paint()
+      ..color = color.withValues(
+          alpha: highlighted
+              ? 0.25
+              : available
+                  ? 0.13
+                  : 0.04)
+      ..strokeWidth = highlighted
+          ? 12
+          : available
+              ? 8
+              : 5
+      ..strokeCap = StrokeCap.round;
     final Paint line = Paint()
       ..color = color
-      ..strokeWidth = active ? 3.1 : 1.45
+      ..strokeWidth = highlighted
+          ? 4.2
+          : available
+              ? 3.0
+              : 1.35
       ..strokeCap = StrokeCap.round;
-    final Paint glow = Paint()
-      ..color = color.withValues(alpha: active ? 0.16 : 0.06)
-      ..strokeWidth = active ? 9 : 5
-      ..strokeCap = StrokeCap.round;
-
     canvas.drawLine(Offset(left, y), Offset(right, y), glow);
     canvas.drawLine(Offset(left, y), Offset(right, y), line);
-    _drawEndCaps(canvas, Offset(left, y), Offset(right, y), color, active);
+    canvas.drawCircle(
+        Offset(left, y), highlighted ? 4.8 : 3.2, Paint()..color = color);
+    canvas.drawCircle(
+        Offset(right, y), highlighted ? 4.8 : 3.2, Paint()..color = color);
   }
 
-  void _drawVerticalTape(
-    Canvas canvas, {
-    required double x,
-    required double top,
-    required double bottom,
-    required List<String> aliases,
-  }) {
-    final bool active = _matches(aliases);
-    final Color color = active
-        ? colorScheme.primary
-        : colorScheme.outline.withValues(alpha: 0.44);
-    final Paint line = Paint()
-      ..color = color
-      ..strokeWidth = active ? 3.1 : 1.45
-      ..strokeCap = StrokeCap.round;
-    final Paint glow = Paint()
-      ..color = color.withValues(alpha: active ? 0.16 : 0.06)
-      ..strokeWidth = active ? 9 : 5
-      ..strokeCap = StrokeCap.round;
-
-    canvas.drawLine(Offset(x, top), Offset(x, bottom), glow);
-    canvas.drawLine(Offset(x, top), Offset(x, bottom), line);
-    _drawEndCaps(canvas, Offset(x, top), Offset(x, bottom), color, active);
-  }
-
-  void _drawEndCaps(
+  void _drawValueCallout(
     Canvas canvas,
-    Offset start,
-    Offset end,
-    Color color,
-    bool active,
+    Size size,
+    String code,
+    double value,
   ) {
-    final Paint dot = Paint()..color = color;
-    final double radius = active ? 4.2 : 2.8;
-    canvas.drawCircle(start, radius, dot);
-    canvas.drawCircle(end, radius, dot);
-    if (active) {
-      final Paint inner = Paint()..color = colorScheme.onPrimary;
-      canvas.drawCircle(start, 1.35, inner);
-      canvas.drawCircle(end, 1.35, inner);
+    _BodyRegionDefinition? region;
+    for (final _BodyRegionDefinition item in _bodyRegions) {
+      if (item.code == code) {
+        region = item;
+        break;
+      }
     }
+    if (region == null) {
+      return;
+    }
+    final Rect rect = region.rectFor(size);
+    final bool placeLeft = rect.center.dx < size.width / 2;
+    final Offset anchor = placeLeft ? rect.centerLeft : rect.centerRight;
+    final double targetX = placeLeft ? size.width * 0.075 : size.width * 0.925;
+    final Offset target = Offset(targetX, anchor.dy);
+    final Paint callout = Paint()
+      ..color = colorScheme.tertiary
+      ..strokeWidth = 1.8
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(anchor, target, callout);
+
+    final TextPainter painter = TextPainter(
+      text: TextSpan(
+        text: '${value.toStringAsFixed(1)} cm',
+        style: TextStyle(
+          color: colorScheme.onTertiaryContainer,
+          backgroundColor: colorScheme.tertiaryContainer,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final double x = placeLeft ? target.dx : target.dx - painter.width;
+    painter.paint(canvas, Offset(x, target.dy - painter.height - 3));
   }
 
   @override
   bool shouldRepaint(covariant _BodyMeasurementsPainter oldDelegate) {
-    return oldDelegate.availableCodes != availableCodes ||
+    return oldDelegate.highlightedCode != highlightedCode ||
+        !setEquals(oldDelegate.availableCodes, availableCodes) ||
+        !mapEquals(oldDelegate.latestValues, latestValues) ||
         oldDelegate.colorScheme != colorScheme;
   }
 }
@@ -2219,29 +2270,50 @@ class _BodyRegionDefinition {
 }
 
 const List<_BodyRegionDefinition> _bodyRegions = <_BodyRegionDefinition>[
-  _BodyRegionDefinition('neck_cm', 0.43, 0.13, 0.57, 0.18),
-  _BodyRegionDefinition('shoulders_cm', 0.25, 0.18, 0.75, 0.24),
-  _BodyRegionDefinition('chest_cm', 0.33, 0.24, 0.67, 0.34),
-  _BodyRegionDefinition('waist_cm', 0.37, 0.34, 0.63, 0.42),
-  _BodyRegionDefinition('abdomen_cm', 0.35, 0.42, 0.65, 0.50),
-  _BodyRegionDefinition('hips_cm', 0.31, 0.50, 0.69, 0.58),
-  _BodyRegionDefinition('left_arm_cm', 0.18, 0.20, 0.30, 0.40),
-  _BodyRegionDefinition('right_arm_cm', 0.70, 0.20, 0.82, 0.40),
-  _BodyRegionDefinition('left_forearm_cm', 0.12, 0.39, 0.24, 0.58),
-  _BodyRegionDefinition('right_forearm_cm', 0.76, 0.39, 0.88, 0.58),
-  _BodyRegionDefinition('left_thigh_cm', 0.31, 0.58, 0.47, 0.78),
-  _BodyRegionDefinition('right_thigh_cm', 0.53, 0.58, 0.69, 0.78),
-  _BodyRegionDefinition('left_calf_cm', 0.33, 0.78, 0.46, 0.97),
-  _BodyRegionDefinition('right_calf_cm', 0.54, 0.78, 0.67, 0.97),
+  _BodyRegionDefinition('neck_cm', 0.42, 0.14, 0.58, 0.21),
+  _BodyRegionDefinition('shoulders_cm', 0.27, 0.19, 0.73, 0.27),
+  _BodyRegionDefinition('chest_cm', 0.31, 0.27, 0.69, 0.37),
+  _BodyRegionDefinition('waist_cm', 0.35, 0.39, 0.65, 0.48),
+  _BodyRegionDefinition('abdomen_cm', 0.34, 0.47, 0.66, 0.55),
+  _BodyRegionDefinition('hips_cm', 0.31, 0.54, 0.69, 0.64),
+  _BodyRegionDefinition('left_arm_cm', 0.20, 0.25, 0.35, 0.42),
+  _BodyRegionDefinition('right_arm_cm', 0.65, 0.25, 0.80, 0.42),
+  _BodyRegionDefinition('left_forearm_cm', 0.17, 0.42, 0.31, 0.62),
+  _BodyRegionDefinition('right_forearm_cm', 0.69, 0.42, 0.83, 0.62),
+  _BodyRegionDefinition('left_thigh_cm', 0.34, 0.65, 0.50, 0.80),
+  _BodyRegionDefinition('right_thigh_cm', 0.50, 0.65, 0.66, 0.80),
+  _BodyRegionDefinition('left_calf_cm', 0.35, 0.80, 0.49, 0.96),
+  _BodyRegionDefinition('right_calf_cm', 0.51, 0.80, 0.65, 0.96),
 ];
 
 String? _bodyRegionAt(Offset position, Size size) {
   for (final _BodyRegionDefinition region in _bodyRegions.reversed) {
-    if (region.rectFor(size).inflate(5).contains(position)) {
+    if (region.rectFor(size).inflate(7).contains(position)) {
       return region.code;
     }
   }
   return null;
+}
+
+String _localizedBodyLabel(BuildContext context, String code) {
+  final l10n = context.l10n;
+  return switch (code) {
+    'neck_cm' => l10n.neck,
+    'shoulders_cm' => l10n.shoulders,
+    'chest_cm' => l10n.chest,
+    'waist_cm' => l10n.waist,
+    'abdomen_cm' => l10n.abdomen,
+    'hips_cm' => l10n.hips,
+    'left_arm_cm' => l10n.leftArm,
+    'right_arm_cm' => l10n.rightArm,
+    'left_forearm_cm' => l10n.leftForearm,
+    'right_forearm_cm' => l10n.rightForearm,
+    'left_thigh_cm' => l10n.leftThigh,
+    'right_thigh_cm' => l10n.rightThigh,
+    'left_calf_cm' => l10n.leftCalf,
+    'right_calf_cm' => l10n.rightCalf,
+    _ => code,
+  };
 }
 
 class _BodyMeasurementPoint {
