@@ -5,13 +5,17 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/background/background_tasks.dart';
 import '../../../core/notifications/local_notification_service.dart';
 import '../../../core/platform/device_permission_service.dart';
 import '../../../core/preferences/food_service_preferences.dart';
+import '../data/config/open_nutrition_rollout_config.dart';
 import '../data/providers/open_nutrition_providers.dart';
 import '../data/services/open_nutrition_gateway_service.dart';
+import '../data/services/open_nutrition_static_index_service.dart';
+import '../data/services/open_nutrition_translation_service.dart';
 
 class OpenNutritionSettingsScreen extends ConsumerStatefulWidget {
   const OpenNutritionSettingsScreen({super.key});
@@ -34,11 +38,13 @@ class _OpenNutritionSettingsScreenState
   @override
   void initState() {
     super.initState();
-    _refreshJob();
-    _poller = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) => _refreshJob(),
-    );
+    if (OpenNutritionRolloutConfig.legacyLocalCatalogEnabled) {
+      _refreshJob();
+      _poller = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => _refreshJob(),
+      );
+    }
   }
 
   @override
@@ -48,6 +54,7 @@ class _OpenNutritionSettingsScreenState
   }
 
   Future<void> _refreshJob() async {
+    if (!OpenNutritionRolloutConfig.legacyLocalCatalogEnabled) return;
     final OpenNutritionBackgroundJobState value =
         await OpenNutritionBackgroundJobs.reconcileCachedState();
     if (!mounted) return;
@@ -455,17 +462,35 @@ class _OpenNutritionSettingsScreenState
 
   @override
   Widget build(BuildContext context) {
+    final bool legacyCatalogEnabled =
+        OpenNutritionRolloutConfig.legacyLocalCatalogEnabled;
+    final bool legacyGatewayEnabled =
+        OpenNutritionRolloutConfig.legacyGatewayEnabled;
     final OpenNutritionBackgroundJobState? job = _job;
-    final bool busy = _startingJob || (job?.isRunning ?? false);
-    final state = busy ? null : ref.watch(openNutritionCatalogStateProvider);
-    final count = busy ? null : ref.watch(openNutritionCatalogCountProvider);
-    final AsyncValue<bool> gatewayConfigured =
-        ref.watch(openNutritionGatewayConfiguredProvider);
+    final bool busy =
+        legacyCatalogEnabled && (_startingJob || (job?.isRunning ?? false));
+    final state = legacyCatalogEnabled && !busy
+        ? ref.watch(openNutritionCatalogStateProvider)
+        : null;
+    final count = legacyCatalogEnabled && !busy
+        ? ref.watch(openNutritionCatalogCountProvider)
+        : null;
+    final AsyncValue<bool>? gatewayConfigured = legacyGatewayEnabled
+        ? ref.watch(openNutritionGatewayConfiguredProvider)
+        : null;
+    final AsyncValue<OpenNutritionStaticIndexStatus>? staticIndexStatus =
+        OpenNutritionRolloutConfig.staticIndexConfigured
+            ? ref.watch(openNutritionStaticIndexStatusProvider)
+            : null;
+    final AsyncValue<OpenNutritionTranslationStatus>? translationStatus =
+        OpenNutritionRolloutConfig.staticIndexConfigured
+            ? ref.watch(openNutritionTranslationStatusProvider)
+            : null;
     final FoodServicePreferencesController preferences =
         ref.watch(foodServicePreferencesProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Catalogo OpenNutrition')),
+      appBar: AppBar(title: const Text('OpenNutrition')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
@@ -494,8 +519,9 @@ class _OpenNutritionSettingsScreenState
             child: SwitchListTile(
               title: const Text('Abilita ricerca OpenNutrition'),
               subtitle: const Text(
-                'Usa il catalogo locale; se assente, usa il gateway '
-                'online configurato e verificato.',
+                'Usa OpenNutrition come fonte complementare. Gli alimenti '
+                'già importati restano disponibili anche se la ricerca è '
+                'disabilitata.',
               ),
               value: preferences.openNutritionSearchEnabled,
               onChanged: preferences.loading
@@ -505,188 +531,331 @@ class _OpenNutritionSettingsScreenState
           ),
           const SizedBox(height: 12),
           Card(
-            child: Column(
-              children: <Widget>[
-                SwitchListTile(
-                  title: const Text('Ricerca remota sicura'),
-                  subtitle: const Text(
-                    'Fallback online quando il catalogo locale non è installato.',
-                  ),
-                  value: preferences.openNutritionRemoteEnabled,
-                  onChanged: preferences.loading
-                      ? null
-                      : (bool value) async {
-                          await preferences
-                              .setOpenNutritionRemoteEnabled(value);
+            child: staticIndexStatus == null
+                ? const ListTile(
+                    leading: Icon(Icons.cloud_off_outlined),
+                    title: Text('Indice statico non configurato'),
+                    subtitle: Text(
+                      'Il client sicuro è presente, ma la build non contiene '
+                      'ancora URL CDN e hash del manifest. Catalogo completo e '
+                      'gateway legacy restano disabilitati.',
+                    ),
+                  )
+                : staticIndexStatus.when(
+                    data: (OpenNutritionStaticIndexStatus status) {
+                      return ListTile(
+                        leading: const Icon(Icons.cloud_done_outlined),
+                        title: Text(
+                          'Indice statico ${status.datasetVersion}',
+                        ),
+                        subtitle: Text(
+                          '${status.recordCount} record · '
+                          '${status.shardCount} shard · '
+                          '${status.cachedShardCount} shard in cache. '
+                          'Manifest e shard sono verificati tramite SHA-256.',
+                        ),
+                        trailing: IconButton(
+                          tooltip: 'Aggiorna stato',
+                          onPressed: () {
+                            ref.invalidate(
+                              openNutritionStaticIndexStatusProvider,
+                            );
+                          },
+                          icon: const Icon(Icons.refresh),
+                        ),
+                      );
+                    },
+                    loading: () => const ListTile(
+                      leading: SizedBox.square(
+                        dimension: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      title: Text('Verifica indice statico…'),
+                      subtitle: Text(
+                        'Controllo manifest, schema e cache locale.',
+                      ),
+                    ),
+                    error: (Object error, StackTrace _) => ListTile(
+                      leading: const Icon(Icons.cloud_off_outlined),
+                      title: const Text('Indice statico non disponibile'),
+                      subtitle: Text(error.toString()),
+                      trailing: IconButton(
+                        tooltip: 'Riprova',
+                        onPressed: () {
                           ref.invalidate(
-                            openNutritionGatewayConfiguredProvider,
+                            openNutritionStaticIndexStatusProvider,
                           );
                         },
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: Icon(
-                    gatewayConfigured.asData?.value == true
-                        ? Icons.verified_user
-                        : Icons.gpp_maybe_outlined,
-                  ),
-                  title: Text(
-                    gatewayConfigured.when(
-                      data: (bool configured) => configured
-                          ? 'Gateway configurato'
-                          : 'Gateway non configurato',
-                      loading: () => 'Verifica configurazione…',
-                      error: (_, __) => 'Configurazione gateway non valida',
-                    ),
-                  ),
-                  subtitle: const Text(
-                    'HTTPS obbligatorio, nessun redirect, risposta limitata '
-                    'e firmata Ed25519, request ID e scadenza verificati.',
-                  ),
-                ),
-                if (OpenNutritionGatewayConfig.allowsRuntimeConfiguration)
-                  ListTile(
-                    leading: const Icon(Icons.tune_outlined),
-                    title: const Text('Configura gateway'),
-                    subtitle: const Text(
-                      'URL HTTPS, chiave pubblica Ed25519 e identificativo chiave.',
-                    ),
-                    onTap: _configureGateway,
-                  ),
-                ListTile(
-                  enabled: gatewayConfigured.asData?.value == true &&
-                      !_testingGateway,
-                  leading: _testingGateway
-                      ? const SizedBox.square(
-                          dimension: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.security_outlined),
-                  title: const Text('Testa firma e connessione'),
-                  onTap: _testGateway,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: state == null
-                  ? const Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          'Database catalogo riservato al worker',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        SizedBox(height: 8),
-                        LinearProgressIndicator(),
-                        SizedBox(height: 8),
-                        Text(
-                          'Durante download e importazione la UI non riapre '
-                          'ObjectBox, evitando conflitti tra isolate.',
-                        ),
-                      ],
-                    )
-                  : state.when(
-                      data: (value) => Text(
-                        'Dataset locale: '
-                        '${value.installedVersion.isEmpty ? "non installato" : value.installedVersion}\n'
-                        'Stato: ${value.importStatusCode}\n'
-                        'Record attivi: '
-                        '${count?.asData?.value ?? value.importedRows}',
+                        icon: const Icon(Icons.refresh),
                       ),
-                      loading: () => const LinearProgressIndicator(),
-                      error: (Object error, StackTrace stack) =>
-                          SelectableText(error.toString()),
                     ),
-            ),
+                  ),
           ),
-          const SizedBox(height: 12),
-          CheckboxListTile(
-            value: _licenseAccepted,
-            onChanged: busy || _resetting
-                ? null
-                : (bool? value) {
-                    setState(
-                      () => _licenseAccepted = value ?? false,
-                    );
-                  },
-            title: const Text(
-              'Accetto licenze e attribuzioni del dataset',
-            ),
-            subtitle: const Text('ODbL 1.0 / modified DbCL 1.0.'),
-          ),
-          FilledButton.icon(
-            onPressed:
-                busy || _resetting || !_licenseAccepted ? null : _startDownload,
-            icon: const Icon(Icons.download_outlined),
-            label: const Text('Scarica e importa in background'),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: busy || _resetting || !_licenseAccepted
-                ? null
-                : _startLocalImport,
-            icon: const Icon(Icons.folder_zip_outlined),
-            label: const Text('Importa ZIP locale in background'),
-          ),
-          if (job != null && job.status != 'idle') ...<Widget>[
+          if (translationStatus != null) ...<Widget>[
             const SizedBox(height: 12),
             Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      '${job.percent}% · '
-                      '${OpenNutritionBackgroundJobs.stageLabel(job.stage)}',
-                      style: Theme.of(context).textTheme.titleMedium,
+              child: translationStatus.when(
+                data: (OpenNutritionTranslationStatus status) {
+                  final String subtitle;
+                  if (!status.platformSupported) {
+                    subtitle =
+                        'Traduzione non disponibile su questa piattaforma.';
+                  } else if (!status.localeSupported) {
+                    subtitle =
+                        'Lingua ${status.localeCode} non supportata da ML Kit.';
+                  } else if (!status.translationRequired) {
+                    subtitle =
+                        'Lingua dispositivo inglese: traduzione non necessaria.';
+                  } else if (status.ready) {
+                    subtitle =
+                        'Modelli inglese e ${status.localeCode} disponibili. '
+                        'Query e nomi vengono tradotti sul dispositivo.';
+                  } else {
+                    subtitle =
+                        'I modelli inglese e ${status.localeCode} verranno '
+                        'scaricati automaticamente al primo utilizzo, solo '
+                        'tramite Wi-Fi.';
+                  }
+
+                  return ListTile(
+                    leading: Icon(
+                      status.ready
+                          ? Icons.translate
+                          : Icons.downloading_outlined,
                     ),
-                    const SizedBox(height: 8),
-                    LinearProgressIndicator(
-                      value: job.fraction?.clamp(0.0, 1.0).toDouble(),
+                    title: const Text('Traduzione automatica on-device'),
+                    subtitle: Text(
+                      '$subtitle Le traduzioni automatiche possono contenere '
+                      'errori e non hanno garanzie di accuratezza.',
                     ),
-                    const SizedBox(height: 8),
-                    SelectableText(job.message),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Stato: ${job.status}\n'
-                      'Versione app del job: '
-                      '${job.appVersion.isEmpty ? "—" : job.appVersion}\n'
-                      'Accodato: ${_formatEpoch(job.queuedAtEpochMs)}\n'
-                      'Avviato: ${_formatEpoch(job.startedAtEpochMs)}\n'
-                      'Ultimo aggiornamento: '
-                      '${_formatEpoch(job.heartbeatAtEpochMs)}\n'
-                      'Letti ${job.parsedRows} · '
-                      'Importati ${job.importedRows} · '
-                      'Scartati ${job.skippedRows} · '
-                      'Falliti ${job.failedRows}',
+                    trailing: IconButton(
+                      tooltip: 'Informazioni su Google Translate',
+                      onPressed: () {
+                        launchUrl(
+                          Uri.parse('https://translate.google.com/'),
+                          mode: LaunchMode.externalApplication,
+                        );
+                      },
+                      icon: const Icon(Icons.open_in_new),
                     ),
-                  ],
+                  );
+                },
+                loading: () => const ListTile(
+                  leading: SizedBox.square(
+                    dimension: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  title: Text('Verifica modelli di traduzione…'),
+                  subtitle: Text(
+                    'La traduzione dei testi avviene sul dispositivo.',
+                  ),
+                ),
+                error: (Object error, StackTrace _) => ListTile(
+                  leading: const Icon(Icons.translate_outlined),
+                  title: const Text('Stato traduzione non disponibile'),
+                  subtitle: Text(error.toString()),
+                  trailing: IconButton(
+                    tooltip: 'Riprova',
+                    onPressed: () {
+                      ref.invalidate(
+                        openNutritionTranslationStatusProvider,
+                      );
+                    },
+                    icon: const Icon(Icons.refresh),
+                  ),
                 ),
               ),
             ),
           ],
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _resetting ? null : _resetPendingOperation,
-            icon: _resetting
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.cleaning_services_outlined),
-            label: const Text('Azzera coda e stato importazione'),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _resetting ? null : _removeCatalog,
-            icon: const Icon(Icons.delete_outline),
-            label: const Text('Rimuovi catalogo e resetta importazione'),
-          ),
+          if (legacyGatewayEnabled) ...<Widget>[
+            const SizedBox(height: 12),
+            Card(
+              child: Column(
+                children: <Widget>[
+                  SwitchListTile(
+                    title: const Text('Gateway legacy di sviluppo'),
+                    subtitle: const Text(
+                      'Connettore temporaneo escluso dalla configurazione '
+                      'predefinita di produzione.',
+                    ),
+                    value: preferences.openNutritionRemoteEnabled,
+                    onChanged: preferences.loading
+                        ? null
+                        : (bool value) async {
+                            await preferences
+                                .setOpenNutritionRemoteEnabled(value);
+                            ref.invalidate(
+                              openNutritionGatewayConfiguredProvider,
+                            );
+                          },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: Icon(
+                      gatewayConfigured?.asData?.value == true
+                          ? Icons.verified_user
+                          : Icons.gpp_maybe_outlined,
+                    ),
+                    title: Text(
+                      gatewayConfigured?.when(
+                            data: (bool configured) => configured
+                                ? 'Gateway configurato'
+                                : 'Gateway non configurato',
+                            loading: () => 'Verifica configurazione…',
+                            error: (_, __) =>
+                                'Configurazione gateway non valida',
+                          ) ??
+                          'Gateway disabilitato',
+                    ),
+                    subtitle: const Text(
+                      'HTTPS obbligatorio, risposta limitata e firmata '
+                      'Ed25519.',
+                    ),
+                  ),
+                  if (OpenNutritionGatewayConfig.allowsRuntimeConfiguration)
+                    ListTile(
+                      leading: const Icon(Icons.tune_outlined),
+                      title: const Text('Configura gateway'),
+                      onTap: _configureGateway,
+                    ),
+                  ListTile(
+                    enabled: gatewayConfigured?.asData?.value == true &&
+                        !_testingGateway,
+                    leading: _testingGateway
+                        ? const SizedBox.square(
+                            dimension: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.security_outlined),
+                    title: const Text('Testa firma e connessione'),
+                    onTap: _testGateway,
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (legacyCatalogEnabled) ...<Widget>[
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: state == null
+                    ? const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Database catalogo riservato al worker',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          SizedBox(height: 8),
+                          LinearProgressIndicator(),
+                          SizedBox(height: 8),
+                          Text(
+                            'Durante download e importazione la UI non riapre '
+                            'ObjectBox, evitando conflitti tra isolate.',
+                          ),
+                        ],
+                      )
+                    : state.when(
+                        data: (value) => Text(
+                          'Dataset locale: '
+                          '${value.installedVersion.isEmpty ? "non installato" : value.installedVersion}\n'
+                          'Stato: ${value.importStatusCode}\n'
+                          'Record attivi: '
+                          '${count?.asData?.value ?? value.importedRows}',
+                        ),
+                        loading: () => const LinearProgressIndicator(),
+                        error: (Object error, StackTrace stack) =>
+                            SelectableText(error.toString()),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            CheckboxListTile(
+              value: _licenseAccepted,
+              onChanged: busy || _resetting
+                  ? null
+                  : (bool? value) {
+                      setState(
+                        () => _licenseAccepted = value ?? false,
+                      );
+                    },
+              title: const Text(
+                'Accetto licenze e attribuzioni del dataset',
+              ),
+              subtitle: const Text('ODbL 1.0 / modified DbCL 1.0.'),
+            ),
+            FilledButton.icon(
+              onPressed: busy || _resetting || !_licenseAccepted
+                  ? null
+                  : _startDownload,
+              icon: const Icon(Icons.download_outlined),
+              label: const Text('Scarica e importa in background'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: busy || _resetting || !_licenseAccepted
+                  ? null
+                  : _startLocalImport,
+              icon: const Icon(Icons.folder_zip_outlined),
+              label: const Text('Importa ZIP locale in background'),
+            ),
+            if (job != null && job.status != 'idle') ...<Widget>[
+              const SizedBox(height: 12),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        '${job.percent}% · '
+                        '${OpenNutritionBackgroundJobs.stageLabel(job.stage)}',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(
+                        value: job.fraction?.clamp(0.0, 1.0).toDouble(),
+                      ),
+                      const SizedBox(height: 8),
+                      SelectableText(job.message),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Stato: ${job.status}\n'
+                        'Versione app del job: '
+                        '${job.appVersion.isEmpty ? "—" : job.appVersion}\n'
+                        'Accodato: ${_formatEpoch(job.queuedAtEpochMs)}\n'
+                        'Avviato: ${_formatEpoch(job.startedAtEpochMs)}\n'
+                        'Ultimo aggiornamento: '
+                        '${_formatEpoch(job.heartbeatAtEpochMs)}\n'
+                        'Letti ${job.parsedRows} · '
+                        'Importati ${job.importedRows} · '
+                        'Scartati ${job.skippedRows} · '
+                        'Falliti ${job.failedRows}',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _resetting ? null : _resetPendingOperation,
+              icon: _resetting
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.cleaning_services_outlined),
+              label: const Text('Azzera coda e stato importazione'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _resetting ? null : _removeCatalog,
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Rimuovi catalogo e resetta importazione'),
+            ),
+          ],
         ],
       ),
     );

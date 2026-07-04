@@ -18,6 +18,18 @@
 @import flutter_local_notifications;
 #endif
 
+#if __has_include(<google_mlkit_commons/GoogleMlKitCommonsPlugin.h>)
+#import <google_mlkit_commons/GoogleMlKitCommonsPlugin.h>
+#else
+@import google_mlkit_commons;
+#endif
+
+#if __has_include(<google_mlkit_translation/GoogleMlKitTranslationPlugin.h>)
+#import <google_mlkit_translation/GoogleMlKitTranslationPlugin.h>
+#else
+@import google_mlkit_translation;
+#endif
+
 #if __has_include(<mobile_scanner/MobileScannerPlugin.h>)
 #import <mobile_scanner/MobileScannerPlugin.h>
 #else
@@ -59,6 +71,8 @@
 + (void)registerWithRegistry:(NSObject<FlutterPluginRegistry>*)registry {
   [FilePickerPlugin registerWithRegistrar:[registry registrarForPlugin:@"FilePickerPlugin"]];
   [FlutterLocalNotificationsPlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterLocalNotificationsPlugin"]];
+  [GoogleMlKitCommonsPlugin registerWithRegistrar:[registry registrarForPlugin:@"GoogleMlKitCommonsPlugin"]];
+  [GoogleMlKitTranslationPlugin registerWithRegistrar:[registry registrarForPlugin:@"GoogleMlKitTranslationPlugin"]];
   [MobileScannerPlugin registerWithRegistrar:[registry registrarForPlugin:@"MobileScannerPlugin"]];
   [ObjectboxFlutterLibsPlugin registerWithRegistrar:[registry registrarForPlugin:@"ObjectboxFlutterLibsPlugin"]];
   [FPPPackageInfoPlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FPPPackageInfoPlusPlugin"]];

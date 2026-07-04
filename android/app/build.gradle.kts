@@ -22,8 +22,8 @@ android {
     defaultConfig {
         multiDexEnabled = true
         applicationId = "com.raffymanzo.totaltracker"
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        minSdk = maxOf(flutter.minSdkVersion, 21)
+        targetSdk = maxOf(flutter.targetSdkVersion, 35)
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

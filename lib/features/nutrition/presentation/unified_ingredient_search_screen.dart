@@ -181,8 +181,8 @@ class _UnifiedIngredientSearchScreenState
       return;
     }
 
-    if (item.isRemoteOpenNutrition) {
-      final bool confirmed = await _confirmRemoteOpenNutritionImport(item);
+    if (item.requiresOpenNutritionImportConfirmation) {
+      final bool confirmed = await _confirmOpenNutritionImport(item);
       if (!confirmed || !mounted) return;
     }
 
@@ -203,7 +203,7 @@ class _UnifiedIngredientSearchScreenState
     }
   }
 
-  Future<bool> _confirmRemoteOpenNutritionImport(
+  Future<bool> _confirmOpenNutritionImport(
     UnifiedIngredientSearchItem item,
   ) async {
     return await showDialog<bool>(
@@ -224,15 +224,27 @@ class _UnifiedIngredientSearchScreenState
                     'G ${item.fatPer100g.toStringAsFixed(1)} per 100 g',
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    'Il record verrà importato singolarmente da un gateway '
-                    'HTTPS. La risposta è accettata solo dopo verifica '
-                    'Ed25519, controllo temporale e validazione dello schema.',
+                  Text(
+                    item.isStaticOpenNutrition
+                        ? 'Il record proviene da uno shard HTTPS verificato '
+                            'tramite SHA-256. Ricerca e ranking vengono '
+                            'eseguiti localmente prima dell’importazione.'
+                        : 'Il record verrà importato singolarmente da un '
+                            'gateway HTTPS. La risposta è accettata solo dopo '
+                            'verifica Ed25519, controllo temporale e '
+                            'validazione dello schema.',
                   ),
                   const SizedBox(height: 8),
                   const Text(
                     'Fonte dati: OpenNutrition · ODbL 1.0 / DbCL modificata.',
                   ),
+                  if (item.isMachineTranslatedOpenNutrition) ...<Widget>[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Traduzione automatica con Google Translate, '
+                      'eseguita sul dispositivo.',
+                    ),
+                  ],
                 ],
               ),
               actions: <Widget>[
@@ -379,7 +391,7 @@ class _UnifiedIngredientSearchScreenState
                 if (_catalogAvailable)
                   ListTile(
                     leading: const Icon(Icons.storage_outlined),
-                    title: const Text('Catalogo OpenNutrition'),
+                    title: const Text('Ricerca OpenNutrition'),
                     subtitle: const Text(
                       'Digita almeno due caratteri nella barra di ricerca.',
                     ),
@@ -462,8 +474,8 @@ class _UnifiedIngredientSearchScreenState
                       'OpenNutrition non disponibile',
                     ),
                     subtitle: const Text(
-                      'Installa il catalogo locale oppure configura il gateway '
-                      'online firmato nelle impostazioni.',
+                      'La sorgente statica non è configurata nella build '
+                      'oppure la ricerca è disabilitata nelle impostazioni.',
                     ),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => context.push(
@@ -549,14 +561,30 @@ class _UnifiedIngredientSearchScreenState
 
   Widget _buildCatalogSection() {
     return _SearchSection(
-      title: _catalogMode == OpenNutritionSearchMode.remote
-          ? 'OpenNutrition online verificato'
-          : 'Catalogo OpenNutrition locale',
-      subtitle: _query.length < 2
-          ? 'Digita almeno due caratteri'
-          : _catalogMode == OpenNutritionSearchMode.remote
-              ? '${_catalog.items.length} risultati firmati nella pagina'
-              : '${_catalog.items.length} risultati nella pagina',
+      title: switch (_catalogMode) {
+        OpenNutritionSearchMode.staticIndex =>
+          'OpenNutrition · indice statico verificato',
+        OpenNutritionSearchMode.remote => 'OpenNutrition online verificato',
+        OpenNutritionSearchMode.local => 'Catalogo OpenNutrition locale',
+        OpenNutritionSearchMode.unavailable => 'OpenNutrition',
+      },
+      subtitle: _query.length < 3 &&
+              _catalogMode == OpenNutritionSearchMode.staticIndex
+          ? 'Digita almeno tre caratteri'
+          : _query.length < 2
+              ? 'Digita almeno due caratteri'
+              : _catalogMode == OpenNutritionSearchMode.staticIndex
+                  ? _catalog.items.any(
+                      (UnifiedIngredientSearchItem item) =>
+                          item.isMachineTranslatedOpenNutrition,
+                    )
+                      ? '${_catalog.items.length} risultati verificati · '
+                          'traduzione automatica con Google Translate'
+                      : '${_catalog.items.length} risultati verificati '
+                          'nella pagina'
+                  : _catalogMode == OpenNutritionSearchMode.remote
+                      ? '${_catalog.items.length} risultati firmati nella pagina'
+                      : '${_catalog.items.length} risultati nella pagina',
       expanded: _catalogExpanded,
       onToggle: () {
         setState(
@@ -565,11 +593,16 @@ class _UnifiedIngredientSearchScreenState
       },
       onRetry: _reload,
       error: _catalogError,
-      emptyMessage: _query.length < 2
-          ? 'Digita almeno due caratteri.'
-          : _catalogMode == OpenNutritionSearchMode.remote
-              ? 'Nessun risultato dal gateway OpenNutrition.'
-              : 'Nessun risultato nel catalogo OpenNutrition.',
+      emptyMessage: _catalogMode == OpenNutritionSearchMode.staticIndex &&
+              _query.length < 3
+          ? 'Digita almeno tre caratteri.'
+          : _query.length < 2
+              ? 'Digita almeno due caratteri.'
+              : _catalogMode == OpenNutritionSearchMode.staticIndex
+                  ? 'Nessun match OpenNutrition sufficientemente affidabile.'
+                  : _catalogMode == OpenNutritionSearchMode.remote
+                      ? 'Nessun risultato dal gateway OpenNutrition.'
+                      : 'Nessun risultato nel catalogo OpenNutrition.',
       items: _catalog.items,
       onItem: _select,
       pager: _Pager(
@@ -725,9 +758,11 @@ class _IngredientCard extends StatelessWidget {
   IconData get _sourceIcon {
     switch (item.sourceTypeCode) {
       case IngredientSourceTypeCodes.openNutrition:
-        return item.isRemoteOpenNutrition
-            ? Icons.verified_user_outlined
-            : Icons.storage_outlined;
+        return item.isStaticOpenNutrition
+            ? Icons.cloud_done_outlined
+            : item.isRemoteOpenNutrition
+                ? Icons.verified_user_outlined
+                : Icons.storage_outlined;
       case IngredientSourceTypeCodes.openFoodFacts:
         return Icons.qr_code_2_outlined;
       default:
@@ -738,9 +773,13 @@ class _IngredientCard extends StatelessWidget {
   String get _sourceLabel {
     switch (item.sourceTypeCode) {
       case IngredientSourceTypeCodes.openNutrition:
-        return item.isRemoteOpenNutrition
-            ? 'OpenNutrition online verificato'
-            : 'OpenNutrition';
+        return item.isStaticOpenNutrition
+            ? item.isMachineTranslatedOpenNutrition
+                ? 'OpenNutrition · Google Translate'
+                : 'OpenNutrition · indice statico'
+            : item.isRemoteOpenNutrition
+                ? 'OpenNutrition online verificato'
+                : 'OpenNutrition';
       case IngredientSourceTypeCodes.openFoodFacts:
         return 'Open Food Facts';
       default:

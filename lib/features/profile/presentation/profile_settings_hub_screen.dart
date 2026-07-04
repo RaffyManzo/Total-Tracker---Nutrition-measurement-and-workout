@@ -33,8 +33,8 @@ class ProfileSettingsHubScreen extends StatelessWidget {
       ),
       const _SettingsSectionCardData(
         code: 'opennutrition',
-        title: 'Catalogo OpenNutrition',
-        subtitle: 'Download opzionale, importazione locale, licenze e spazio.',
+        title: 'OpenNutrition',
+        subtitle: 'Fonte complementare, stato della migrazione e attribuzioni.',
         icon: Icons.storage,
         accent: Color(0xFF0F766E),
         directRoute: '/settings/opennutrition',

@@ -1,0 +1,9 @@
+name: total_tracker_opennutrition_index
+description: Reproducible OpenNutrition static-index build tooling for Total Tracker.
+publish_to: none
+
+environment:
+  sdk: "3.12.2"
+
+dependencies:
+  crypto: 3.0.7

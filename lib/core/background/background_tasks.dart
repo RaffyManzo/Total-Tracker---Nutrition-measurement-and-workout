@@ -13,6 +13,7 @@ import 'package:workmanager/workmanager.dart';
 import '../database/objectbox_database.dart';
 import '../notifications/local_notification_service.dart';
 import '../preferences/food_service_preferences.dart';
+import '../../features/nutrition/data/config/open_nutrition_rollout_config.dart';
 import '../../features/nutrition/data/repositories/meal_repository.dart';
 import '../../features/nutrition/data/repositories/measurement_repository.dart';
 import '../../features/nutrition/data/repositories/open_nutrition_catalog_repository.dart';
@@ -93,6 +94,15 @@ class OpenNutritionBackgroundJobs {
   static const String _stateKey = 'on_job_state_v2';
   static final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
 
+  static void _ensureLegacyCatalogEnabled() {
+    if (!OpenNutritionRolloutConfig.legacyLocalCatalogEnabled) {
+      throw UnsupportedError(
+        'L’importazione completa OpenNutrition è disabilitata durante '
+        'la migrazione all’indice statico distribuito.',
+      );
+    }
+  }
+
   static Future<void> initialize() async {
     await Workmanager().initialize(totalTrackerBackgroundDispatcher);
   }
@@ -100,6 +110,7 @@ class OpenNutritionBackgroundJobs {
   static Future<void> enqueueDownload({
     required int licenseAcceptedAtEpochMs,
   }) async {
+    _ensureLegacyCatalogEnabled();
     await cancelAndReset(deletePendingArchives: true);
     final Map<String, dynamic> metadata = await _newJobMetadata();
     await _writeQueued(metadata);
@@ -126,6 +137,7 @@ class OpenNutritionBackgroundJobs {
     required File sourceFile,
     required int licenseAcceptedAtEpochMs,
   }) async {
+    _ensureLegacyCatalogEnabled();
     await cancelAndReset(deletePendingArchives: true);
     if (!await sourceFile.exists()) {
       throw StateError('Il file ZIP selezionato non è più disponibile.');
@@ -151,6 +163,7 @@ class OpenNutritionBackgroundJobs {
     required int declaredBytes,
     required int licenseAcceptedAtEpochMs,
   }) async {
+    _ensureLegacyCatalogEnabled();
     await cancelAndReset(deletePendingArchives: true);
     if (declaredBytes > 0) {
       _validateLocalArchiveLength(declaredBytes);

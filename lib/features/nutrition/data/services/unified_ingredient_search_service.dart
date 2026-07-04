@@ -3,12 +3,15 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/background/background_tasks.dart';
 import '../../../../core/preferences/food_service_preferences.dart';
 import '../../domain/nutrition_codes.dart';
+import '../config/open_nutrition_rollout_config.dart';
 import '../entities/ingredient_entity.dart';
 import '../entities/open_nutrition_food_entity.dart';
 import '../repositories/ingredient_repository.dart';
 import '../repositories/open_nutrition_catalog_repository.dart';
 import 'open_food_facts_service.dart';
 import 'open_nutrition_gateway_service.dart';
+import 'open_nutrition_static_index_service.dart';
+import 'open_nutrition_translation_service.dart';
 
 class UnifiedIngredientSearchScopeCodes {
   const UnifiedIngredientSearchScopeCodes._();
@@ -21,6 +24,7 @@ class UnifiedIngredientSearchScopeCodes {
 
 enum OpenNutritionSearchMode {
   unavailable,
+  staticIndex,
   local,
   remote,
 }
@@ -50,6 +54,18 @@ class UnifiedIngredientSearchItem {
   bool get isOpenFoodFacts => openFoodFactsProduct != null;
   bool get isRemoteOpenNutrition =>
       openNutritionFood?.importBatchId.startsWith('remote:') ?? false;
+
+  bool get isStaticOpenNutrition =>
+      openNutritionFood?.importBatchId.startsWith('static:') ?? false;
+
+  bool get requiresOpenNutritionImportConfirmation =>
+      isRemoteOpenNutrition || isStaticOpenNutrition;
+
+  bool get isMachineTranslatedOpenNutrition =>
+      openNutritionFood?.additionalFieldsJson.contains(
+        '"machineTranslated":true',
+      ) ??
+      false;
 
   String get displayName =>
       personalIngredient?.name ??
@@ -156,12 +172,16 @@ class UnifiedIngredientSearchService {
     required this.personalRepository,
     required this.openNutritionRepository,
     required this.openNutritionGatewayService,
+    required this.openNutritionStaticIndexService,
+    required this.openNutritionTranslationService,
     required this.openFoodFactsService,
   });
 
   final IngredientRepository personalRepository;
   final OpenNutritionCatalogRepository openNutritionRepository;
   final OpenNutritionGatewayService openNutritionGatewayService;
+  final OpenNutritionStaticIndexService openNutritionStaticIndexService;
+  final OpenNutritionTranslationService openNutritionTranslationService;
   final OpenFoodFactsService openFoodFactsService;
 
   Future<OpenNutritionSearchMode> openNutritionSearchMode() async {
@@ -169,22 +189,30 @@ class UnifiedIngredientSearchService {
       return OpenNutritionSearchMode.unavailable;
     }
 
-    final OpenNutritionBackgroundJobState backgroundJob =
-        await OpenNutritionBackgroundJobs.readState();
-    if (!backgroundJob.isRunning) {
-      try {
-        final state = await openNutritionRepository.getState();
-        final bool localAvailable = state.activeBatchId.isNotEmpty &&
-            state.importStatusCode == 'installed' &&
-            await openNutritionRepository.countActive() > 0;
-        if (localAvailable) return OpenNutritionSearchMode.local;
-      } catch (_) {
-        // Il catalogo può essere temporaneamente esclusivo del worker.
-        // In questo caso si tenta il gateway senza interrompere la ricerca.
+    if (OpenNutritionRolloutConfig.staticIndexConfigured &&
+        openNutritionStaticIndexService.isConfigured) {
+      return OpenNutritionSearchMode.staticIndex;
+    }
+
+    if (OpenNutritionRolloutConfig.legacyLocalCatalogEnabled) {
+      final OpenNutritionBackgroundJobState backgroundJob =
+          await OpenNutritionBackgroundJobs.readState();
+      if (!backgroundJob.isRunning) {
+        try {
+          final state = await openNutritionRepository.getState();
+          final bool localAvailable = state.activeBatchId.isNotEmpty &&
+              state.importStatusCode == 'installed' &&
+              await openNutritionRepository.countActive() > 0;
+          if (localAvailable) return OpenNutritionSearchMode.local;
+        } catch (_) {
+          // Il catalogo può essere temporaneamente esclusivo del worker.
+          // In questo caso si tenta la sorgente successiva.
+        }
       }
     }
 
-    if (await openNutritionGatewayService.isConfigured()) {
+    if (OpenNutritionRolloutConfig.legacyGatewayEnabled &&
+        await openNutritionGatewayService.isConfigured()) {
       return OpenNutritionSearchMode.remote;
     }
     return OpenNutritionSearchMode.unavailable;
@@ -255,6 +283,32 @@ class UnifiedIngredientSearchService {
         items: const <UnifiedIngredientSearchItem>[],
         page: safePage,
         hasNext: false,
+        hasPrevious: safePage > 0,
+      );
+    }
+
+    if (mode == OpenNutritionSearchMode.staticIndex) {
+      final String canonicalQuery =
+          await openNutritionTranslationService.translateQueryToEnglish(
+        query,
+      );
+      final OpenNutritionStaticSearchPage response =
+          await openNutritionStaticIndexService.search(
+        query: canonicalQuery,
+        page: safePage,
+        limit: UnifiedIngredientSearchPolicy.openNutritionRemotePageSize,
+      );
+      final List<OpenNutritionFoodEntity> translatedFoods =
+          await openNutritionTranslationService.translateFoodsFromEnglish(
+        response.foods,
+      );
+
+      return UnifiedIngredientSearchPage(
+        items: translatedFoods
+            .map(UnifiedIngredientSearchItem.openNutrition)
+            .toList(),
+        page: response.page,
+        hasNext: response.hasNext,
         hasPrevious: safePage > 0,
       );
     }
@@ -358,6 +412,7 @@ class UnifiedIngredientSearchService {
         ? 'OpenNutrition; © Open Food Facts contributors'
         : 'OpenNutrition';
     final bool remote = food.importBatchId.startsWith('remote:');
+    final bool staticIndex = food.importBatchId.startsWith('static:');
 
     return personalRepository.save(
       IngredientEntity(
@@ -366,9 +421,11 @@ class UnifiedIngredientSearchService {
         brand: food.brand,
         barcode: food.barcode,
         sourceTypeCode: IngredientSourceTypeCodes.openNutrition,
-        sourceName: remote
-            ? 'OpenNutrition tramite gateway verificato'
-            : 'OpenNutrition',
+        sourceName: staticIndex
+            ? 'OpenNutrition tramite indice statico verificato'
+            : remote
+                ? 'OpenNutrition tramite gateway verificato'
+                : 'OpenNutrition',
         sourceUrl: 'https://www.opennutrition.app/search?search='
             '${Uri.encodeQueryComponent(food.name)}',
         sourceExternalId: food.externalFoodId,
@@ -387,6 +444,14 @@ class UnifiedIngredientSearchService {
         sugarPerReference: food.sugarPer100g,
         saltPerReference: food.saltPer100g,
         notes: <String>[
+          if (staticIndex)
+            'Record ottenuto da uno shard OpenNutrition HTTPS verificato '
+                'tramite SHA-256 e selezionato localmente.',
+          if (food.additionalFieldsJson.contains(
+            '"machineTranslated":true',
+          ))
+            'Nome tradotto automaticamente sul dispositivo tramite '
+                'Google Translate.',
           if (remote)
             'Record ottenuto singolarmente da un gateway OpenNutrition '
                 'HTTPS con risposta firmata Ed25519.',
