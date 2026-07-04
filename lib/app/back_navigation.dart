@@ -85,12 +85,27 @@ class DashboardBackController {
 
 ChildBackButtonDispatcher? _dashboardBackDispatcher;
 
+
 void installDashboardBackDispatcher(GoRouter router) {
-  if (_dashboardBackDispatcher != null) return;
+  if (_dashboardBackDispatcher != null) {
+    return;
+  }
 
   final ChildBackButtonDispatcher dispatcher =
-      router.backButtonDispatcher.createChildBackButtonDispatcher();
-  dispatcher.addCallback(() => dashboardBackController.handle(router));
-  dispatcher.takePriority();
+  router.backButtonDispatcher.createChildBackButtonDispatcher();
+
+  dispatcher.addCallback(
+        () => dashboardBackController.handle(router),
+  );
+
   _dashboardBackDispatcher = dispatcher;
+
+  // MaterialApp.router deve prima registrare la callback sul dispatcher padre.
+  // Chiamare takePriority durante la creazione del GoRouter provoca
+  // l'assertion "hasCallbacks is not true".
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (identical(_dashboardBackDispatcher, dispatcher)) {
+      dispatcher.takePriority();
+    }
+  });
 }
