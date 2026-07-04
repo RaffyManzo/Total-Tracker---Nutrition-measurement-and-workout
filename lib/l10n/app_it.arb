@@ -50,5 +50,10 @@
   "leftThigh": "Coscia sinistra",
   "rightThigh": "Coscia destra",
   "leftCalf": "Polpaccio sinistro",
-  "rightCalf": "Polpaccio destro"
+  "rightCalf": "Polpaccio destro",
+  "bodyTorsoGroup": "Tronco",
+  "bodyArmsGroup": "Braccia",
+  "bodyLegsGroup": "Gambe",
+  "bodyMeasurementsList": "Misure registrate",
+  "bodyMeasurementsListHint": "Apri un gruppo e tocca una misura per visualizzare lo storico."
 }

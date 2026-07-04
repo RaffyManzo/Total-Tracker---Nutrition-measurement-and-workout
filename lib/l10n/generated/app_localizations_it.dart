@@ -175,4 +175,20 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get rightCalf => 'Polpaccio destro';
+
+  @override
+  String get bodyTorsoGroup => 'Tronco';
+
+  @override
+  String get bodyArmsGroup => 'Braccia';
+
+  @override
+  String get bodyLegsGroup => 'Gambe';
+
+  @override
+  String get bodyMeasurementsList => 'Misure registrate';
+
+  @override
+  String get bodyMeasurementsListHint =>
+      'Apri un gruppo e tocca una misura per visualizzare lo storico.';
 }

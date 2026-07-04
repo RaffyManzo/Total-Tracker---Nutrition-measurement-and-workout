@@ -403,6 +403,36 @@ abstract class AppLocalizations {
   /// In it, this message translates to:
   /// **'Polpaccio destro'**
   String get rightCalf;
+
+  /// No description provided for @bodyTorsoGroup.
+  ///
+  /// In it, this message translates to:
+  /// **'Tronco'**
+  String get bodyTorsoGroup;
+
+  /// No description provided for @bodyArmsGroup.
+  ///
+  /// In it, this message translates to:
+  /// **'Braccia'**
+  String get bodyArmsGroup;
+
+  /// No description provided for @bodyLegsGroup.
+  ///
+  /// In it, this message translates to:
+  /// **'Gambe'**
+  String get bodyLegsGroup;
+
+  /// No description provided for @bodyMeasurementsList.
+  ///
+  /// In it, this message translates to:
+  /// **'Misure registrate'**
+  String get bodyMeasurementsList;
+
+  /// No description provided for @bodyMeasurementsListHint.
+  ///
+  /// In it, this message translates to:
+  /// **'Apri un gruppo e tocca una misura per visualizzare lo storico.'**
+  String get bodyMeasurementsListHint;
 }
 
 class _AppLocalizationsDelegate

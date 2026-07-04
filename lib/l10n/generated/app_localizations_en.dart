@@ -175,4 +175,20 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get rightCalf => 'Right calf';
+
+  @override
+  String get bodyTorsoGroup => 'Torso';
+
+  @override
+  String get bodyArmsGroup => 'Arms';
+
+  @override
+  String get bodyLegsGroup => 'Legs';
+
+  @override
+  String get bodyMeasurementsList => 'Recorded measurements';
+
+  @override
+  String get bodyMeasurementsListHint =>
+      'Open a group and tap a measurement to view its history.';
 }

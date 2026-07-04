@@ -50,5 +50,10 @@
   "leftThigh": "Left thigh",
   "rightThigh": "Right thigh",
   "leftCalf": "Left calf",
-  "rightCalf": "Right calf"
+  "rightCalf": "Right calf",
+  "bodyTorsoGroup": "Torso",
+  "bodyArmsGroup": "Arms",
+  "bodyLegsGroup": "Legs",
+  "bodyMeasurementsList": "Recorded measurements",
+  "bodyMeasurementsListHint": "Open a group and tap a measurement to view its history."
 }
