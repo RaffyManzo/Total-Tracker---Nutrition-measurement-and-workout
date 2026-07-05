@@ -14,11 +14,29 @@ import 'core/notifications/local_notification_service.dart';
 import 'features/profile/data/repositories/user_profile_repository.dart';
 import 'features/workout/data/seed/muscle_catalog_seeder.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  final AppDiagnostics diagnostics = AppDiagnostics.instance;
-  await diagnostics.initialize();
+void main() {
+  runZonedGuarded<Future<void>>(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
 
+      final AppDiagnostics diagnostics = AppDiagnostics.instance;
+      await diagnostics.initialize(startNewSession: true);
+      _installErrorHandlers(diagnostics);
+      await _startApplication(diagnostics);
+    },
+    (Object error, StackTrace stackTrace) {
+      unawaited(
+        AppDiagnostics.instance.error(
+          'zone.uncaught_error',
+          error: error,
+          stackTrace: stackTrace,
+        ),
+      );
+    },
+  );
+}
+
+void _installErrorHandlers(AppDiagnostics diagnostics) {
   final previousFlutterError = FlutterError.onError;
   FlutterError.onError = (FlutterErrorDetails details) {
     unawaited(diagnostics.recordFlutterError(details));
@@ -41,22 +59,6 @@ Future<void> main() async {
     );
     return previousPlatformError?.call(error, stackTrace) ?? false;
   };
-
-  final Future<void>? startup = runZonedGuarded<Future<void>>(
-    () => _startApplication(diagnostics),
-    (Object error, StackTrace stackTrace) {
-      unawaited(
-        diagnostics.error(
-          'zone.uncaught_error',
-          error: error,
-          stackTrace: stackTrace,
-        ),
-      );
-    },
-  );
-  if (startup != null) {
-    await startup;
-  }
 }
 
 Future<void> _startApplication(AppDiagnostics diagnostics) async {
@@ -65,15 +67,7 @@ Future<void> _startApplication(AppDiagnostics diagnostics) async {
   bool databaseReady = false;
 
   try {
-    await diagnostics.measure<void>('bootstrap.database_open', database.open);
-    diagnostics.measureSync<void>(
-      'bootstrap.default_profile',
-      () {
-        UserProfileRepository(
-          database.store,
-        ).createDefaultProfileIfMissing();
-      },
-    );
+    await diagnostics.measure('bootstrap.database_open', database.open);
     databaseStatus = const DatabaseInitializationStatus.ready();
     databaseReady = true;
   } catch (error, stackTrace) {
@@ -114,7 +108,23 @@ Future<void> _runDeferredBootstrap(
   ObjectBoxDatabase database,
   AppDiagnostics diagnostics,
 ) async {
-  await Future<void>.delayed(const Duration(milliseconds: 700));
+  await Future<void>.delayed(const Duration(milliseconds: 250));
+
+  try {
+    diagnostics.measureSync(
+      'bootstrap.default_profile',
+      () =>
+          UserProfileRepository(database.store).createDefaultProfileIfMissing(),
+    );
+  } catch (error, stackTrace) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: error,
+        stack: stackTrace,
+        library: 'total_tracker default profile',
+      ),
+    );
+  }
 
   if (Platform.isAndroid || Platform.isIOS) {
     await _guardedBootstrap(
@@ -136,7 +146,7 @@ Future<void> _runDeferredBootstrap(
 
   await Future<void>.delayed(Duration.zero);
   try {
-    diagnostics.measureSync<void>('bootstrap.muscle_seed', () {
+    diagnostics.measureSync('bootstrap.muscle_seed', () {
       final MuscleCatalogSeedReport seedReport =
           MuscleCatalogSeeder(database.store).seed();
       if (seedReport.hasErrors) {
@@ -155,7 +165,7 @@ Future<void> _runDeferredBootstrap(
 
   if (Platform.isAndroid || Platform.isIOS) {
     try {
-      diagnostics.measureSync<void>(
+      diagnostics.measureSync(
         'bootstrap.reminder_foreground_reconciliation',
         () => ReminderBackgroundJobs.startForegroundReconciliation(database),
       );
@@ -174,10 +184,10 @@ Future<void> _runDeferredBootstrap(
 Future<void> _guardedBootstrap(
   AppDiagnostics diagnostics,
   String event,
-  Future<dynamic> Function() operation,
+  Future<void> Function() operation,
 ) async {
   try {
-    await diagnostics.measure<dynamic>(event, operation);
+    await diagnostics.measure(event, operation);
   } catch (error, stackTrace) {
     FlutterError.reportError(
       FlutterErrorDetails(

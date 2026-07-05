@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../back_navigation.dart';
 import '../../features/nutrition/data/services/open_food_facts_service.dart';
 import '../../features/nutrition/presentation/food_v01_screens.dart';
+import '../../features/nutrition/presentation/food_insights_screen.dart';
+import '../../features/nutrition/presentation/safe_meal_ingredient_overlay.dart';
 import '../../features/nutrition/presentation/recipe_archive_screen.dart';
 import '../../features/nutrition/presentation/ingredient_create_screen.dart';
 import '../../features/nutrition/presentation/measurement_screens.dart';
@@ -47,6 +49,12 @@ GoRouter _createAppRouter() {
             },
           ),
           GoRoute(
+            path: '/food/insights',
+            builder: (BuildContext context, GoRouterState state) {
+              return const FoodInsightsScreen();
+            },
+          ),
+          GoRoute(
             path: '/food/week',
             builder: (BuildContext context, GoRouterState state) {
               return const FoodWeekScreen();
@@ -73,8 +81,7 @@ GoRouter _createAppRouter() {
           GoRoute(
             path: '/food/meals/:id',
             builder: (BuildContext context, GoRouterState state) {
-              return OpenNutritionImportOverlay(
-                targetType: 'meal',
+              return SafeMealIngredientOverlay(
                 targetId: state.pathParameters['id']!,
                 child: FoodMealDetailScreen(
                   id: state.pathParameters['id']!,

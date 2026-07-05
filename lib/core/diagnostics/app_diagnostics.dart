@@ -27,12 +27,14 @@ class AppDiagnosticsStatus {
     required this.internalDirectory,
     required this.usingCustomDirectory,
     required this.currentLogFile,
+    required this.sessionId,
   });
 
   final String activeDirectory;
   final String internalDirectory;
   final bool usingCustomDirectory;
   final String currentLogFile;
+  final String sessionId;
 }
 
 class AppDiagnostics {
@@ -45,15 +47,22 @@ class AppDiagnostics {
   static const int _maxFileBytes = 2 * 1024 * 1024;
   static const Duration _retention = Duration(hours: 24);
 
-  final Completer<void> _initialization = Completer<void>();
+  Completer<void> _initialization = Completer<void>();
   Future<void> _writeQueue = Future<void>.value();
   Directory? _internalDirectory;
   Directory? _activeDirectory;
   bool _usingCustomDirectory = false;
+  String _sessionId = '';
+  String _sessionBaseName = '';
+  File? _currentLogFile;
+  int _rotation = 0;
 
-  Future<void> initialize() async {
-    if (_initialization.isCompleted) {
+  Future<void> initialize({bool startNewSession = false}) async {
+    if (_initialization.isCompleted && !startNewSession) {
       return;
+    }
+    if (startNewSession && _initialization.isCompleted) {
+      _initialization = Completer<void>();
     }
 
     try {
@@ -83,12 +92,16 @@ class AppDiagnostics {
         _activeDirectory = _internalDirectory;
       }
 
+      _beginNewSession();
       await _deleteExpiredLogs();
-      _initialization.complete();
+      if (!_initialization.isCompleted) {
+        _initialization.complete();
+      }
       await _writeDirect(
         level: 'info',
-        event: 'diagnostics.initialized',
+        event: 'diagnostics.session_started',
         data: <String, Object?>{
+          'sessionId': _sessionId,
           'activeDirectory': _activeDirectory!.path,
           'internalDirectory': _internalDirectory!.path,
           'usingCustomDirectory': _usingCustomDirectory,
@@ -103,11 +116,12 @@ class AppDiagnostics {
       try {
         await fallback.create(recursive: true);
       } catch (_) {
-        // Anche senza filesystem disponibile l'app deve poter partire.
+        // Logging must never prevent application startup.
       }
       _internalDirectory ??= fallback;
       _activeDirectory ??= _internalDirectory;
       _usingCustomDirectory = false;
+      _beginNewSession();
       if (!_initialization.isCompleted) {
         _initialization.complete();
       }
@@ -122,6 +136,7 @@ class AppDiagnostics {
       internalDirectory: _internalDirectory!.path,
       usingCustomDirectory: _usingCustomDirectory,
       currentLogFile: file.path,
+      sessionId: _sessionId,
     );
   }
 
@@ -138,12 +153,14 @@ class AppDiagnostics {
         continue;
       }
       final FileStat stat = await entity.stat();
-      files.add(AppDiagnosticLogFile(
-        path: entity.path,
-        name: p.basename(entity.path),
-        modifiedAt: stat.modified,
-        sizeBytes: stat.size,
-      ));
+      files.add(
+        AppDiagnosticLogFile(
+          path: entity.path,
+          name: p.basename(entity.path),
+          modifiedAt: stat.modified,
+          sizeBytes: stat.size,
+        ),
+      );
     }
     files.sort(
       (AppDiagnosticLogFile a, AppDiagnosticLogFile b) =>
@@ -161,11 +178,55 @@ class AppDiagnostics {
     return file.readAsString();
   }
 
+  Future<String> exportLogAsText({
+    required String sourcePath,
+    required String targetDirectory,
+  }) async {
+    await _ensureInitialized();
+    final String raw = await readLogFile(sourcePath);
+    final Directory directory = Directory(targetDirectory);
+    await directory.create(recursive: true);
+    await _probeDirectory(directory);
+
+    final String sourceName = p.basenameWithoutExtension(sourcePath);
+    final String targetPath = p.join(directory.path, '$sourceName.txt');
+    final StringBuffer output = StringBuffer();
+    for (final String line in const LineSplitter().convert(raw)) {
+      if (line.trim().isEmpty) continue;
+      try {
+        final Object? decoded = jsonDecode(line);
+        if (decoded is Map<String, dynamic>) {
+          output
+            ..writeln(
+              '[${decoded['timestamp'] ?? ''}] '
+              '${(decoded['level'] ?? 'info').toString().toUpperCase()} '
+              '${decoded['event'] ?? ''}',
+            )
+            ..writeln(
+                'Dati: ${jsonEncode(decoded['data'] ?? <String, Object?>{})}');
+          if (decoded['error'] != null) {
+            output.writeln('Errore: ${decoded['error']}');
+          }
+          if (decoded['stackTrace'] != null) {
+            output.writeln('Stack trace:\n${decoded['stackTrace']}');
+          }
+          output.writeln();
+          continue;
+        }
+      } catch (_) {
+        // Preserve malformed lines verbatim in the exported text.
+      }
+      output.writeln(line);
+    }
+    await File(targetPath).writeAsString(output.toString(), flush: true);
+    return targetPath;
+  }
+
   Future<void> setCustomDirectory(String directoryPath) async {
     await _ensureInitialized();
     final String normalized = directoryPath.trim();
     if (normalized.isEmpty) {
-      throw FileSystemException('La cartella selezionata è vuota.');
+      throw FileSystemException('La cartella selezionata e vuota.');
     }
 
     final Directory selected = Directory(normalized);
@@ -176,6 +237,7 @@ class AppDiagnostics {
     await preferences.setString(_customDirectoryPreference, selected.path);
     _activeDirectory = selected;
     _usingCustomDirectory = true;
+    _resetCurrentFileForDirectory();
 
     await info(
       'diagnostics.directory_changed',
@@ -189,6 +251,7 @@ class AppDiagnostics {
     await preferences.remove(_customDirectoryPreference);
     _activeDirectory = _internalDirectory;
     _usingCustomDirectory = false;
+    _resetCurrentFileForDirectory();
     await info(
       'diagnostics.directory_reset',
       data: <String, Object?>{'directory': _internalDirectory!.path},
@@ -203,24 +266,21 @@ class AppDiagnostics {
     }.toList();
 
     for (final Directory directory in directories) {
-      if (!await directory.exists()) {
-        continue;
-      }
+      if (!await directory.exists()) continue;
       await for (final FileSystemEntity entity in directory.list()) {
-        if (entity is File &&
-            p.basename(entity.path).startsWith('total_tracker_') &&
-            entity.path.endsWith('.jsonl')) {
+        if (entity is File && _isLogFile(entity)) {
           await entity.delete();
         }
       }
     }
+    _resetCurrentFileForDirectory();
     await info('diagnostics.logs_cleared');
   }
 
   Future<void> writeTestEntry() {
     return info(
       'diagnostics.test_entry',
-      data: <String, Object?>{
+      data: const <String, Object?>{
         'message': 'Scrittura diagnostica verificata dalle impostazioni.',
       },
     );
@@ -230,11 +290,7 @@ class AppDiagnostics {
     String event, {
     Map<String, Object?> data = const <String, Object?>{},
   }) {
-    return _enqueue(
-      level: 'info',
-      event: event,
-      data: data,
-    );
+    return _enqueue(level: 'info', event: event, data: data);
   }
 
   Future<void> warning(
@@ -397,6 +453,7 @@ class AppDiagnostics {
     final File file = await _resolveLogFile();
     final Map<String, Object?> record = <String, Object?>{
       'timestamp': DateTime.now().toUtc().toIso8601String(),
+      'sessionId': _sessionId,
       'level': level,
       'event': event,
       'data': _jsonSafe(data),
@@ -414,17 +471,37 @@ class AppDiagnostics {
   Future<File> _resolveLogFile() async {
     final Directory directory = _activeDirectory ?? _internalDirectory!;
     await directory.create(recursive: true);
-    final String day =
-        DateTime.now().toUtc().toIso8601String().substring(0, 10);
-    File file = File(p.join(directory.path, 'total_tracker_$day.jsonl'));
+
+    File? file = _currentLogFile;
+    if (file == null || p.dirname(file.path) != directory.path) {
+      file = File(p.join(directory.path, '$_sessionBaseName.jsonl'));
+      _currentLogFile = file;
+    }
     if (await file.exists() && await file.length() >= _maxFileBytes) {
-      final String suffix =
-          DateTime.now().toUtc().millisecondsSinceEpoch.toString();
+      _rotation += 1;
       file = File(
-        p.join(directory.path, 'total_tracker_${day}_$suffix.jsonl'),
+        p.join(directory.path, '${_sessionBaseName}_part$_rotation.jsonl'),
       );
+      _currentLogFile = file;
     }
     return file;
+  }
+
+  void _beginNewSession() {
+    final DateTime now = DateTime.now().toUtc();
+    final String stamp = now
+        .toIso8601String()
+        .replaceAll(RegExp(r'[-:TZ.]'), '')
+        .substring(0, 17);
+    _sessionId = '${stamp}_${now.microsecondsSinceEpoch % 1000000}';
+    _sessionBaseName = 'total_tracker_session_$_sessionId';
+    _rotation = 0;
+    _currentLogFile = null;
+  }
+
+  void _resetCurrentFileForDirectory() {
+    _rotation = 0;
+    _currentLogFile = null;
   }
 
   Future<void> _probeDirectory(Directory directory) async {
@@ -450,20 +527,16 @@ class AppDiagnostics {
       if (_activeDirectory != null) _activeDirectory!,
     };
     for (final Directory directory in directories) {
-      if (!await directory.exists()) {
-        continue;
-      }
+      if (!await directory.exists()) continue;
       await for (final FileSystemEntity entity in directory.list()) {
-        if (entity is! File || !_isLogFile(entity)) {
-          continue;
-        }
+        if (entity is! File || !_isLogFile(entity)) continue;
         try {
           final FileStat stat = await entity.stat();
           if (stat.modified.isBefore(cutoff)) {
             await entity.delete();
           }
         } catch (_) {
-          // La pulizia non deve rallentare o bloccare l'app.
+          // Cleanup is intentionally fail-soft.
         }
       }
     }

@@ -15,14 +15,14 @@ class DiagnosticsSettingsCard extends StatefulWidget {
 }
 
 class _DiagnosticsSettingsCardState extends State<DiagnosticsSettingsCard> {
-  late Future<AppDiagnosticsStatus> _statusFuture = _loadStatus();
+  late Future<AppDiagnosticsStatus> _statusFuture =
+      AppDiagnostics.instance.status();
   bool _busy = false;
 
-  Future<AppDiagnosticsStatus> _loadStatus() =>
-      AppDiagnostics.instance.status();
-
   void _reload() {
-    if (mounted) setState(() => _statusFuture = _loadStatus());
+    final Future<AppDiagnosticsStatus> next = AppDiagnostics.instance.status();
+    if (!mounted) return;
+    setState(() => _statusFuture = next);
   }
 
   Future<void> _run(
@@ -72,10 +72,10 @@ class _DiagnosticsSettingsCardState extends State<DiagnosticsSettingsCard> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (BuildContext context) {
+      builder: (BuildContext sheetContext) {
         return SafeArea(
           child: SizedBox(
-            height: MediaQuery.sizeOf(context).height * .78,
+            height: MediaQuery.sizeOf(sheetContext).height * .82,
             child: Column(
               children: <Widget>[
                 Padding(
@@ -88,7 +88,7 @@ class _DiagnosticsSettingsCardState extends State<DiagnosticsSettingsCard> {
                       Expanded(
                         child: Text(
                           'Log disponibili',
-                          style: Theme.of(context).textTheme.titleLarge,
+                          style: Theme.of(sheetContext).textTheme.titleLarge,
                         ),
                       ),
                       Text('${files.length} file'),
@@ -133,10 +133,37 @@ class _DiagnosticsSettingsCardState extends State<DiagnosticsSettingsCard> {
                                       ],
                                     ),
                                   ),
-                                  IconButton(
+                                  PopupMenuButton<_LogOpenAction>(
                                     tooltip: 'Apri',
-                                    onPressed: () => _openLog(file),
                                     icon: const Icon(Icons.open_in_new_rounded),
+                                    onSelected: (_LogOpenAction action) async {
+                                      if (action == _LogOpenAction.openInApp) {
+                                        await _openLog(file);
+                                      } else {
+                                        await _exportLog(file);
+                                      }
+                                    },
+                                    itemBuilder: (BuildContext context) =>
+                                        const <PopupMenuEntry<_LogOpenAction>>[
+                                      PopupMenuItem<_LogOpenAction>(
+                                        value: _LogOpenAction.openInApp,
+                                        child: ListTile(
+                                          leading:
+                                              Icon(Icons.visibility_outlined),
+                                          title: Text('Apri in Total Tracker'),
+                                          contentPadding: EdgeInsets.zero,
+                                        ),
+                                      ),
+                                      PopupMenuItem<_LogOpenAction>(
+                                        value: _LogOpenAction.exportTxt,
+                                        child: ListTile(
+                                          leading:
+                                              Icon(Icons.text_snippet_outlined),
+                                          title: Text('Esporta come TXT'),
+                                          contentPadding: EdgeInsets.zero,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                   IconButton(
                                     tooltip: 'Copia',
@@ -180,6 +207,34 @@ class _DiagnosticsSettingsCardState extends State<DiagnosticsSettingsCard> {
     );
   }
 
+  Future<void> _exportLog(AppDiagnosticLogFile file) async {
+    final String? directory = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: 'Scegli dove salvare il file TXT',
+    );
+    if (directory == null) return;
+    try {
+      final String path = await AppDiagnostics.instance.exportLogAsText(
+        sourcePath: file.path,
+        targetDirectory: directory,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Log esportato in $path')),
+      );
+    } catch (error, stackTrace) {
+      await AppDiagnostics.instance.error(
+        'settings.log_export_failed',
+        error: error,
+        stackTrace: stackTrace,
+        data: <String, Object?>{'sourcePath': file.path},
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Esportazione non riuscita: $error')),
+      );
+    }
+  }
+
   Future<void> _copyLog(AppDiagnosticLogFile file) async {
     final String text = await AppDiagnostics.instance.readLogFile(file.path);
     await Clipboard.setData(ClipboardData(text: text));
@@ -194,20 +249,26 @@ class _DiagnosticsSettingsCardState extends State<DiagnosticsSettingsCard> {
     return TtAppCard(
       child: FutureBuilder<AppDiagnosticsStatus>(
         future: _statusFuture,
-        builder: (BuildContext context,
-            AsyncSnapshot<AppDiagnosticsStatus> snapshot) {
+        builder: (
+          BuildContext context,
+          AsyncSnapshot<AppDiagnosticsStatus> snapshot,
+        ) {
           final AppDiagnosticsStatus? status = snapshot.data;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Row(
                 children: <Widget>[
-                  Icon(Icons.bug_report_outlined,
-                      color: Theme.of(context).colorScheme.primary),
+                  Icon(
+                    Icons.bug_report_outlined,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                   const SizedBox(width: AppSpacing.md),
                   Expanded(
-                    child: Text('Diagnostica e log',
-                        style: Theme.of(context).textTheme.titleMedium),
+                    child: Text(
+                      'Diagnostica e log',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
                   ),
                   if (_busy ||
                       snapshot.connectionState == ConnectionState.waiting)
@@ -219,8 +280,8 @@ class _DiagnosticsSettingsCardState extends State<DiagnosticsSettingsCard> {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                'Registra errori, navigazione e tempi delle singole fasi della '
-                'dashboard. I file più vecchi di 24 ore vengono eliminati automaticamente.',
+                'Ogni ingresso nell app crea un file distinto. I file piu '
+                'vecchi di 24 ore vengono eliminati automaticamente.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: AppSpacing.md),
@@ -233,8 +294,15 @@ class _DiagnosticsSettingsCardState extends State<DiagnosticsSettingsCard> {
                 ),
                 const SizedBox(height: AppSpacing.xxs),
                 SelectionArea(
-                  child: Text(status.activeDirectory,
-                      style: Theme.of(context).textTheme.bodySmall),
+                  child: Text(
+                    status.activeDirectory,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  'Sessione: ${status.sessionId}',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
               const SizedBox(height: AppSpacing.md),
@@ -282,3 +350,5 @@ class _DiagnosticsSettingsCardState extends State<DiagnosticsSettingsCard> {
     );
   }
 }
+
+enum _LogOpenAction { openInApp, exportTxt }

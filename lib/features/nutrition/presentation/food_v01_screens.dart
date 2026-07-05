@@ -34,6 +34,7 @@ import '../data/services/open_food_facts_service.dart';
 import '../domain/adaptive_target_engine.dart';
 import '../domain/meal_target_settings.dart';
 import 'measurement_screens.dart' show measurementHubProvider;
+import 'widgets/month_meal_calendar_card.dart';
 
 final FutureProvider<FoodHubV01Data> foodHubV01Provider =
     FutureProvider<FoodHubV01Data>((Ref ref) async {
@@ -113,103 +114,6 @@ final FutureProvider<FoodHubV01Data> foodHubV01Provider =
     total.stop();
     await AppDiagnostics.instance.error(
       'dashboard.today_load.failed',
-      error: error,
-      stackTrace: stackTrace,
-      data: <String, Object?>{
-        ...phases,
-        'totalMs': total.elapsedMilliseconds,
-      },
-    );
-    rethrow;
-  }
-});
-
-final FutureProvider<FoodHubV01Data> foodHubExtendedV01Provider =
-    FutureProvider<FoodHubV01Data>((Ref ref) async {
-  final Stopwatch total = Stopwatch()..start();
-  final Map<String, Object?> phases = <String, Object?>{};
-
-  T phase<T>(String name, T Function() operation) {
-    final Stopwatch watch = Stopwatch()..start();
-    final T value = operation();
-    watch.stop();
-    phases[name] = watch.elapsedMilliseconds;
-    return value;
-  }
-
-  try {
-    final dailyRepository = ref.watch(dailyRecordRepositoryProvider);
-    final mealRepository = ref.watch(mealRepositoryProvider);
-    final planning = ref.watch(foodPlanningServiceProvider);
-    final analytics = ref.watch(foodAnalyticsServiceProvider);
-    final UserProfileEntity? profile = phase<UserProfileEntity?>(
-      'profileMs',
-      () => ref.watch(userProfileRepositoryProvider).getActiveProfile(),
-    );
-    final DateTime now = DateTime.now();
-    final String todayKey = _dateKey(now);
-    final String fromDateKey = _dateKey(now.subtract(const Duration(days: 34)));
-    final FoodDayBundle todayBundle = phase<FoodDayBundle>(
-      'ensureTodayMs',
-      () => planning.ensureDay(todayKey),
-    );
-    final List<DailyRecordEntity> allDays = phase<List<DailyRecordEntity>>(
-      'allDaysMs',
-      dailyRepository.getAllActive,
-    );
-    final DailyRecordEntity latest = allDays
-            .where((DailyRecordEntity day) => day.dateKey == todayKey)
-            .firstOrNull ??
-        todayBundle.day;
-    final List<MealWithItems> allMeals = phase<List<MealWithItems>>(
-      'rangeMealsMs',
-      () => mealRepository.getMealsWithItemsInRange(
-        fromDateKey: fromDateKey,
-        toDateKey: todayKey,
-      ),
-    );
-    final List<MealWithItems> latestMeals = allMeals
-        .where((MealWithItems meal) => meal.meal.dateKey == todayKey)
-        .toList();
-    final DateTime monday = now.subtract(Duration(days: now.weekday - 1));
-    final WeekAdaptiveSummary adaptiveSummary = phase<WeekAdaptiveSummary>(
-      'adaptiveSummaryMs',
-      () => analytics.adaptiveSummaryForWeek(
-        monday: monday,
-        allDays: allDays,
-        profile: profile,
-      ),
-    );
-    total.stop();
-    unawaited(
-      AppDiagnostics.instance.info(
-        'dashboard.extended_load.breakdown',
-        data: <String, Object?>{
-          ...phases,
-          'totalMs': total.elapsedMilliseconds,
-          'dayCount': allDays.length,
-          'mealCount': allMeals.length,
-          'windowDays': 35,
-        },
-      ),
-    );
-    return FoodHubV01Data(
-      latest: latest,
-      latestMeals: latestMeals,
-      allMeals: allMeals,
-      days: allDays,
-      ingredients: const <IngredientEntity>[],
-      recipes: const <RecipeEntity>[],
-      scaleMeasurements: const <ScaleMeasurementEntity>[],
-      tapeMeasurements: const <TapeMeasurementEntity>[],
-      analytics: analytics,
-      adaptiveSummary: adaptiveSummary,
-      profile: profile,
-    );
-  } catch (error, stackTrace) {
-    total.stop();
-    await AppDiagnostics.instance.error(
-      'dashboard.extended_load.failed',
       error: error,
       stackTrace: stackTrace,
       data: <String, Object?>{
@@ -334,9 +238,7 @@ class FoodHubScreen extends ConsumerStatefulWidget {
 
 class _FoodHubScreenState extends ConsumerState<FoodHubScreen>
     with WidgetsBindingObserver {
-  static FoodHubV01Data? _cachedBaseData;
-  static FoodHubV01Data? _cachedExtendedData;
-  bool _loadExtended = false;
+  static FoodHubV01Data? _cachedData;
   DateTime? _backgroundedAt;
 
   @override
@@ -368,62 +270,26 @@ class _FoodHubScreenState extends ConsumerState<FoodHubScreen>
           data: <String, Object?>{
             if (_backgroundedAt != null)
               'backgroundMs': now.difference(_backgroundedAt!).inMilliseconds,
-            'hasBaseCache': _cachedBaseData != null,
-            'hasExtendedCache': _cachedExtendedData != null,
+            'hasTodayCache': _cachedData != null,
           },
         ),
       );
     }
   }
 
-  void _requestExtended() {
-    if (_loadExtended) {
-      ref.invalidate(foodHubExtendedV01Provider);
-      return;
-    }
-    setState(() => _loadExtended = true);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final AsyncValue<FoodHubV01Data> data = ref.watch(foodHubV01Provider);
-    final AsyncValue<FoodHubV01Data>? extended =
-        _loadExtended ? ref.watch(foodHubExtendedV01Provider) : null;
-    final FoodHubV01Data? currentBase = data.asData?.value;
-    final FoodHubV01Data? currentExtended = extended?.asData?.value;
-    if (currentBase != null) _cachedBaseData = currentBase;
-    if (currentExtended != null) _cachedExtendedData = currentExtended;
+    final AsyncValue<FoodHubV01Data> state = ref.watch(foodHubV01Provider);
+    final FoodHubV01Data? fresh = state.asData?.value;
+    if (fresh != null) _cachedData = fresh;
+    final FoodHubV01Data? visible = fresh ?? _cachedData;
 
-    final FoodHubV01Data? visibleBase = currentBase ?? _cachedBaseData;
-    final FoodHubV01Data? visibleExtended =
-        currentExtended ?? (_loadExtended ? _cachedExtendedData : null);
-    final bool extendedLoading = extended?.isLoading ?? false;
-
-    Widget body;
-    if (visibleBase == null) {
-      body = data.when(
-        loading: () => const _DashboardLoadingState(),
-        error: (Object error, StackTrace stackTrace) => _ErrorState(
-          error: error,
-          onRetry: () => ref.invalidate(foodHubV01Provider),
-        ),
-        data: (FoodHubV01Data baseData) => _FoodHubV01Body(
-          data: visibleExtended ?? baseData,
-          extendedLoading: extendedLoading,
-          extendedReady: visibleExtended != null,
-          onRetryExtended: _requestExtended,
-        ),
-      );
-    } else {
+    final Widget body;
+    if (visible != null) {
       body = Stack(
         children: <Widget>[
-          _FoodHubV01Body(
-            data: visibleExtended ?? visibleBase,
-            extendedLoading: extendedLoading,
-            extendedReady: visibleExtended != null,
-            onRetryExtended: _requestExtended,
-          ),
-          if (data.isLoading)
+          _FoodHubV01Body(data: visible),
+          if (state.isLoading)
             const Positioned(
               top: 0,
               left: 0,
@@ -431,6 +297,15 @@ class _FoodHubScreenState extends ConsumerState<FoodHubScreen>
               child: LinearProgressIndicator(minHeight: 2),
             ),
         ],
+      );
+    } else {
+      body = state.when(
+        loading: () => const _DashboardLoadingState(),
+        error: (Object error, StackTrace stackTrace) => _ErrorState(
+          error: error,
+          onRetry: () => ref.invalidate(foodHubV01Provider),
+        ),
+        data: (FoodHubV01Data data) => _FoodHubV01Body(data: data),
       );
     }
 
@@ -486,111 +361,13 @@ class _DashboardLoadingState extends StatelessWidget {
   }
 }
 
-class _DeferredDashboardCard extends StatelessWidget {
-  const _DeferredDashboardCard({
-    required this.title,
-    required this.message,
-    required this.loading,
-    this.onTap,
-  });
-
-  final String title;
-  final String message;
-  final bool loading;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return TtAppCard(
-      onTap: onTap,
-      child: Row(
-        children: <Widget>[
-          if (loading)
-            const SizedBox.square(
-              dimension: 22,
-              child: CircularProgressIndicator(strokeWidth: 2.4),
-            )
-          else
-            Icon(
-              Icons.refresh_rounded,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  message,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FoodHubV01Body extends StatefulWidget {
-  const _FoodHubV01Body({
-    required this.data,
-    required this.extendedLoading,
-    required this.extendedReady,
-    required this.onRetryExtended,
-  });
+class _FoodHubV01Body extends StatelessWidget {
+  const _FoodHubV01Body({required this.data});
 
   final FoodHubV01Data data;
-  final bool extendedLoading;
-  final bool extendedReady;
-  final VoidCallback onRetryExtended;
-
-  @override
-  State<_FoodHubV01Body> createState() => _FoodHubV01BodyState();
-}
-
-class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
-  final TextEditingController _chartFrom = TextEditingController();
-  final TextEditingController _chartTo = TextEditingController();
-  bool _chartLoading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _setDefaultRange();
-  }
-
-  @override
-  void didUpdateWidget(covariant _FoodHubV01Body oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_chartFrom.text.isEmpty || _chartTo.text.isEmpty) {
-      _setDefaultRange();
-    }
-  }
-
-  @override
-  void dispose() {
-    _chartFrom.dispose();
-    _chartTo.dispose();
-    super.dispose();
-  }
-
-  void _setDefaultRange() {
-    final DateTime end = DateTime.now();
-    final DateTime start = end.subtract(const Duration(days: 6));
-    _chartFrom.text = _dateKey(start);
-    _chartTo.text = _dateKey(end);
-  }
 
   @override
   Widget build(BuildContext context) {
-    final FoodHubV01Data data = widget.data;
     final String profileName = data.profile?.displayName.trim() ?? '';
     final String dashboardTitle =
         profileName.isEmpty ? 'Dashboard' : 'Dashboard di $profileName';
@@ -623,15 +400,7 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
         : data.analytics.activityForDay(latest, profile: data.profile);
     final double? latestWeight =
         latest == null ? null : data.analytics.weightForDay(latest);
-    final List<DailyRecordEntity> chartDays = _chartLoading
-        ? const <DailyRecordEntity>[]
-        : _daysForChartRange(data.days, _chartFrom.text, _chartTo.text);
 
-    final List<TtChartPoint> caloriePoints = _caloriePoints(chartDays, data);
-    final List<TtChartPoint> calorieTargetPoints =
-        _calorieTargetPoints(chartDays, data);
-    final List<TtChartPoint> stepPoints = _stepPoints(chartDays);
-    final List<TtChartPoint> stepTargetPoints = _stepTargetPoints(chartDays);
     return ListView(
       padding: _screenPadding,
       children: <Widget>[
@@ -677,29 +446,13 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
           const SizedBox(height: AppSpacing.md),
           const TtAppCard(
             child: Text(
-              'C’è almeno un pasto libero non quantificato: i grafici usano i totali disponibili, ma il bilancio resta parziale.',
+              'C e almeno un pasto libero non quantificato: il riepilogo '
+              'odierno usa soltanto i dati disponibili.',
             ),
           ),
         ],
         const SizedBox(height: AppSpacing.sectionGap),
-        if (widget.extendedReady)
-          _MonthCalendarCard(
-            reference: latest == null
-                ? DateTime.now()
-                : DateTime.parse(latest.dateKey),
-            days: data.days,
-            meals: data.allMeals,
-            adaptiveSummary: data.adaptiveSummary,
-          )
-        else
-          _DeferredDashboardCard(
-            title: 'Calendario mensile',
-            message: widget.extendedLoading
-                ? 'Completamento dei dati in background…'
-                : 'Caricamento non riuscito. Tocca per riprovare.',
-            loading: widget.extendedLoading,
-            onTap: widget.extendedLoading ? null : widget.onRetryExtended,
-          ),
+        const MonthMealCalendarCard(),
         const SizedBox(height: AppSpacing.md),
         TtAppCard(
           onTap: () => context.push('/food/ingredients'),
@@ -719,7 +472,7 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     Text(
-                      'I tuoi ingredienti, Open Food Facts e catalogo OpenNutrition offline.',
+                      'Ingredienti locali, Open Food Facts e OpenNutrition.',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
@@ -729,222 +482,39 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
             ],
           ),
         ),
-        const SizedBox(height: AppSpacing.sectionGap),
-        TtAppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      'Filtro grafici',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
-                  if (widget.extendedLoading)
-                    const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: TextField(
-                      controller: _chartFrom,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Data inizio',
-                        suffixIcon: Icon(Icons.calendar_today_rounded),
-                      ),
-                      onTap: () => _pickChartDate(_chartFrom),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: TextField(
-                      controller: _chartTo,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Data fine',
-                        suffixIcon: Icon(Icons.calendar_today_rounded),
-                      ),
-                      onTap: () => _pickChartDate(_chartTo),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: _ChartCard(
-                title: 'Calorie',
-                subtitle: '${_chartFrom.text} - ${_chartTo.text}',
-                child: _chartLoading
-                    ? const SizedBox(
-                        height: 160,
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    : TtMiniBarChart(
-                        points: caloriePoints,
-                        targetPoints: calorieTargetPoints,
-                      ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _ChartCard(
-          title: 'Passi',
-          subtitle: '${_chartFrom.text} - ${_chartTo.text}',
-          child: _chartLoading
-              ? const SizedBox(
-                  height: 160,
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              : TtMiniBarChart(
-                  points: stepPoints,
-                  targetPoints: stepTargetPoints,
-                ),
-        ),
         const SizedBox(height: AppSpacing.md),
         TtAppCard(
-          onTap: widget.extendedReady
-              ? () => _showInsights(context, data)
-              : widget.extendedLoading
-                  ? null
-                  : widget.onRetryExtended,
+          onTap: () => context.push('/food/insights'),
           child: Row(
             children: <Widget>[
-              Icon(Icons.insights_rounded,
-                  color: Theme.of(context).colorScheme.primary),
+              Icon(
+                Icons.insights_rounded,
+                color: Theme.of(context).colorScheme.primary,
+              ),
               const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text('Insight generale',
-                        style: Theme.of(context).textTheme.titleMedium),
-                    const Text(
-                        'Macro, peso, misure, calendario e alimenti più usati.'),
+                    Text(
+                      'Insight generale',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(
+                      'Grafici, trend e statistiche sugli alimenti in una '
+                      'pagina dedicata.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   ],
                 ),
               ),
-              if (widget.extendedLoading)
-                const SizedBox.square(
-                  dimension: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else
-                Icon(
-                  widget.extendedReady
-                      ? Icons.open_in_new_rounded
-                      : Icons.refresh_rounded,
-                ),
+              const Icon(Icons.open_in_new_rounded),
             ],
           ),
         ),
+        const SizedBox(height: AppSpacing.xl),
       ],
     );
-  }
-
-  Future<void> _pickChartDate(TextEditingController controller) async {
-    final DateTime initial =
-        DateTime.tryParse(controller.text) ?? DateTime.now();
-    final DateTime? selected = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2035),
-    );
-    if (selected == null) {
-      return;
-    }
-    setState(() {
-      controller.text = _dateKey(selected);
-      _chartLoading = true;
-    });
-
-    // Prima mostra l'indicatore, poi esegue il ricalcolo nel frame seguente.
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) {
-      return;
-    }
-    setState(() => _chartLoading = false);
-  }
-
-  List<DailyRecordEntity> _daysForChartRange(
-    List<DailyRecordEntity> days,
-    String from,
-    String to,
-  ) {
-    return days
-        .where(
-          (DailyRecordEntity day) =>
-              day.dateKey.compareTo(from) >= 0 &&
-              day.dateKey.compareTo(to) <= 0,
-        )
-        .toList()
-      ..sort((DailyRecordEntity a, DailyRecordEntity b) {
-        return a.dateKey.compareTo(b.dateKey);
-      });
-  }
-
-  List<TtChartPoint> _caloriePoints(
-    List<DailyRecordEntity> days,
-    FoodHubV01Data data,
-  ) {
-    return <TtChartPoint>[
-      for (final DailyRecordEntity day in days)
-        TtChartPoint(
-          label: day.dateKey.substring(5),
-          value: data.analytics.caloriesForDate(day.dateKey),
-        ),
-    ];
-  }
-
-  List<TtChartPoint> _calorieTargetPoints(
-    List<DailyRecordEntity> days,
-    FoodHubV01Data data,
-  ) {
-    return <TtChartPoint>[
-      for (final DailyRecordEntity day in days)
-        TtChartPoint(
-          label: day.dateKey.substring(5),
-          value: data.analytics.targetForDay(
-            day: day,
-            allDays: data.days,
-            profile: data.profile,
-          ),
-        ),
-    ];
-  }
-
-  List<TtChartPoint> _stepPoints(List<DailyRecordEntity> days) {
-    return <TtChartPoint>[
-      for (final DailyRecordEntity day in days)
-        TtChartPoint(
-          label: day.dateKey.substring(5),
-          value: day.steps.toDouble(),
-        ),
-    ];
-  }
-
-  List<TtChartPoint> _stepTargetPoints(List<DailyRecordEntity> days) {
-    return <TtChartPoint>[
-      for (final DailyRecordEntity day in days)
-        TtChartPoint(
-          label: day.dateKey.substring(5),
-          value: day.stepGoal.toDouble(),
-        ),
-    ];
   }
 }
 
@@ -9973,6 +9543,7 @@ class _EmptyInline extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 void _showInsights(BuildContext context, FoodHubV01Data data) {
   final MealNutritionTotals totals = _totalsForMeals(data.allMeals);
   final int averageDivisor = data.days.isEmpty ? 1 : data.days.length;
