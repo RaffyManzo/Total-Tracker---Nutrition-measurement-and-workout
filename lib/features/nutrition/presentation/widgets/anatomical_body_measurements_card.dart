@@ -123,8 +123,8 @@ class _AnatomicalBodyMeasurementsCardState
             LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {
                 final double bodyWidth =
-                    constraints.maxWidth.clamp(220.0, 360.0).toDouble();
-                final Size bodySize = Size(bodyWidth, bodyWidth / 0.56);
+                    constraints.maxWidth.clamp(220.0, 340.0).toDouble();
+                final Size bodySize = Size(bodyWidth, bodyWidth / 0.66);
                 final _BodyGeometry geometry = _geometryFor(bodySize);
 
                 return Center(

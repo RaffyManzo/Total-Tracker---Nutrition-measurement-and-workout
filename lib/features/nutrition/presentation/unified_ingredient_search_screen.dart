@@ -337,6 +337,23 @@ class _UnifiedIngredientSearchScreenState
     });
   }
 
+  Future<void> _returnSelection(
+    IngredientEntity ingredient,
+  ) async {
+    _debounce?.cancel();
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    // La route viene chiusa soltanto a frame concluso. In questo modo non
+    // vengono rimossi InheritedElement mentre hanno ancora dipendenti attivi.
+    await WidgetsBinding.instance.endOfFrame;
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) {
+      return;
+    }
+
+    context.pop<IngredientEntity>(ingredient);
+  }
+
   Future<void> _select(
     UnifiedIngredientSearchItem item,
   ) async {
@@ -367,13 +384,14 @@ class _UnifiedIngredientSearchScreenState
 
     if (!mounted) return;
     if (widget.selectionMode) {
-      context.pop(ingredient);
-    } else {
-      await context.push(
-        '/food/ingredients/${ingredient.id}',
-      );
-      await _reloadLocal();
+      await _returnSelection(ingredient);
+      return;
     }
+
+    await context.push(
+      '/food/ingredients/${ingredient.id}',
+    );
+    await _reloadLocal();
   }
 
   Future<bool> _confirmOpenNutritionImport(
@@ -441,7 +459,13 @@ class _UnifiedIngredientSearchScreenState
     IngredientEntity ingredient, {
     required bool openDetail,
   }) async {
+    if (widget.selectionMode) {
+      await _returnSelection(ingredient);
+      return;
+    }
+
     _debounce?.cancel();
+
     _controller.clear();
     setState(() {
       _query = '';
@@ -451,12 +475,6 @@ class _UnifiedIngredientSearchScreenState
     });
     await _reloadLocal();
     if (!mounted) return;
-
-    if (widget.selectionMode) {
-      context.pop(ingredient);
-      return;
-    }
-
     if (openDetail) {
       await context.push(
         '/food/ingredients/${ingredient.id}',

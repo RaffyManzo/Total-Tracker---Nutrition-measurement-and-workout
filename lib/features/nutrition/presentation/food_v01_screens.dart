@@ -35,8 +35,7 @@ import 'measurement_screens.dart' show measurementHubProvider;
 
 final FutureProvider<FoodHubV01Data> foodHubV01Provider =
     FutureProvider<FoodHubV01Data>((Ref ref) async {
-  // Cede il thread al primo frame: la schermata di caricamento viene
-  // mostrata subito invece di bloccare l'avvio sulla dashboard.
+  // Il primo frame mostra subito lo stato di caricamento.
   await Future<void>.delayed(Duration.zero);
 
   final dailyRepository = ref.watch(dailyRecordRepositoryProvider);
@@ -46,39 +45,91 @@ final FutureProvider<FoodHubV01Data> foodHubV01Provider =
   final UserProfileEntity? profile =
       ref.watch(userProfileRepositoryProvider).getActiveProfile();
 
-  final String todayKey = _dateKey(DateTime.now());
+  final DateTime now = DateTime.now();
+  final String todayKey = _dateKey(now);
+  final String fromDateKey = _dateKey(now.subtract(const Duration(days: 6)));
+
+  final FoodDayBundle todayBundle = planning.ensureDay(todayKey);
+
+  // I record giornalieri sono piccoli e restano disponibili per target e
+  // filtri dei grafici. Il carico costoso dei MealItem è limitato a 7 giorni.
+  final List<DailyRecordEntity> allDays = dailyRepository.getAllActive();
+
+  final DailyRecordEntity latest = allDays
+          .where((DailyRecordEntity day) => day.dateKey == todayKey)
+          .firstOrNull ??
+      todayBundle.day;
+
+  final List<MealWithItems> recentMeals =
+      mealRepository.getMealsWithItemsInRange(
+    fromDateKey: fromDateKey,
+    toDateKey: todayKey,
+  );
+
+  final List<MealWithItems> latestMeals = recentMeals
+      .where((MealWithItems meal) => meal.meal.dateKey == todayKey)
+      .toList();
+
+  final DateTime monday = now.subtract(Duration(days: now.weekday - 1));
+
+  return FoodHubV01Data(
+    latest: latest,
+    latestMeals: latestMeals,
+    allMeals: recentMeals,
+    days: allDays,
+    ingredients: const <IngredientEntity>[],
+    recipes: const <RecipeEntity>[],
+    scaleMeasurements: const <ScaleMeasurementEntity>[],
+    tapeMeasurements: const <TapeMeasurementEntity>[],
+    analytics: analytics,
+    adaptiveSummary: analytics.adaptiveSummaryForWeek(
+      monday: monday,
+      allDays: allDays,
+      profile: profile,
+    ),
+    profile: profile,
+  );
+});
+
+final FutureProvider<FoodHubV01Data> foodHubExtendedV01Provider =
+    FutureProvider<FoodHubV01Data>((Ref ref) async {
+  // Lascia renderizzare la giornata corrente prima di caricare gli archivi.
+  await WidgetsBinding.instance.endOfFrame;
+  await Future<void>.delayed(const Duration(milliseconds: 80));
+
+  final dailyRepository = ref.watch(dailyRecordRepositoryProvider);
+  final mealRepository = ref.watch(mealRepositoryProvider);
+  final ingredientRepository = ref.watch(ingredientRepositoryProvider);
+  final recipeRepository = ref.watch(recipeRepositoryProvider);
+  final planning = ref.watch(foodPlanningServiceProvider);
+  final analytics = ref.watch(foodAnalyticsServiceProvider);
+  final UserProfileEntity? profile =
+      ref.watch(userProfileRepositoryProvider).getActiveProfile();
+
+  final DateTime now = DateTime.now();
+  final String todayKey = _dateKey(now);
   final FoodDayBundle todayBundle = planning.ensureDay(todayKey);
   final List<DailyRecordEntity> days = dailyRepository.getAllActive();
+
   final DailyRecordEntity latest = days
           .where((DailyRecordEntity day) => day.dateKey == todayKey)
           .firstOrNull ??
       todayBundle.day;
 
-  final DateTime reference = DateTime.parse(latest.dateKey);
-  final DateTime monday =
-      reference.subtract(Duration(days: reference.weekday - 1));
-  final String dashboardFromKey =
-      _dateKey(reference.subtract(const Duration(days: 45)));
-
-  final List<MealWithItems> allMeals = mealRepository.getMealsWithItemsInRange(
-    fromDateKey: dashboardFromKey,
-    toDateKey: latest.dateKey,
-  );
+  final List<MealWithItems> allMeals = mealRepository.getAllWithItems();
   final List<MealWithItems> latestMeals = allMeals
-      .where(
-        (MealWithItems meal) => meal.meal.dateKey == latest.dateKey,
-      )
+      .where((MealWithItems meal) => meal.meal.dateKey == todayKey)
       .toList();
+
+  final DateTime monday = now.subtract(Duration(days: now.weekday - 1));
 
   return FoodHubV01Data(
     latest: latest,
     latestMeals: latestMeals,
     allMeals: allMeals,
     days: days,
-    // Questi archivi non sono letti dal primo render della dashboard.
-    // Restano disponibili nei provider dedicati delle rispettive pagine.
-    ingredients: const <IngredientEntity>[],
-    recipes: const <RecipeEntity>[],
+    ingredients: ingredientRepository.getAllActive(),
+    recipes: recipeRepository.getAllActive(),
     scaleMeasurements: const <ScaleMeasurementEntity>[],
     tapeMeasurements: const <TapeMeasurementEntity>[],
     analytics: analytics,
@@ -90,6 +141,7 @@ final FutureProvider<FoodHubV01Data> foodHubV01Provider =
     profile: profile,
   );
 });
+
 final FutureProvider<List<DailyRecordEntity>> foodDaysV01Provider =
     FutureProvider<List<DailyRecordEntity>>((Ref ref) async {
   return ref.watch(dailyRecordRepositoryProvider).getAllActive();
@@ -200,24 +252,138 @@ class FoodHubScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AsyncValue<FoodHubV01Data> data = ref.watch(foodHubV01Provider);
+    final AsyncValue<FoodHubV01Data> extended =
+        ref.watch(foodHubExtendedV01Provider);
+    final FoodHubV01Data? extendedData = extended.asData?.value;
+
     return Scaffold(
       bottomNavigationBar: const TtFoodBottomNavBar(),
       body: data.when(
-        loading: () => const _LoadingState(),
+        loading: () => const _DashboardLoadingState(),
         error: (Object error, StackTrace stackTrace) => _ErrorState(
           error: error,
           onRetry: () => ref.invalidate(foodHubV01Provider),
         ),
-        data: (FoodHubV01Data data) => _FoodHubV01Body(data: data),
+        data: (FoodHubV01Data baseData) => _FoodHubV01Body(
+          data: extendedData ?? baseData,
+          extendedLoading: extended.isLoading,
+          extendedReady: extendedData != null,
+          onRetryExtended: () => ref.invalidate(foodHubExtendedV01Provider),
+        ),
+      ),
+    );
+  }
+}
+
+class _DashboardLoadingState extends StatelessWidget {
+  const _DashboardLoadingState();
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+
+    Widget skeleton({double height = 72}) {
+      return Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerHighest.withValues(alpha: 0.65),
+          borderRadius: BorderRadius.circular(20),
+        ),
+      );
+    }
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: _screenPadding,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              const CircularProgressIndicator(),
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                'Caricamento della giornata di oggi…',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: AppSpacing.sectionGap),
+              skeleton(height: 170),
+              const SizedBox(height: AppSpacing.md),
+              skeleton(),
+              const SizedBox(height: AppSpacing.md),
+              skeleton(height: 130),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DeferredDashboardCard extends StatelessWidget {
+  const _DeferredDashboardCard({
+    required this.title,
+    required this.message,
+    required this.loading,
+    this.onTap,
+  });
+
+  final String title;
+  final String message;
+  final bool loading;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return TtAppCard(
+      onTap: onTap,
+      child: Row(
+        children: <Widget>[
+          if (loading)
+            const SizedBox.square(
+              dimension: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.4),
+            )
+          else
+            Icon(
+              Icons.refresh_rounded,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  message,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
 class _FoodHubV01Body extends StatefulWidget {
-  const _FoodHubV01Body({required this.data});
+  const _FoodHubV01Body({
+    required this.data,
+    required this.extendedLoading,
+    required this.extendedReady,
+    required this.onRetryExtended,
+  });
 
   final FoodHubV01Data data;
+  final bool extendedLoading;
+  final bool extendedReady;
+  final VoidCallback onRetryExtended;
 
   @override
   State<_FoodHubV01Body> createState() => _FoodHubV01BodyState();
@@ -226,6 +392,7 @@ class _FoodHubV01Body extends StatefulWidget {
 class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
   final TextEditingController _chartFrom = TextEditingController();
   final TextEditingController _chartTo = TextEditingController();
+  bool _chartLoading = false;
 
   @override
   void initState() {
@@ -290,8 +457,10 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
         : data.analytics.activityForDay(latest, profile: data.profile);
     final double? latestWeight =
         latest == null ? null : data.analytics.weightForDay(latest);
-    final List<DailyRecordEntity> chartDays =
-        _daysForChartRange(data.days, _chartFrom.text, _chartTo.text);
+    final List<DailyRecordEntity> chartDays = _chartLoading
+        ? const <DailyRecordEntity>[]
+        : _daysForChartRange(data.days, _chartFrom.text, _chartTo.text);
+
     final List<TtChartPoint> caloriePoints = _caloriePoints(chartDays, data);
     final List<TtChartPoint> calorieTargetPoints =
         _calorieTargetPoints(chartDays, data);
@@ -347,13 +516,24 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
           ),
         ],
         const SizedBox(height: AppSpacing.sectionGap),
-        _MonthCalendarCard(
-          reference:
-              latest == null ? DateTime.now() : DateTime.parse(latest.dateKey),
-          days: data.days,
-          meals: data.allMeals,
-          adaptiveSummary: data.adaptiveSummary,
-        ),
+        if (widget.extendedReady)
+          _MonthCalendarCard(
+            reference: latest == null
+                ? DateTime.now()
+                : DateTime.parse(latest.dateKey),
+            days: data.days,
+            meals: data.allMeals,
+            adaptiveSummary: data.adaptiveSummary,
+          )
+        else
+          _DeferredDashboardCard(
+            title: 'Calendario mensile',
+            message: widget.extendedLoading
+                ? 'Completamento dei dati in background…'
+                : 'Caricamento non riuscito. Tocca per riprovare.',
+            loading: widget.extendedLoading,
+            onTap: widget.extendedLoading ? null : widget.onRetryExtended,
+          ),
         const SizedBox(height: AppSpacing.md),
         TtAppCard(
           onTap: () => context.push('/food/ingredients'),
@@ -388,9 +568,20 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(
-                'Filtro grafici',
-                style: Theme.of(context).textTheme.titleMedium,
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      'Filtro grafici',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  if (widget.extendedLoading)
+                    const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                ],
               ),
               const SizedBox(height: AppSpacing.md),
               Row(
@@ -430,10 +621,15 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
               child: _ChartCard(
                 title: 'Calorie',
                 subtitle: '${_chartFrom.text} - ${_chartTo.text}',
-                child: TtMiniBarChart(
-                  points: caloriePoints,
-                  targetPoints: calorieTargetPoints,
-                ),
+                child: _chartLoading
+                    ? const SizedBox(
+                        height: 160,
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : TtMiniBarChart(
+                        points: caloriePoints,
+                        targetPoints: calorieTargetPoints,
+                      ),
               ),
             ),
           ],
@@ -442,14 +638,23 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
         _ChartCard(
           title: 'Passi',
           subtitle: '${_chartFrom.text} - ${_chartTo.text}',
-          child: TtMiniBarChart(
-            points: stepPoints,
-            targetPoints: stepTargetPoints,
-          ),
+          child: _chartLoading
+              ? const SizedBox(
+                  height: 160,
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              : TtMiniBarChart(
+                  points: stepPoints,
+                  targetPoints: stepTargetPoints,
+                ),
         ),
         const SizedBox(height: AppSpacing.md),
         TtAppCard(
-          onTap: () => _showInsights(context, data),
+          onTap: widget.extendedReady
+              ? () => _showInsights(context, data)
+              : widget.extendedLoading
+                  ? null
+                  : widget.onRetryExtended,
           child: Row(
             children: <Widget>[
               Icon(Icons.insights_rounded,
@@ -466,7 +671,17 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
                   ],
                 ),
               ),
-              const Icon(Icons.open_in_new_rounded),
+              if (widget.extendedLoading)
+                const SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Icon(
+                  widget.extendedReady
+                      ? Icons.open_in_new_rounded
+                      : Icons.refresh_rounded,
+                ),
             ],
           ),
         ),
@@ -486,7 +701,17 @@ class _FoodHubV01BodyState extends State<_FoodHubV01Body> {
     if (selected == null) {
       return;
     }
-    setState(() => controller.text = _dateKey(selected));
+    setState(() {
+      controller.text = _dateKey(selected);
+      _chartLoading = true;
+    });
+
+    // Prima mostra l'indicatore, poi esegue il ricalcolo nel frame seguente.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) {
+      return;
+    }
+    setState(() => _chartLoading = false);
   }
 
   List<DailyRecordEntity> _daysForChartRange(

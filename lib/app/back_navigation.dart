@@ -14,12 +14,10 @@ final DashboardBackController dashboardBackController =
 
 class DashboardBackScope extends StatelessWidget {
   const DashboardBackScope({
-    required this.router,
     required this.child,
     super.key,
   });
 
-  final GoRouter router;
   final Widget child;
 
   @override
@@ -27,9 +25,12 @@ class DashboardBackScope extends StatelessWidget {
     return PopScope<Object?>(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, Object? result) {
-        if (!didPop) {
-          unawaited(dashboardBackController.handle(router));
+        if (didPop) {
+          return;
         }
+        unawaited(
+          dashboardBackController.handle(GoRouter.of(context)),
+        );
       },
       child: child,
     );
@@ -59,6 +60,7 @@ class DashboardBackController {
           await AppNavigationPreferences.getDefaultDashboardRoute();
       final String preferredRoute =
           configuredRoute == '/' ? '/food' : configuredRoute;
+
       final String rawCurrent =
           router.routerDelegate.currentConfiguration.uri.path;
       final String currentRoute = rawCurrent == '/' ? '/food' : rawCurrent;
@@ -66,7 +68,7 @@ class DashboardBackController {
       if (currentRoute != preferredRoute) {
         _lastExitAttempt = null;
         router.go(preferredRoute);
-        _showMessage('Home aperta.');
+        _showMessage('Dashboard aperta.');
         return true;
       }
 
@@ -81,7 +83,9 @@ class DashboardBackController {
       }
 
       _lastExitAttempt = now;
-      _showMessage('Premi di nuovo Indietro per chiudere Total Tracker.');
+      _showMessage(
+        'Premi di nuovo Indietro per chiudere Total Tracker.',
+      );
       return true;
     } finally {
       _handling = false;
@@ -89,9 +93,7 @@ class DashboardBackController {
   }
 
   void _showMessage(String message) {
-    final ScaffoldMessengerState? messenger =
-        appScaffoldMessengerKey.currentState;
-    messenger
+    appScaffoldMessengerKey.currentState
       ?..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
@@ -102,6 +104,6 @@ class DashboardBackController {
   }
 }
 
-// La gestione del tasto Indietro avviene nel PopScope posto sopra il Router.
-// La funzione resta disponibile per compatibilità con la configurazione attuale.
-void installDashboardBackDispatcher(GoRouter _) {}
+// Conservata per compatibilità con l'inizializzazione esistente.
+// Il tasto Indietro è gestito da DashboardBackScope nel ShellRoute.
+void installDashboardBackDispatcher(GoRouter router) {}

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -987,6 +989,7 @@ class RecipesScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final AsyncValue<List<RecipeEntity>> asyncRecipes =
         ref.watch(recipesProvider);
+
     return Scaffold(
       appBar: AppBar(title: const Text('Ricette')),
       floatingActionButton: FloatingActionButton.extended(
@@ -1004,35 +1007,91 @@ class RecipesScreen extends ConsumerWidget {
           if (recipes.isEmpty) {
             return const _EmptyState(
               title: 'Nessuna ricetta',
-              message: 'Crea una ricetta semplice persistente.',
+              message: 'Le ricette create o importate saranno elencate qui.',
             );
           }
+
           return ListView.separated(
             padding: _screenPadding,
             itemCount: recipes.length,
             separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.md),
             itemBuilder: (BuildContext context, int index) {
               final RecipeEntity recipe = recipes[index];
+              final double? kcal =
+                  recipe.kcalPerServing ?? recipe.caloriesTotal;
+
               return TtAppCard(
                 onTap: () => context.push('/food/recipes/${recipe.id}'),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: SizedBox(
+                        width: 112,
+                        height: 104,
+                        child: _RecipeCardImage(path: recipe.imagePath),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           Text(
                             recipe.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
-                          const SizedBox(height: AppSpacing.xs),
-                          Text(
-                            '${recipe.servings} porzioni - ${recipe.difficultyCode}',
-                            style: Theme.of(context).textTheme.bodySmall,
+                          if (recipe.subtitle.trim().isNotEmpty) ...<Widget>[
+                            const SizedBox(height: AppSpacing.xs),
+                            Text(
+                              recipe.subtitle.trim(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                          if (recipe.summary.trim().isNotEmpty) ...<Widget>[
+                            const SizedBox(height: AppSpacing.xs),
+                            Text(
+                              recipe.summary.trim(),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                          const SizedBox(height: AppSpacing.sm),
+                          Wrap(
+                            spacing: AppSpacing.sm,
+                            runSpacing: AppSpacing.xs,
+                            children: <Widget>[
+                              if (kcal != null)
+                                Text(
+                                  recipe.kcalPerServing != null
+                                      ? '${_fmtKcal(kcal)} / porzione'
+                                      : _fmtKcal(kcal),
+                                  style: Theme.of(context).textTheme.labelLarge,
+                                ),
+                              Text(
+                                '${recipe.servings} porzioni',
+                                style: Theme.of(context).textTheme.labelMedium,
+                              ),
+                              if (recipe.prepTimeMinutes +
+                                      recipe.cookTimeMinutes >
+                                  0)
+                                Text(
+                                  '${recipe.prepTimeMinutes + recipe.cookTimeMinutes} min',
+                                  style:
+                                      Theme.of(context).textTheme.labelMedium,
+                                ),
+                            ],
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(width: AppSpacing.xs),
                     const Icon(Icons.chevron_right_rounded),
                   ],
                 ),
@@ -1041,6 +1100,59 @@ class RecipesScreen extends ConsumerWidget {
           );
         },
       ),
+    );
+  }
+}
+
+class _RecipeCardImage extends StatelessWidget {
+  const _RecipeCardImage({required this.path});
+
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final Widget fallback = ColoredBox(
+      color: colors.surfaceContainerHighest,
+      child: Icon(
+        Icons.restaurant_menu_rounded,
+        color: colors.onSurfaceVariant,
+        size: 34,
+      ),
+    );
+
+    final String value = path.trim();
+    if (value.isEmpty) {
+      return fallback;
+    }
+
+    final Uri? uri = Uri.tryParse(value);
+    if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+      return Image.network(
+        value,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => fallback,
+      );
+    }
+
+    if (value.startsWith('assets/')) {
+      return Image.asset(
+        value,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => fallback,
+      );
+    }
+
+    final File file = File(value);
+    if (!file.existsSync()) {
+      return fallback;
+    }
+
+    return Image.file(
+      file,
+      fit: BoxFit.cover,
+      cacheWidth: 480,
+      errorBuilder: (_, __, ___) => fallback,
     );
   }
 }

@@ -49,12 +49,6 @@ class TotalTrackerApp extends ConsumerWidget {
       supportedLocales: AppLocalizations.supportedLocales,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       routerConfig: appRouter,
-      builder: (BuildContext context, Widget? child) {
-        return DashboardBackScope(
-          router: appRouter,
-          child: child ?? const SizedBox.shrink(),
-        );
-      },
     );
   }
 }

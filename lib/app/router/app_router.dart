@@ -30,7 +30,7 @@ GoRouter _createAppRouter() {
           GoRouterState state,
           Widget child,
         ) {
-          return child;
+          return DashboardBackScope(child: child);
         },
         routes: <RouteBase>[
           GoRoute(
