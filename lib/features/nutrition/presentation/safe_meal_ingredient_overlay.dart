@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/database/objectbox_providers.dart';
 import '../../../core/diagnostics/app_diagnostics.dart';
 import '../data/entities/ingredient_entity.dart';
+import 'food_v01_screens.dart';
 
 class SafeMealIngredientOverlay extends ConsumerStatefulWidget {
   const SafeMealIngredientOverlay({
@@ -26,7 +27,6 @@ class SafeMealIngredientOverlay extends ConsumerStatefulWidget {
 class _SafeMealIngredientOverlayState
     extends ConsumerState<SafeMealIngredientOverlay> {
   bool _busy = false;
-  int _revision = 0;
 
   Future<void> _addIngredient() async {
     if (_busy) return;
@@ -45,22 +45,24 @@ class _SafeMealIngredientOverlayState
             'ingredientId': ingredient.id,
             'ingredientName': ingredient.name,
             'mealId': widget.targetId,
+            'flowVersion': 2,
           },
         ),
       );
 
       final double? grams = await showDialog<double>(
         context: context,
+        useRootNavigator: true,
         barrierDismissible: false,
         builder: (BuildContext dialogContext) =>
             _IngredientQuantityDialog(ingredientName: ingredient.name),
       );
       if (!mounted || grams == null) return;
 
-      // The route and dialog overlays must finish their exit animations before
-      // the meal subtree is rebuilt. This prevents disposed controllers and
-      // duplicated Overlay GlobalKeys.
-      await Future<void>.delayed(const Duration(milliseconds: 360));
+      // The dialog owns no manually managed text controller. Waiting for one frame only
+      // separates overlay disposal from ObjectBox writes without rebuilding the
+      // meal route or replacing its subtree.
+      await WidgetsBinding.instance.endOfFrame;
       if (!mounted) return;
 
       final int mealId = int.parse(widget.targetId);
@@ -72,9 +74,10 @@ class _SafeMealIngredientOverlayState
           );
       saveWatch.stop();
 
-      await WidgetsBinding.instance.endOfFrame;
-      if (!mounted) return;
-      setState(() => _revision += 1);
+      ref
+        ..invalidate(foodMealsV01Provider)
+        ..invalidate(foodDaysV01Provider)
+        ..invalidate(foodHubV01Provider);
 
       unawaited(
         AppDiagnostics.instance.info(
@@ -84,15 +87,24 @@ class _SafeMealIngredientOverlayState
             'ingredientId': ingredient.id,
             'grams': grams,
             'saveMs': saveWatch.elapsedMilliseconds,
+            'flowVersion': 2,
           },
         ),
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Alimento aggiunto al pasto.')),
       );
     } catch (error, stackTrace) {
       await AppDiagnostics.instance.error(
         'ingredient.add_to_meal.failed',
         error: error,
         stackTrace: stackTrace,
-        data: <String, Object?>{'mealId': widget.targetId},
+        data: <String, Object?>{
+          'mealId': widget.targetId,
+          'flowVersion': 2,
+        },
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -107,24 +119,24 @@ class _SafeMealIngredientOverlayState
   Widget build(BuildContext context) {
     return Stack(
       children: <Widget>[
-        KeyedSubtree(
-          key: ValueKey<String>('meal-${widget.targetId}-$_revision'),
-          child: widget.child,
-        ),
+        widget.child,
         Positioned(
           right: 16,
           bottom: 86,
           child: SafeArea(
-            child: FloatingActionButton.extended(
-              heroTag: 'safe-add-food-${widget.targetId}',
-              onPressed: _busy ? null : _addIngredient,
-              icon: _busy
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.add),
-              label: const Text('Alimento'),
+            child: HeroMode(
+              enabled: false,
+              child: FloatingActionButton.extended(
+                heroTag: null,
+                onPressed: _busy ? null : _addIngredient,
+                icon: _busy
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.add),
+                label: const Text('Alimento'),
+              ),
             ),
           ),
         ),
@@ -144,24 +156,17 @@ class _IngredientQuantityDialog extends StatefulWidget {
 }
 
 class _IngredientQuantityDialogState extends State<_IngredientQuantityDialog> {
-  late final TextEditingController _controller =
-      TextEditingController(text: '100');
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  String _quantityText = '100';
   bool _submitting = false;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
 
   void _submit() {
     if (_submitting || !(_formKey.currentState?.validate() ?? false)) return;
     final double grams =
-        double.parse(_controller.text.trim().replaceAll(',', '.'));
-    FocusScope.of(context).unfocus();
-    setState(() => _submitting = true);
-    Navigator.of(context).pop<double>(grams);
+        double.parse(_quantityText.trim().replaceAll(',', '.'));
+    FocusManager.instance.primaryFocus?.unfocus();
+    _submitting = true;
+    Navigator.of(context, rootNavigator: true).pop<double>(grams);
   }
 
   @override
@@ -171,7 +176,7 @@ class _IngredientQuantityDialogState extends State<_IngredientQuantityDialog> {
       content: Form(
         key: _formKey,
         child: TextFormField(
-          controller: _controller,
+          initialValue: _quantityText,
           autofocus: true,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           textInputAction: TextInputAction.done,
@@ -179,6 +184,7 @@ class _IngredientQuantityDialogState extends State<_IngredientQuantityDialog> {
             labelText: 'Quantita',
             suffixText: 'g',
           ),
+          onChanged: (String value) => _quantityText = value,
           validator: (String? value) {
             final double? grams =
                 double.tryParse((value ?? '').trim().replaceAll(',', '.'));
@@ -192,7 +198,9 @@ class _IngredientQuantityDialogState extends State<_IngredientQuantityDialog> {
       ),
       actions: <Widget>[
         TextButton(
-          onPressed: _submitting ? null : () => Navigator.of(context).pop(),
+          onPressed: _submitting
+              ? null
+              : () => Navigator.of(context, rootNavigator: true).pop(),
           child: const Text('Annulla'),
         ),
         FilledButton(

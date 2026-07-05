@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -45,8 +46,7 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
     });
     if (cached != null) return;
 
-    final Stopwatch totalWatch = Stopwatch()..start();
-    final Stopwatch queryWatch = Stopwatch()..start();
+    final Stopwatch watch = Stopwatch()..start();
     try {
       final DateTime first = DateTime(month.year, month.month);
       final DateTime last = DateTime(month.year, month.month + 1, 0);
@@ -56,10 +56,7 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
         _queryAndAggregateMonthMeals,
         <String>[_dateKey(first), _dateKey(last)],
       );
-      queryWatch.stop();
-
-      final Stopwatch aggregateWatch = Stopwatch();
-      totalWatch.stop();
+      watch.stop();
 
       final _MonthCalendarSnapshot snapshot = _MonthCalendarSnapshot(
         month: first,
@@ -81,10 +78,7 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
           'dashboard.month_calendar_load.completed',
           data: <String, Object?>{
             'month': cacheKey,
-            'queryMs': queryWatch.elapsedMilliseconds,
-            'objectBoxBackgroundMs': queryWatch.elapsedMilliseconds,
-            'aggregateIsolateMs': aggregateWatch.elapsedMilliseconds,
-            'totalMs': totalWatch.elapsedMilliseconds,
+            'backgroundObjectBoxMs': watch.elapsedMilliseconds,
             'dayCount': aggregated.length,
           },
         ),
@@ -96,15 +90,14 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
         _loading = false;
       });
     } catch (error, stackTrace) {
-      totalWatch.stop();
+      watch.stop();
       await AppDiagnostics.instance.error(
         'dashboard.month_calendar_load.failed',
         error: error,
         stackTrace: stackTrace,
         data: <String, Object?>{
           'month': cacheKey,
-          'queryMs': queryWatch.elapsedMilliseconds,
-          'totalMs': totalWatch.elapsedMilliseconds,
+          'totalMs': watch.elapsedMilliseconds,
         },
       );
       if (!mounted || generation != _requestGeneration) return;
@@ -125,7 +118,7 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -144,7 +137,7 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       Text(
-                        'I dati vengono caricati solo per il mese visualizzato.',
+                        'Caricamento limitato al mese visualizzato.',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
@@ -158,7 +151,7 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             if (_loading && _snapshot == null)
               const _CalendarSkeleton()
             else if (_error != null && _snapshot == null)
@@ -176,7 +169,7 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
               )
             else ...<Widget>[
               if (_loading) const LinearProgressIndicator(minHeight: 2),
-              const SizedBox(height: 8),
+              const SizedBox(height: 7),
               _buildCalendar(context, _snapshot!, colors),
             ],
           ],
@@ -213,15 +206,15 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
               )
               .toList(growable: false),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 5),
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 7,
-            mainAxisSpacing: 5,
-            crossAxisSpacing: 5,
-            childAspectRatio: .78,
+            mainAxisSpacing: 4,
+            crossAxisSpacing: 4,
+            childAspectRatio: .66,
           ),
           itemCount: totalCells,
           itemBuilder: (BuildContext context, int index) {
@@ -235,51 +228,74 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
             final bool isToday = today.year == date.year &&
                 today.month == date.month &&
                 today.day == date.day;
-            return InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => context.push('/food/days/$dateKey'),
-              child: Ink(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isToday ? colors.primary : colors.outlineVariant,
-                    width: isToday ? 2 : 1,
+            final String tooltip = info == null
+                ? '$dateKey: nessun dato'
+                : '$dateKey: ${info.meals} pasti, '
+                    '${info.kcal.round()} kcal';
+
+            return Tooltip(
+              message: tooltip,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => context.push('/food/days/$dateKey'),
+                child: Ink(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isToday ? colors.primary : colors.outlineVariant,
+                      width: isToday ? 2 : 1,
+                    ),
+                    color: info == null
+                        ? colors.surfaceContainerLow
+                        : colors.primaryContainer.withValues(alpha: .55),
                   ),
-                  color: info == null
-                      ? colors.surfaceContainerLow
-                      : colors.primaryContainer.withValues(alpha: .55),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 6,
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  child: Stack(
                     children: <Widget>[
-                      Text(
-                        '$dayNumber',
-                        style: Theme.of(context).textTheme.labelLarge,
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 2,
+                          vertical: 3,
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                '$dayNumber',
+                                style: Theme.of(context).textTheme.labelMedium,
+                              ),
+                            ),
+                            if (info != null) ...<Widget>[
+                              const SizedBox(height: 2),
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  '${info.kcal.round()}',
+                                  maxLines: 1,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelSmall
+                                      ?.copyWith(fontSize: 8),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
-                      if (info != null) ...<Widget>[
-                        Text(
-                          '${info.meals} pasti',
-                          maxLines: 1,
-                          style: Theme.of(context).textTheme.labelSmall,
-                        ),
-                        Text(
-                          '${info.kcal.round()} kcal',
-                          maxLines: 1,
-                          style: Theme.of(context).textTheme.labelSmall,
-                        ),
-                        if (info.freeMeals > 0)
-                          Icon(
-                            Icons.restaurant_rounded,
-                            size: 12,
-                            color: colors.tertiary,
+                      if (info != null && info.freeMeals > 0)
+                        Positioned(
+                          right: 3,
+                          top: 3,
+                          child: Container(
+                            width: 5,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: colors.error,
+                              shape: BoxShape.circle,
+                            ),
                           ),
-                      ] else
-                        const SizedBox(height: 26),
+                        ),
                     ],
                   ),
                 ),
@@ -347,26 +363,27 @@ class _CalendarSkeleton extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 7,
-        mainAxisSpacing: 5,
-        crossAxisSpacing: 5,
-        childAspectRatio: .78,
+        mainAxisSpacing: 4,
+        crossAxisSpacing: 4,
+        childAspectRatio: .66,
       ),
       itemCount: 35,
       itemBuilder: (_, __) => DecoratedBox(
         decoration: BoxDecoration(
           color: color,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
         ),
       ),
     );
   }
 }
 
-String _monthKey(DateTime date) =>
-    '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}';
+String _monthKey(DateTime date) => '${date.year.toString().padLeft(4, '0')}-'
+    '${date.month.toString().padLeft(2, '0')}';
 
-String _dateKey(DateTime date) =>
-    '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+String _dateKey(DateTime date) => '${date.year.toString().padLeft(4, '0')}-'
+    '${date.month.toString().padLeft(2, '0')}-'
+    '${date.day.toString().padLeft(2, '0')}';
 
 String _monthLabel(DateTime date) {
   const List<String> months = <String>[
