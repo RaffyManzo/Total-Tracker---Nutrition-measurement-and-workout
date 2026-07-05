@@ -229,11 +229,16 @@ class MealRepository {
 
     final List<int> mealIds =
         meals.map((MealEntity meal) => meal.id).toList(growable: false);
+    var mealRelationCondition = MealItemEntity_.meal.equals(mealIds.first);
+    for (final int mealId in mealIds.skip(1)) {
+      mealRelationCondition = mealRelationCondition.or(
+        MealItemEntity_.meal.equals(mealId),
+      );
+    }
+
     final Query<MealItemEntity> itemQuery = _itemBox
         .query(
-          MealItemEntity_.deletedAtEpochMs
-              .isNull()
-              .and(MealItemEntity_.meal.oneOf(mealIds)),
+          MealItemEntity_.deletedAtEpochMs.isNull().and(mealRelationCondition),
         )
         .build();
     late final List<MealItemEntity> items;
