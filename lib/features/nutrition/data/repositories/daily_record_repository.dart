@@ -3,6 +3,7 @@ import 'package:objectbox/objectbox.dart';
 import '../../../../core/identifiers/uuid_generator.dart';
 import '../../../../core/time/clock.dart';
 import '../entities/nutrition_tracking_entities.dart';
+import '../food_data_refresh_bus.dart';
 
 class DailyRecordRepository {
   DailyRecordRepository(
@@ -22,8 +23,39 @@ class DailyRecordRepository {
   DailyRecordEntity save(DailyRecordEntity record) {
     _normalize(record);
     _validate(record);
+    final DailyRecordEntity? stored =
+        record.id == 0 ? findByDate(record.dateKey) : _box.get(record.id);
+    final int? previousSteps = stored?.steps;
+    final int? previousStepGoal = stored?.stepGoal;
+    final double? previousActiveEffective = stored?.activeEffectiveKcal;
+    final double? previousActiveActual = stored?.activeKcalActual;
+    final double? previousActiveReference = stored?.activeRefKcal;
+    final double? previousTarget = stored?.targetKcal;
+
     _prepareForSave(record);
     record.id = _box.put(record);
+
+    final bool predictionInputsChanged = stored != null &&
+        (previousSteps != record.steps ||
+            previousStepGoal != record.stepGoal ||
+            previousActiveEffective != record.activeEffectiveKcal ||
+            previousActiveActual != record.activeKcalActual ||
+            previousActiveReference != record.activeRefKcal ||
+            previousTarget != record.targetKcal);
+    final bool newRecordWithInputs = stored == null &&
+        (record.steps > 0 ||
+            record.stepGoal > 0 ||
+            (record.activeEffectiveKcal ?? 0) > 0 ||
+            (record.activeKcalActual ?? 0) > 0 ||
+            (record.activeRefKcal ?? 0) > 0 ||
+            (record.targetKcal ?? 0) > 0);
+    if (predictionInputsChanged || newRecordWithInputs) {
+      FoodDataRefreshBus.publishDailyRecord(
+        dateKey: record.dateKey,
+        steps: record.steps,
+        reason: 'prediction_input_changed',
+      );
+    }
     return record;
   }
 

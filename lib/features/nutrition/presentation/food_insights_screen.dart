@@ -320,7 +320,9 @@ class _InsightsBody extends StatelessWidget {
                 color: Theme.of(context).colorScheme.primary,
                 pointColor: (int index) => data.days[index].isFree
                     ? Theme.of(context).colorScheme.error
-                    : Theme.of(context).colorScheme.primary,
+                    : data.days[index].isPartial
+                        ? Colors.orange
+                        : Theme.of(context).colorScheme.primary,
                 decimals: 0,
               ),
               _ChartSeries(
@@ -349,7 +351,7 @@ class _InsightsBody extends StatelessWidget {
         _CollapsibleSection(
           title: 'Distribuzione dei giorni',
           subtitle:
-              'Giorni liberi, parziali, in deficit, in surplus e in normocalorica (+/- 30 kcal).',
+              'Parziale = giorno libero non tracciato. Libero = giorno libero tracciato o stimato. Gli altri giorni sono deficit, surplus o normo (+/- 30 kcal).',
           initiallyExpanded: true,
           child: _DayStatusPieChart(counts: data.statusCounts),
         ),
@@ -1520,10 +1522,6 @@ _InsightsSnapshot _queryAndAggregateInsights(
     toDateKey: range[1],
   );
 
-  final Map<String, DailyRecordEntity> recordsByDate =
-      <String, DailyRecordEntity>{
-    for (final DailyRecordEntity record in records) record.dateKey: record,
-  };
   final Map<String, _MutableDay> days = <String, _MutableDay>{};
   final Map<String, _MutableFoodStat> foods = <String, _MutableFoodStat>{};
 
@@ -1546,7 +1544,6 @@ _InsightsSnapshot _queryAndAggregateInsights(
         record.activeKcalActual ??
         record.activeRefKcal ??
         0;
-    day.isFree = record.freeMealModeCode != 'none';
     if (record.caloriesInKcal != null && record.caloriesInKcal! > 0) {
       day.fallbackCalories = record.caloriesInKcal!;
     }
@@ -1555,10 +1552,14 @@ _InsightsSnapshot _queryAndAggregateInsights(
   for (final MealWithItems meal in meals) {
     final String date = meal.meal.dateKey;
     final _MutableDay day = days.putIfAbsent(date, () => _MutableDay(date));
-    day.isFree = day.isFree ||
-        meal.meal.mealModeCode == 'free' ||
-        meal.meal.freeMealTrackingCode.isNotEmpty;
-    day.isPartial = day.isPartial || meal.isNutritionPartial;
+    if (meal.meal.mealModeCode == 'free') {
+      final String tracking = meal.meal.freeMealTrackingCode.trim();
+      if (tracking == 'untracked' || tracking.isEmpty) {
+        day.isPartial = true;
+      } else if (tracking == 'tracked' || tracking == 'estimated') {
+        day.isFree = true;
+      }
+    }
     for (final MealItemEntity item in meal.items) {
       if (item.deletedAtEpochMs != null) continue;
       day.kcal += item.kcal;
@@ -1589,16 +1590,14 @@ _InsightsSnapshot _queryAndAggregateInsights(
     if (day.kcal <= 0 && day.fallbackCalories > 0) {
       day.kcal = day.fallbackCalories;
     }
-    final double? completeness = recordsByDate[day.date]?.dataCompletenessScore;
-    if (!day.isPartial && completeness != null && completeness < .999) {
-      day.isPartial = true;
-    }
     final double balance = day.target > 0 ? day.kcal - day.target : 0;
-    final _DayStatus status;
-    if (day.isFree) {
-      status = _DayStatus.free;
-    } else if (day.isPartial || day.target <= 0) {
+    final _DayStatus? status;
+    if (day.isPartial) {
       status = _DayStatus.partial;
+    } else if (day.isFree) {
+      status = _DayStatus.free;
+    } else if (day.target <= 0) {
+      status = null;
     } else if (balance.abs() <= 30) {
       status = _DayStatus.normo;
     } else if (balance < 0) {
@@ -1624,6 +1623,7 @@ _InsightsSnapshot _queryAndAggregateInsights(
       stepGoal: day.stepGoal,
       activeKcal: day.activeKcal,
       isFree: day.isFree,
+      isPartial: day.isPartial,
       status: status,
     );
   }).toList(growable: false)
@@ -1728,6 +1728,7 @@ class _DayInsight {
     required this.stepGoal,
     required this.activeKcal,
     required this.isFree,
+    required this.isPartial,
     required this.status,
   });
 
@@ -1748,7 +1749,8 @@ class _DayInsight {
   final int stepGoal;
   final double activeKcal;
   final bool isFree;
-  final _DayStatus status;
+  final bool isPartial;
+  final _DayStatus? status;
 
   double get sleepTotal => sleepDeep + sleepLight;
 }
@@ -1809,8 +1811,8 @@ class _MutableFoodStat {
 }
 
 enum _DayStatus {
-  free('Libero'),
-  partial('Parziale'),
+  free('Libero tracciato/stimato'),
+  partial('Parziale non tracciato'),
   deficit('Deficit'),
   surplus('Surplus'),
   normo('Normo');

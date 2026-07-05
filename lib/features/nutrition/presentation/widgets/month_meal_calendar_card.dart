@@ -7,6 +7,7 @@ import 'package:objectbox/objectbox.dart';
 
 import '../../../../core/database/objectbox_providers.dart';
 import '../../../../core/diagnostics/app_diagnostics.dart';
+import '../../data/food_data_refresh_bus.dart';
 import '../../data/repositories/meal_repository.dart';
 
 class MonthMealCalendarCard extends ConsumerStatefulWidget {
@@ -21,21 +22,49 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
   static final Map<String, _MonthCalendarSnapshot> _cache =
       <String, _MonthCalendarSnapshot>{};
 
+  static void invalidateDateKey(String dateKey) {
+    final DateTime? date = DateTime.tryParse(dateKey);
+    if (date == null) return;
+    _cache.remove(_monthKey(date));
+  }
+
   late DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   _MonthCalendarSnapshot? _snapshot;
   bool _loading = true;
   Object? _error;
   int _requestGeneration = 0;
+  StreamSubscription<FoodDataChange>? _changeSubscription;
 
   @override
   void initState() {
     super.initState();
+    _changeSubscription = FoodDataRefreshBus.changes.listen(_onDataChange);
+    final FoodDataChange? lastChange = FoodDataRefreshBus.lastChange;
+    if (lastChange != null &&
+        lastChange.kind != FoodDataChangeKind.dailyRecord) {
+      _cache.remove(_monthKey(DateTime.parse(lastChange.dateKey)));
+    }
     unawaited(_loadMonth(_month));
   }
 
-  Future<void> _loadMonth(DateTime month) async {
+  @override
+  void dispose() {
+    _changeSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _onDataChange(FoodDataChange change) {
+    if (change.kind == FoodDataChangeKind.dailyRecord) return;
+    invalidateDateKey(change.dateKey);
+    if (!mounted) return;
+    if (_monthKey(DateTime.parse(change.dateKey)) == _monthKey(_month)) {
+      unawaited(_loadMonth(_month, force: true));
+    }
+  }
+
+  Future<void> _loadMonth(DateTime month, {bool force = false}) async {
     final String cacheKey = _monthKey(month);
-    final _MonthCalendarSnapshot? cached = _cache[cacheKey];
+    final _MonthCalendarSnapshot? cached = force ? null : _cache[cacheKey];
     final int generation = ++_requestGeneration;
 
     setState(() {
@@ -160,7 +189,7 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
                   children: <Widget>[
                     const Text('Calendario non disponibile.'),
                     TextButton.icon(
-                      onPressed: () => _loadMonth(_month),
+                      onPressed: () => _loadMonth(_month, force: true),
                       icon: const Icon(Icons.refresh_rounded),
                       label: const Text('Riprova'),
                     ),

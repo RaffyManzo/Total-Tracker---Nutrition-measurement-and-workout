@@ -29,6 +29,7 @@ import '../data/repositories/daily_record_repository.dart';
 import '../data/repositories/meal_repository.dart';
 import '../data/repositories/recipe_repository.dart';
 import '../data/services/food_analytics_service.dart';
+import '../data/food_data_refresh_bus.dart';
 import '../data/services/food_planning_service.dart';
 import '../data/services/open_food_facts_service.dart';
 import '../domain/adaptive_target_engine.dart';
@@ -240,18 +241,70 @@ class _FoodHubScreenState extends ConsumerState<FoodHubScreen>
     with WidgetsBindingObserver {
   static FoodHubV01Data? _cachedData;
   DateTime? _backgroundedAt;
+  StreamSubscription<FoodDataChange>? _changeSubscription;
+  FoodDataChange? _pendingChange;
+  bool _refreshing = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _changeSubscription = FoodDataRefreshBus.changes.listen(_onFoodDataChange);
+    final FoodDataChange? lastChange = FoodDataRefreshBus.lastChange;
+    if (lastChange != null && lastChange.dateKey == _dateKey(DateTime.now())) {
+      _pendingChange = lastChange;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) ref.invalidate(foodHubV01Provider);
+      });
+    }
     unawaited(AppDiagnostics.instance.info('dashboard.screen_opened'));
   }
 
   @override
   void dispose() {
+    _changeSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _onFoodDataChange(FoodDataChange change) {
+    if (!mounted) return;
+    final String todayKey = _dateKey(DateTime.now());
+    final String? visibleDate = _cachedData?.latest?.dateKey;
+    final bool affectsVisibleDay =
+        change.dateKey == todayKey || change.dateKey == visibleDate;
+    if (!affectsVisibleDay) return;
+
+    setState(() => _pendingChange = change);
+    ref.invalidate(foodHubV01Provider);
+  }
+
+  Future<void> _refreshDashboard() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+    final String todayKey = _dateKey(DateTime.now());
+    FoodDataRefreshBus.publishManualRefresh(todayKey);
+    ref.invalidate(foodHubV01Provider);
+    try {
+      final FoodHubV01Data fresh = await ref.read(foodHubV01Provider.future);
+      _cachedData = fresh;
+      if (!mounted) return;
+      setState(() => _pendingChange = null);
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
+  bool _isCacheStale(FoodHubV01Data data) {
+    final FoodDataChange? change = _pendingChange;
+    if (change == null || data.latest?.dateKey != change.dateKey) return false;
+    if (change.currentCalories != null) {
+      return (data.latestTotals.kcal - change.currentCalories!).abs() > .1;
+    }
+    if (change.steps != null) {
+      return data.latest?.steps != change.steps;
+    }
+    return true;
   }
 
   @override
@@ -281,14 +334,29 @@ class _FoodHubScreenState extends ConsumerState<FoodHubScreen>
   Widget build(BuildContext context) {
     final AsyncValue<FoodHubV01Data> state = ref.watch(foodHubV01Provider);
     final FoodHubV01Data? fresh = state.asData?.value;
-    if (fresh != null) _cachedData = fresh;
+    if (fresh != null) {
+      _cachedData = fresh;
+      final FoodDataChange? pending = _pendingChange;
+      if (pending != null && !_isCacheStale(fresh)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && identical(_pendingChange, pending)) {
+            setState(() => _pendingChange = null);
+          }
+        });
+      }
+    }
     final FoodHubV01Data? visible = fresh ?? _cachedData;
 
     final Widget body;
     if (visible != null) {
       body = Stack(
         children: <Widget>[
-          _FoodHubV01Body(data: visible),
+          _FoodHubV01Body(
+            data: visible,
+            cacheStale: _isCacheStale(visible),
+            refreshing: _refreshing || state.isLoading,
+            onRefresh: _refreshDashboard,
+          ),
           if (state.isLoading)
             const Positioned(
               top: 0,
@@ -305,7 +373,12 @@ class _FoodHubScreenState extends ConsumerState<FoodHubScreen>
           error: error,
           onRetry: () => ref.invalidate(foodHubV01Provider),
         ),
-        data: (FoodHubV01Data data) => _FoodHubV01Body(data: data),
+        data: (FoodHubV01Data data) => _FoodHubV01Body(
+          data: data,
+          cacheStale: false,
+          refreshing: _refreshing,
+          onRefresh: _refreshDashboard,
+        ),
       );
     }
 
@@ -362,9 +435,17 @@ class _DashboardLoadingState extends StatelessWidget {
 }
 
 class _FoodHubV01Body extends StatelessWidget {
-  const _FoodHubV01Body({required this.data});
+  const _FoodHubV01Body({
+    required this.data,
+    required this.cacheStale,
+    required this.refreshing,
+    required this.onRefresh,
+  });
 
   final FoodHubV01Data data;
+  final bool cacheStale;
+  final bool refreshing;
+  final Future<void> Function() onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -401,119 +482,170 @@ class _FoodHubV01Body extends StatelessWidget {
     final double? latestWeight =
         latest == null ? null : data.analytics.weightForDay(latest);
 
-    return ListView(
-      padding: _screenPadding,
-      children: <Widget>[
-        const SizedBox(height: AppSpacing.lg),
-        Text(
-          dashboardTitle,
-          style: Theme.of(context).textTheme.headlineLarge,
-        ),
-        const SizedBox(height: AppSpacing.sectionGap),
-        _DashboardDailySummary(
-          day: latest,
-          meals: data.latestMeals,
-          totals: totals,
-          targetKcal: latestTarget,
-          macroTargets: macroTargets,
-          onTap: latest == null || latestActivity == null
-              ? null
-              : () => _showDayStatsSheet(
-                    context: context,
-                    day: latest,
-                    caloriesIn: totals.kcal,
-                    target: latestTarget,
-                    balance: totals.kcal - latestTarget,
-                    activity: latestActivity,
-                    weight: latestWeight,
-                    onOpenDay: () =>
-                        context.push('/food/days/${latest.dateKey}'),
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: _screenPadding,
+        children: <Widget>[
+          const SizedBox(height: AppSpacing.lg),
+          Text(
+            dashboardTitle,
+            style: Theme.of(context).textTheme.headlineLarge,
+          ),
+          if (cacheStale) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            _DashboardRefreshBanner(refreshing: refreshing),
+          ],
+          const SizedBox(height: AppSpacing.sectionGap),
+          _DashboardDailySummary(
+            day: latest,
+            meals: data.latestMeals,
+            totals: totals,
+            targetKcal: latestTarget,
+            macroTargets: macroTargets,
+            onTap: latest == null || latestActivity == null
+                ? null
+                : () => _showDayStatsSheet(
+                      context: context,
+                      day: latest,
+                      caloriesIn: totals.kcal,
+                      target: latestTarget,
+                      balance: totals.kcal - latestTarget,
+                      activity: latestActivity,
+                      weight: latestWeight,
+                      onOpenDay: () =>
+                          context.push('/food/days/${latest.dateKey}'),
+                    ),
+            onMealTap: (MealWithItems meal) {
+              context.push('/food/meals/${meal.meal.id}');
+            },
+          ),
+          if (latestTargetResult != null &&
+              latestTargetResult.alerts.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSpacing.md),
+            for (final TargetAlert alert in latestTargetResult.alerts)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                child: _TargetAlertCard(alert: alert),
+              ),
+          ],
+          if (data.hasPartialNutrition) ...<Widget>[
+            const SizedBox(height: AppSpacing.md),
+            const TtAppCard(
+              child: Text(
+                'C e almeno un pasto libero non tracciato: il riepilogo '
+                'odierno usa soltanto i dati disponibili.',
+              ),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.sectionGap),
+          const MonthMealCalendarCard(),
+          const SizedBox(height: AppSpacing.md),
+          TtAppCard(
+            onTap: () => context.push('/food/ingredients'),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  Icons.search_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'Ricerca alimenti',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      Text(
+                        'Ingredienti locali, Open Food Facts e OpenNutrition.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
                   ),
-          onMealTap: (MealWithItems meal) {
-            context.push('/food/meals/${meal.meal.id}');
-          },
-        ),
-        if (latestTargetResult != null &&
-            latestTargetResult.alerts.isNotEmpty) ...<Widget>[
-          const SizedBox(height: AppSpacing.md),
-          for (final TargetAlert alert in latestTargetResult.alerts)
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-              child: _TargetAlertCard(alert: alert),
-            ),
-        ],
-        if (data.hasPartialNutrition) ...<Widget>[
-          const SizedBox(height: AppSpacing.md),
-          const TtAppCard(
-            child: Text(
-              'C e almeno un pasto libero non quantificato: il riepilogo '
-              'odierno usa soltanto i dati disponibili.',
+                ),
+                const Icon(Icons.chevron_right_rounded),
+              ],
             ),
           ),
+          const SizedBox(height: AppSpacing.md),
+          TtAppCard(
+            onTap: () => context.push('/food/insights'),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  Icons.insights_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'Insight generale',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      Text(
+                        'Grafici, trend e statistiche sugli alimenti in una '
+                        'pagina dedicata.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.open_in_new_rounded),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xl),
         ],
-        const SizedBox(height: AppSpacing.sectionGap),
-        const MonthMealCalendarCard(),
-        const SizedBox(height: AppSpacing.md),
-        TtAppCard(
-          onTap: () => context.push('/food/ingredients'),
-          child: Row(
-            children: <Widget>[
-              Icon(
-                Icons.search_rounded,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'Ricerca alimenti',
-                      style: Theme.of(context).textTheme.titleMedium,
+      ),
+    );
+  }
+}
+
+class _DashboardRefreshBanner extends StatelessWidget {
+  const _DashboardRefreshBanner({required this.refreshing});
+
+  final bool refreshing;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.secondaryContainer,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Row(
+          children: <Widget>[
+            if (refreshing)
+              const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              Icon(Icons.sync_rounded, color: colors.onSecondaryContainer),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                refreshing
+                    ? 'Aggiornamento della dashboard in corso.'
+                    : 'Sono disponibili dati aggiornati. Trascina verso il '
+                        'basso per sincronizzare la dashboard.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: colors.onSecondaryContainer,
                     ),
-                    Text(
-                      'Ingredienti locali, Open Food Facts e OpenNutrition.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
               ),
-              const Icon(Icons.chevron_right_rounded),
-            ],
-          ),
+            ),
+          ],
         ),
-        const SizedBox(height: AppSpacing.md),
-        TtAppCard(
-          onTap: () => context.push('/food/insights'),
-          child: Row(
-            children: <Widget>[
-              Icon(
-                Icons.insights_rounded,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'Insight generale',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Text(
-                      'Grafici, trend e statistiche sugli alimenti in una '
-                      'pagina dedicata.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.open_in_new_rounded),
-            ],
-          ),
-        ),
-        const SizedBox(height: AppSpacing.xl),
-      ],
+      ),
     );
   }
 }

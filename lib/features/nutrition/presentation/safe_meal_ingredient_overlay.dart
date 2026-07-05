@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/database/objectbox_providers.dart';
 import '../../../core/diagnostics/app_diagnostics.dart';
+import '../data/food_data_refresh_bus.dart';
 import '../data/entities/ingredient_entity.dart';
+import '../data/repositories/meal_repository.dart';
 import 'food_v01_screens.dart';
 
 class SafeMealIngredientOverlay extends ConsumerStatefulWidget {
@@ -45,14 +47,16 @@ class _SafeMealIngredientOverlayState
             'ingredientId': ingredient.id,
             'ingredientName': ingredient.name,
             'mealId': widget.targetId,
-            'flowVersion': 2,
+            'flowVersion': 3,
           },
         ),
       );
 
+      await _waitForSelectionRouteToSettle();
+      if (!mounted) return;
+
       final double? grams = await showDialog<double>(
         context: context,
-        useRootNavigator: true,
         barrierDismissible: false,
         builder: (BuildContext dialogContext) =>
             _IngredientQuantityDialog(ingredientName: ingredient.name),
@@ -66,13 +70,26 @@ class _SafeMealIngredientOverlayState
       if (!mounted) return;
 
       final int mealId = int.parse(widget.targetId);
+      final MealRepository repository = ref.read(mealRepositoryProvider);
       final Stopwatch saveWatch = Stopwatch()..start();
-      ref.read(mealRepositoryProvider).addIngredientItem(
-            mealId: mealId,
-            ingredient: ingredient,
-            grams: grams,
-          );
+      final MealWithItems updatedMeal = repository.addIngredientItem(
+        mealId: mealId,
+        ingredient: ingredient,
+        grams: grams,
+      );
+      final List<MealWithItems> dayMeals =
+          repository.getMealsWithItemsForDate(updatedMeal.meal.dateKey);
+      final double currentCalories = dayMeals.fold<double>(
+        0,
+        (double sum, MealWithItems meal) => sum + meal.totals.kcal,
+      );
       saveWatch.stop();
+
+      FoodDataRefreshBus.publishMeal(
+        dateKey: updatedMeal.meal.dateKey,
+        currentCalories: currentCalories,
+        reason: 'ingredient_added_to_meal',
+      );
 
       ref
         ..invalidate(foodMealsV01Provider)
@@ -87,7 +104,7 @@ class _SafeMealIngredientOverlayState
             'ingredientId': ingredient.id,
             'grams': grams,
             'saveMs': saveWatch.elapsedMilliseconds,
-            'flowVersion': 2,
+            'flowVersion': 3,
           },
         ),
       );
@@ -103,7 +120,7 @@ class _SafeMealIngredientOverlayState
         stackTrace: stackTrace,
         data: <String, Object?>{
           'mealId': widget.targetId,
-          'flowVersion': 2,
+          'flowVersion': 3,
         },
       );
       if (!mounted) return;
@@ -113,6 +130,17 @@ class _SafeMealIngredientOverlayState
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _waitForSelectionRouteToSettle() async {
+    // Navigator.push completes before every reverse-transition overlay has
+    // necessarily finished disposing. Waiting here prevents a new dialog from
+    // being inserted while the search TextField route is still leaving.
+    await Future<void>.delayed(const Duration(milliseconds: 420));
+    if (!mounted) return;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    await WidgetsBinding.instance.endOfFrame;
   }
 
   @override
@@ -166,7 +194,7 @@ class _IngredientQuantityDialogState extends State<_IngredientQuantityDialog> {
         double.parse(_quantityText.trim().replaceAll(',', '.'));
     FocusManager.instance.primaryFocus?.unfocus();
     _submitting = true;
-    Navigator.of(context, rootNavigator: true).pop<double>(grams);
+    Navigator.of(context).pop<double>(grams);
   }
 
   @override
@@ -198,9 +226,7 @@ class _IngredientQuantityDialogState extends State<_IngredientQuantityDialog> {
       ),
       actions: <Widget>[
         TextButton(
-          onPressed: _submitting
-              ? null
-              : () => Navigator.of(context, rootNavigator: true).pop(),
+          onPressed: _submitting ? null : () => Navigator.of(context).pop(),
           child: const Text('Annulla'),
         ),
         FilledButton(

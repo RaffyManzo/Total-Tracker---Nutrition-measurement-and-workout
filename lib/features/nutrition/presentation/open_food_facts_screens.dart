@@ -342,44 +342,15 @@ class _OpenFoodFactsScannerScreenState
   }
 
   Future<void> _manualBarcode() async {
-    final TextEditingController input = TextEditingController();
-    try {
-      final String? code = await showDialog<String>(
-        context: context,
-        builder: (BuildContext dialogContext) => AlertDialog(
-          title: const Text('Cerca tramite barcode'),
-          content: TextField(
-            controller: input,
-            autofocus: true,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Codice a barre',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Annulla'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final String value = input.text.trim();
-                if (RegExp(r'^\d{6,18}$').hasMatch(value)) {
-                  Navigator.pop(dialogContext, value);
-                }
-              },
-              child: const Text('Cerca'),
-            ),
-          ],
-        ),
-      );
-      if (code != null && mounted) {
-        await _openBarcode(code);
-      }
-    } finally {
-      input.dispose();
-    }
+    final String? code = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext dialogContext) => const _ManualBarcodeDialog(),
+    );
+    if (!mounted || code == null) return;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    await _openBarcode(code);
   }
 
   @override
@@ -428,6 +399,64 @@ class _OpenFoodFactsScannerScreenState
             ),
         ],
       ),
+    );
+  }
+}
+
+class _ManualBarcodeDialog extends StatefulWidget {
+  const _ManualBarcodeDialog();
+
+  @override
+  State<_ManualBarcodeDialog> createState() => _ManualBarcodeDialogState();
+}
+
+class _ManualBarcodeDialogState extends State<_ManualBarcodeDialog> {
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  String _value = '';
+  bool _submitting = false;
+
+  void _submit() {
+    if (_submitting || !(_formKey.currentState?.validate() ?? false)) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    _submitting = true;
+    Navigator.of(context).pop<String>(_value.trim());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Cerca tramite barcode'),
+      content: Form(
+        key: _formKey,
+        child: TextFormField(
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          textInputAction: TextInputAction.search,
+          decoration: const InputDecoration(
+            labelText: 'Codice a barre',
+            border: OutlineInputBorder(),
+          ),
+          onChanged: (String value) => _value = value,
+          validator: (String? value) {
+            final String clean = (value ?? '').trim();
+            if (!RegExp(r'^\d{6,18}$').hasMatch(clean)) {
+              return 'Inserisci un barcode valido da 6 a 18 cifre.';
+            }
+            return null;
+          },
+          onFieldSubmitted: (_) => _submit(),
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: _submitting ? null : () => Navigator.of(context).pop(),
+          child: const Text('Annulla'),
+        ),
+        FilledButton(
+          onPressed: _submitting ? null : _submit,
+          child: const Text('Cerca'),
+        ),
+      ],
     );
   }
 }
