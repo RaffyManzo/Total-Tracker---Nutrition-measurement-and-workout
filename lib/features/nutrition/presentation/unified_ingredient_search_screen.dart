@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/widgets/primary_bottom_navigation.dart';
 import '../../../core/database/objectbox_providers.dart';
+import '../../../core/diagnostics/app_diagnostics.dart';
 import '../../../core/network/open_nutrition_network_access.dart';
 import '../../../core/preferences/food_service_preferences.dart';
 import '../data/entities/ingredient_entity.dart';
@@ -348,14 +349,29 @@ class _UnifiedIngredientSearchScreenState
     FocusManager.instance.primaryFocus?.unfocus();
 
     final NavigatorState navigator = Navigator.of(context);
-    await WidgetsBinding.instance.endOfFrame;
-    await Future<void>.delayed(Duration.zero);
-
-    if (!mounted || !navigator.mounted || !navigator.canPop()) {
+    if (!navigator.canPop()) {
       _selectionReturning = false;
+      unawaited(
+        AppDiagnostics.instance.warning(
+          'ingredient.selection_without_route',
+          data: <String, Object?>{
+            'ingredientId': ingredient.id,
+            'ingredientName': ingredient.name,
+          },
+        ),
+      );
       return;
     }
 
+    unawaited(
+      AppDiagnostics.instance.info(
+        'ingredient.selection_returned',
+        data: <String, Object?>{
+          'ingredientId': ingredient.id,
+          'ingredientName': ingredient.name,
+        },
+      ),
+    );
     navigator.pop<IngredientEntity>(ingredient);
   }
 

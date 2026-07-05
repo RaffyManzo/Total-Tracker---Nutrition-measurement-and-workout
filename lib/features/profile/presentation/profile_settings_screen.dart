@@ -21,6 +21,7 @@ import '../domain/profile_codes.dart';
 import '../domain/profile_nutrition_calculator.dart';
 import '../domain/profile_activity_estimator.dart';
 import 'profile_activity_settings_panel.dart';
+import 'widgets/diagnostics_settings_card.dart';
 
 class ProfileSettingsScreen extends ConsumerStatefulWidget {
   const ProfileSettingsScreen({super.key, this.sectionCode});
@@ -292,6 +293,8 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
           onRefresh: () => ref.invalidate(appInfoProvider),
         ),
         const SizedBox(height: AppSpacing.md),
+        const DiagnosticsSettingsCard(),
+        const SizedBox(height: AppSpacing.md),
         TtAppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -466,6 +469,8 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
         appInfo: appInfo,
         onRefresh: () => ref.invalidate(appInfoProvider),
       ),
+      const SizedBox(height: AppSpacing.md),
+      const DiagnosticsSettingsCard(),
       const SizedBox(height: AppSpacing.md),
       _SummaryCard(
         title: 'Import / Export',

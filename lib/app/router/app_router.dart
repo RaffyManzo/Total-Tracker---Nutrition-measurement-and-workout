@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../back_navigation.dart';
 import '../../features/nutrition/data/services/open_food_facts_service.dart';
 import '../../features/nutrition/presentation/food_v01_screens.dart';
+import '../../features/nutrition/presentation/recipe_archive_screen.dart';
 import '../../features/nutrition/presentation/ingredient_create_screen.dart';
 import '../../features/nutrition/presentation/measurement_screens.dart';
 import '../../features/nutrition/presentation/open_food_facts_screens.dart';
@@ -131,7 +132,7 @@ GoRouter _createAppRouter() {
           GoRoute(
             path: '/food/recipes',
             builder: (BuildContext context, GoRouterState state) {
-              return const RecipesScreen();
+              return const RecipeArchiveScreen();
             },
           ),
           GoRoute(

@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../app/theme/app_spacing.dart';
 import '../../../core/database/objectbox_providers.dart';
+import '../../../core/diagnostics/app_diagnostics.dart';
 import '../../../core/preferences/food_service_preferences.dart';
 import '../../../shared/widgets/tt_app_card.dart';
 import '../../../shared/widgets/tt_global_nav_fab.dart';
@@ -93,52 +94,54 @@ final FutureProvider<FoodHubV01Data> foodHubV01Provider =
 
 final FutureProvider<FoodHubV01Data> foodHubExtendedV01Provider =
     FutureProvider<FoodHubV01Data>((Ref ref) async {
-  // Lascia renderizzare la giornata corrente prima di caricare gli archivi.
-  await WidgetsBinding.instance.endOfFrame;
-  await Future<void>.delayed(const Duration(milliseconds: 80));
-
-  final dailyRepository = ref.watch(dailyRecordRepositoryProvider);
-  final mealRepository = ref.watch(mealRepositoryProvider);
-  final ingredientRepository = ref.watch(ingredientRepositoryProvider);
-  final recipeRepository = ref.watch(recipeRepositoryProvider);
-  final planning = ref.watch(foodPlanningServiceProvider);
-  final analytics = ref.watch(foodAnalyticsServiceProvider);
-  final UserProfileEntity? profile =
-      ref.watch(userProfileRepositoryProvider).getActiveProfile();
-
-  final DateTime now = DateTime.now();
-  final String todayKey = _dateKey(now);
-  final FoodDayBundle todayBundle = planning.ensureDay(todayKey);
-  final List<DailyRecordEntity> days = dailyRepository.getAllActive();
-
-  final DailyRecordEntity latest = days
-          .where((DailyRecordEntity day) => day.dateKey == todayKey)
-          .firstOrNull ??
-      todayBundle.day;
-
-  final List<MealWithItems> allMeals = mealRepository.getAllWithItems();
-  final List<MealWithItems> latestMeals = allMeals
-      .where((MealWithItems meal) => meal.meal.dateKey == todayKey)
-      .toList();
-
-  final DateTime monday = now.subtract(Duration(days: now.weekday - 1));
-
-  return FoodHubV01Data(
-    latest: latest,
-    latestMeals: latestMeals,
-    allMeals: allMeals,
-    days: days,
-    ingredients: ingredientRepository.getAllActive(),
-    recipes: recipeRepository.getAllActive(),
-    scaleMeasurements: const <ScaleMeasurementEntity>[],
-    tapeMeasurements: const <TapeMeasurementEntity>[],
-    analytics: analytics,
-    adaptiveSummary: analytics.adaptiveSummaryForWeek(
-      monday: monday,
-      allDays: days,
-      profile: profile,
-    ),
-    profile: profile,
+  return AppDiagnostics.instance.measure<FoodHubV01Data>(
+    'dashboard.extended_load',
+    () async {
+      await WidgetsBinding.instance.endOfFrame;
+      final dailyRepository = ref.watch(dailyRecordRepositoryProvider);
+      final mealRepository = ref.watch(mealRepositoryProvider);
+      final planning = ref.watch(foodPlanningServiceProvider);
+      final analytics = ref.watch(foodAnalyticsServiceProvider);
+      final UserProfileEntity? profile =
+          ref.watch(userProfileRepositoryProvider).getActiveProfile();
+      final DateTime now = DateTime.now();
+      final String todayKey = _dateKey(now);
+      final String fromDateKey =
+          _dateKey(now.subtract(const Duration(days: 34)));
+      final FoodDayBundle todayBundle = planning.ensureDay(todayKey);
+      final List<DailyRecordEntity> allDays = dailyRepository.getAllActive();
+      final DailyRecordEntity latest = allDays
+              .where((DailyRecordEntity day) => day.dateKey == todayKey)
+              .firstOrNull ??
+          todayBundle.day;
+      final List<MealWithItems> allMeals =
+          mealRepository.getMealsWithItemsInRange(
+        fromDateKey: fromDateKey,
+        toDateKey: todayKey,
+      );
+      final List<MealWithItems> latestMeals = allMeals
+          .where((MealWithItems meal) => meal.meal.dateKey == todayKey)
+          .toList();
+      final DateTime monday = now.subtract(Duration(days: now.weekday - 1));
+      return FoodHubV01Data(
+        latest: latest,
+        latestMeals: latestMeals,
+        allMeals: allMeals,
+        days: allDays,
+        ingredients: const <IngredientEntity>[],
+        recipes: const <RecipeEntity>[],
+        scaleMeasurements: const <ScaleMeasurementEntity>[],
+        tapeMeasurements: const <TapeMeasurementEntity>[],
+        analytics: analytics,
+        adaptiveSummary: analytics.adaptiveSummaryForWeek(
+          monday: monday,
+          allDays: allDays,
+          profile: profile,
+        ),
+        profile: profile,
+      );
+    },
+    data: const <String, Object?>{'windowDays': 35},
   );
 });
 

@@ -1,4 +1,4 @@
-import 'package:objectbox/objectbox.dart';
+import '../../../../objectbox.g.dart';
 
 import '../../../../core/identifiers/uuid_generator.dart';
 import '../../../../core/time/clock.dart';
@@ -210,14 +210,57 @@ class MealRepository {
     required String fromDateKey,
     required String toDateKey,
   }) {
-    final List<MealEntity> meals = getAllActive()
-        .where(
-          (MealEntity meal) =>
-              meal.dateKey.compareTo(fromDateKey) >= 0 &&
-              meal.dateKey.compareTo(toDateKey) <= 0,
+    final Query<MealEntity> mealQuery = _mealBox
+        .query(
+          MealEntity_.deletedAtEpochMs
+              .isNull()
+              .and(MealEntity_.dateKey.greaterOrEqual(fromDateKey))
+              .and(MealEntity_.dateKey.lessOrEqual(toDateKey)),
         )
-        .toList();
-    return _attachItems(meals);
+        .order(MealEntity_.dateKey, flags: Order.descending)
+        .build();
+    late final List<MealEntity> meals;
+    try {
+      meals = mealQuery.find()..sort(_sortByDateAndSlot);
+    } finally {
+      mealQuery.close();
+    }
+    if (meals.isEmpty) return const <MealWithItems>[];
+
+    final List<int> mealIds =
+        meals.map((MealEntity meal) => meal.id).toList(growable: false);
+    final Query<MealItemEntity> itemQuery = _itemBox
+        .query(
+          MealItemEntity_.deletedAtEpochMs
+              .isNull()
+              .and(MealItemEntity_.meal.oneOf(mealIds)),
+        )
+        .build();
+    late final List<MealItemEntity> items;
+    try {
+      items = itemQuery.find();
+    } finally {
+      itemQuery.close();
+    }
+
+    final Map<int, List<MealItemEntity>> itemsByMealId =
+        <int, List<MealItemEntity>>{};
+    for (final MealItemEntity item in items) {
+      (itemsByMealId[item.meal.targetId] ??= <MealItemEntity>[]).add(item);
+    }
+    for (final List<MealItemEntity> mealItems in itemsByMealId.values) {
+      mealItems.sort(
+        (MealItemEntity a, MealItemEntity b) =>
+            a.position.compareTo(b.position),
+      );
+    }
+    return <MealWithItems>[
+      for (final MealEntity meal in meals)
+        MealWithItems(
+          meal: meal,
+          items: itemsByMealId[meal.id] ?? const <MealItemEntity>[],
+        ),
+    ];
   }
 
   List<IngredientMealUsage> getIngredientUsage(
