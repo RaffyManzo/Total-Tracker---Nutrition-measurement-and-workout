@@ -7,6 +7,7 @@ import '../../../core/database/objectbox_providers.dart';
 import '../../../shared/widgets/tt_app_card.dart';
 import '../../../shared/widgets/tt_section_header.dart';
 import '../../profile/data/entities/user_profile_entity.dart';
+import '../data/recipe_media_sidecar_importer.dart';
 import '../domain/transfer_models.dart';
 
 class TransferCenterScreen extends ConsumerStatefulWidget {
@@ -23,6 +24,8 @@ class _TransferCenterScreenState extends ConsumerState<TransferCenterScreen> {
   bool _includeWorkout = true;
   bool _busy = false;
   String? _status;
+  double? _busyProgress;
+  String _busyMessage = 'Operazione in corso...';
 
   @override
   void initState() {
@@ -184,6 +187,15 @@ class _TransferCenterScreenState extends ConsumerState<TransferCenterScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: AppSpacing.sm),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _pickAndImportRecipeMedia,
+                  icon: const Icon(Icons.image_outlined),
+                  label: const Text('Importa immagini ricette'),
+                ),
+              ),
               if (_status != null) ...<Widget>[
                 const SizedBox(height: AppSpacing.md),
                 TtAppCard(
@@ -224,7 +236,29 @@ class _TransferCenterScreenState extends ConsumerState<TransferCenterScreen> {
               child: ColoredBox(
                 color:
                     Theme.of(context).colorScheme.scrim.withValues(alpha: 0.42),
-                child: const Center(child: CircularProgressIndicator()),
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    child: TtAppCard(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 420),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            LinearProgressIndicator(value: _busyProgress),
+                            const SizedBox(height: AppSpacing.md),
+                            Text(
+                              _busyMessage,
+                              style: Theme.of(context).textTheme.titleMedium,
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
         ],
@@ -339,6 +373,58 @@ class _TransferCenterScreenState extends ConsumerState<TransferCenterScreen> {
       if (mounted) _showError(error.toString());
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _pickAndImportRecipeMedia() async {
+    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
+      dialogTitle: 'Seleziona pacchetto immagini ricette',
+      type: FileType.custom,
+      allowedExtensions: const <String>['zip'],
+      allowMultiple: false,
+      withData: false,
+    );
+    final String? path = picked?.files.single.path;
+    if (path == null || !mounted) return;
+
+    setState(() {
+      _busy = true;
+      _busyProgress = 0;
+      _busyMessage = 'Apro il pacchetto immagini...';
+    });
+    await WidgetsBinding.instance.endOfFrame;
+
+    try {
+      final RecipeMediaImportReport report =
+          await RecipeMediaSidecarImporter(ref.read(objectBoxStoreProvider))
+              .importFile(
+        path,
+        onProgress: (double progress, String message) {
+          if (!mounted) return;
+          setState(() {
+            _busyProgress = progress;
+            _busyMessage = message;
+          });
+        },
+      );
+      if (!mounted) return;
+      ref.invalidate(recipeRepositoryProvider);
+      setState(() => _status = report.summary);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(report.summary)),
+      );
+    } on Object catch (error) {
+      if (mounted) {
+        _showError('Importazione immagini non riuscita: $error');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _busyProgress = null;
+          _busyMessage = 'Operazione in corso...';
+        });
+      }
     }
   }
 

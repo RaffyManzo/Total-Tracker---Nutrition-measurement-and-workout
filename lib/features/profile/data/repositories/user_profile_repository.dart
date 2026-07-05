@@ -2,6 +2,7 @@ import 'package:objectbox/objectbox.dart';
 
 import '../../../../core/identifiers/uuid_generator.dart';
 import '../../../../core/time/clock.dart';
+import '../../../nutrition/data/entities/nutrition_tracking_entities.dart';
 import '../../domain/profile_codes.dart';
 import '../entities/user_profile_entity.dart';
 
@@ -56,6 +57,28 @@ class UserProfileRepository {
         _deactivateOtherProfiles(profile.id);
       }
       profile.id = _box.put(profile);
+      return profile;
+    });
+  }
+
+  UserProfileEntity saveWithDailyRecords(
+    UserProfileEntity profile,
+    List<DailyRecordEntity> dailyRecords,
+  ) {
+    _validate(profile);
+    return _store.runInTransaction(TxMode.write, () {
+      _prepareForSave(profile);
+      if (profile.isActive && profile.deletedAtEpochMs == null) {
+        _deactivateOtherProfiles(profile.id);
+      }
+      profile.id = _box.put(profile);
+      if (dailyRecords.isNotEmpty) {
+        final int updatedAtEpochMs = _clock.nowEpochMs();
+        for (final DailyRecordEntity day in dailyRecords) {
+          day.updatedAtEpochMs = updatedAtEpochMs;
+        }
+        _store.box<DailyRecordEntity>().putMany(dailyRecords);
+      }
       return profile;
     });
   }

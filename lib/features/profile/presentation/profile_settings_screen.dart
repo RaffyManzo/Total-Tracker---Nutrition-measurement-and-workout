@@ -59,6 +59,8 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
   String _language = 'it';
   String _weightLossResponse = _WeightLossResponseCodes.standard;
   bool _isApplying = false;
+  double? _applyProgress;
+  String _applyMessage = 'Preparazione aggiornamento...';
   @override
   void dispose() {
     _name.dispose();
@@ -134,10 +136,10 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
-                        const CircularProgressIndicator(),
+                        LinearProgressIndicator(value: _applyProgress),
                         const SizedBox(height: AppSpacing.md),
                         Text(
-                          'Aggiorno profilo e calcoli...',
+                          _applyMessage,
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                       ],
@@ -224,9 +226,6 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
             _workoutType = config.legacyWorkoutTypeCode;
             _activityFallbackMode = ActivityFallbackModeCodes.profileEstimate;
             await _save(profile);
-            if (mounted) {
-              setState(() {});
-            }
           },
         ),
       ];
@@ -1421,7 +1420,14 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
   }
 
   Future<void> _save(UserProfileEntity profile) async {
-    setState(() => _isApplying = true);
+    if (_isApplying) return;
+    setState(() {
+      _isApplying = true;
+      _applyProgress = 0;
+      _applyMessage = 'Preparo le nuove impostazioni...';
+    });
+    await WidgetsBinding.instance.endOfFrame;
+
     try {
       final int? age = _toInt(_age.text);
       profile.displayName = _name.text.trim();
@@ -1434,7 +1440,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       profile.defaultTargetKcal = _toInt(_targetKcal.text) ?? 1980;
       profile.targetModeCode = _targetMode;
       profile.adaptiveReferenceDays =
-          (_toInt(_adaptiveReferenceDays.text) ?? 28).clamp(7, 180);
+          (_toInt(_adaptiveReferenceDays.text) ?? 28).clamp(7, 180).toInt();
       profile.sedentaryBaseKcal = 0;
       profile.rmrActivityFactor = 1.10;
       profile.stepKcalCoefficient = _toDouble(_stepCoeff.text) ?? 0.020;
@@ -1454,33 +1460,81 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       profile.themeModeCode = _themeMode;
       profile.languageCode = _language;
       profile.kcalPerKg = _kcalPerKgForWeightLossResponse(_weightLossResponse);
-      ref.read(userProfileRepositoryProvider).save(profile);
-      _recalculateStoredDayTargets(profile);
+
+      final List<DailyRecordEntity> recalculatedDays =
+          await _buildRecalculatedDayTargets(profile);
+      if (!mounted) return;
+
+      setState(() {
+        _applyProgress = 0.94;
+        _applyMessage =
+            'Salvataggio atomico di profilo e ${recalculatedDays.length} giorni...';
+      });
+      await WidgetsBinding.instance.endOfFrame;
+
+      ref
+          .read(userProfileRepositoryProvider)
+          .saveWithDailyRecords(profile, recalculatedDays);
+
       ref.invalidate(userProfileRepositoryProvider);
       ref.invalidate(profileSettingsRevisionProvider);
       ref.invalidate(foodHubV01Provider);
       ref.invalidate(foodDaysV01Provider);
       ref.invalidate(foodMealsV01Provider);
       _loaded = false;
+
+      if (!mounted) return;
+      setState(() {
+        _applyProgress = 1;
+        _applyMessage = 'Aggiornamento completato.';
+      });
       await Future<void>.delayed(const Duration(milliseconds: 120));
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profilo salvato.')),
+        const SnackBar(content: Text('Profilo e target aggiornati.')),
+      );
+    } catch (error) {
+      _loaded = false;
+      ref.invalidate(userProfileRepositoryProvider);
+      ref.invalidate(profileSettingsRevisionProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Aggiornamento annullato: nessuna modifica parziale salvata. $error',
+          ),
+        ),
       );
     } finally {
       if (mounted) {
-        setState(() => _isApplying = false);
+        setState(() {
+          _isApplying = false;
+          _applyProgress = null;
+          _applyMessage = 'Preparazione aggiornamento...';
+        });
       }
     }
   }
 
-  void _recalculateStoredDayTargets(UserProfileEntity profile) {
+  Future<List<DailyRecordEntity>> _buildRecalculatedDayTargets(
+    UserProfileEntity profile,
+  ) async {
     final dailyRepository = ref.read(dailyRecordRepositoryProvider);
     final analytics = ref.read(foodAnalyticsServiceProvider);
     final List<DailyRecordEntity> days = dailyRepository.getAllActive();
-    for (final DailyRecordEntity day in days) {
+
+    if (days.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _applyProgress = 0.88;
+          _applyMessage = 'Nessun giorno storico da ricalcolare.';
+        });
+      }
+      return days;
+    }
+
+    for (int index = 0; index < days.length; index += 1) {
+      final DailyRecordEntity day = days[index];
       day.stepGoal = profile.defaultStepGoal;
       final TargetDayResult result = analytics.targetResultForDay(
         day: day,
@@ -1488,8 +1542,19 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
         profile: profile,
       );
       analytics.applyTargetSnapshot(day, result);
-      dailyRepository.save(day);
+
+      if (index % 2 == 0 || index + 1 == days.length) {
+        if (!mounted) return days;
+        final double ratio = (index + 1) / days.length;
+        setState(() {
+          _applyProgress = 0.08 + (ratio * 0.8);
+          _applyMessage =
+              'Ricalcolo target storici: ${index + 1} di ${days.length}...';
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
     }
+    return days;
   }
 }
 

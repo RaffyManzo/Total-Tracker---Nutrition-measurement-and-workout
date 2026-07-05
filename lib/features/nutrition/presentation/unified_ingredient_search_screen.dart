@@ -41,6 +41,7 @@ class _UnifiedIngredientSearchScreenState
   bool _localExpanded = true;
   bool _catalogExpanded = true;
   bool _offExpanded = true;
+  bool _onlineSearchActive = false;
   bool _localLoading = true;
   bool _offLoading = false;
   bool _catalogLoading = false;
@@ -70,7 +71,7 @@ class _UnifiedIngredientSearchScreenState
   @override
   void initState() {
     super.initState();
-    Future<void>.microtask(_reload);
+    Future<void>.microtask(_reloadLocal);
   }
 
   @override
@@ -81,27 +82,21 @@ class _UnifiedIngredientSearchScreenState
     super.dispose();
   }
 
-  Future<void> _reload() async {
-    if (!mounted) return;
+  bool get _canSearchOnline =>
+      UnifiedIngredientSearchPolicy.canSearchOpenFoodFacts(_query) ||
+      UnifiedIngredientSearchPolicy.canSearchOpenNutrition(_query);
 
+  Future<void> _reloadLocal() async {
+    if (!mounted) return;
     final int generation = ++_searchGeneration;
     final String query = _query;
     final UnifiedIngredientSearchService service =
         ref.read(unifiedIngredientSearchServiceProvider);
-
     setState(() {
       _localLoading = true;
-      _offLoading = query.isNotEmpty;
-      _catalogLoading = false;
       _local = _emptyPage();
-      _off = _emptyPage();
-      _catalog = _emptyPage();
       _localError = null;
-      _offError = null;
-      _catalogError = null;
-      _catalogBlockedMessage = null;
     });
-
     try {
       final UnifiedIngredientSearchPage local = await service
           .searchPersonal(query: query, page: _localPage)
@@ -127,65 +122,120 @@ class _UnifiedIngredientSearchScreenState
         _localLoading = false;
       });
     }
+  }
 
+  Future<void> _searchOnline() async {
+    if (!mounted || !_canSearchOnline) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    final int generation = ++_searchGeneration;
+    final String query = _query;
+    setState(() {
+      _onlineSearchActive = true;
+      _localExpanded = false;
+      _offExpanded = true;
+      _catalogExpanded = true;
+      _offPage = 0;
+      _catalogPage = 0;
+      _off = _emptyPage();
+      _catalog = _emptyPage();
+      _offError = null;
+      _catalogError = null;
+      _catalogBlockedMessage = null;
+      _offLoading = UnifiedIngredientSearchPolicy.canSearchOpenFoodFacts(query);
+      _catalogLoading =
+          UnifiedIngredientSearchPolicy.canSearchOpenNutrition(query);
+    });
+    await Future.wait<void>(<Future<void>>[
+      _reloadOpenFoodFacts(generation: generation, query: query),
+      _reloadOpenNutrition(generation: generation, query: query),
+    ]);
+  }
+
+  Future<void> _reloadOpenFoodFacts({
+    int? generation,
+    String? query,
+  }) async {
+    if (!mounted) return;
+    final int activeGeneration = generation ?? ++_searchGeneration;
+    final String activeQuery = query ?? _query;
+    final UnifiedIngredientSearchService service =
+        ref.read(unifiedIngredientSearchServiceProvider);
+    if (generation == null) {
+      setState(() {
+        _offLoading = true;
+        _offError = null;
+      });
+    }
     try {
-      final bool offAvailable = await service
+      final bool available = await service
           .isOpenFoodFactsAvailable()
           .timeout(const Duration(seconds: 5));
-      if (!_isCurrentSearch(generation)) return;
-      setState(() => _offAvailable = offAvailable);
-
-      if (offAvailable &&
-          UnifiedIngredientSearchPolicy.canSearchOpenFoodFacts(query)) {
-        final UnifiedIngredientSearchPage off = await service
-            .searchOpenFoodFacts(query: query, page: _offPage)
-            .timeout(const Duration(minutes: 10));
-        if (!_isCurrentSearch(generation)) return;
-        setState(() {
-          _off = off;
-          _offError = null;
-          _offLoading = false;
-        });
-      } else {
+      if (!_isCurrentSearch(activeGeneration)) return;
+      setState(() => _offAvailable = available);
+      if (!available ||
+          !UnifiedIngredientSearchPolicy.canSearchOpenFoodFacts(activeQuery)) {
         setState(() {
           _off = _emptyPage();
           _offError = null;
           _offLoading = false;
         });
+        return;
       }
+      final UnifiedIngredientSearchPage page = await service
+          .searchOpenFoodFacts(query: activeQuery, page: _offPage)
+          .timeout(const Duration(seconds: 25));
+      if (!_isCurrentSearch(activeGeneration)) return;
+      setState(() {
+        _off = page;
+        _offError = null;
+        _offLoading = false;
+      });
     } on TimeoutException {
-      if (!_isCurrentSearch(generation)) return;
+      if (!_isCurrentSearch(activeGeneration)) return;
       setState(() {
         _offError = TimeoutException(
-          'Open Food Facts non ha completato i 20 tentativi automatici '
-          'entro 10 minuti.',
+          'Open Food Facts non ha completato la ricerca entro 25 secondi.',
         );
         _offLoading = false;
       });
     } catch (error) {
-      if (!_isCurrentSearch(generation)) return;
+      if (!_isCurrentSearch(activeGeneration)) return;
       setState(() {
         _offError = error;
         _offLoading = false;
       });
     }
+  }
 
-    if (!_isCurrentSearch(generation)) return;
-    await WidgetsBinding.instance.endOfFrame;
-    if (!_isCurrentSearch(generation)) return;
+  Future<void> _reloadOpenNutrition({
+    int? generation,
+    String? query,
+  }) async {
+    if (!mounted) return;
+    final int activeGeneration = generation ?? ++_searchGeneration;
+    final String activeQuery = query ?? _query;
+    final UnifiedIngredientSearchService service =
+        ref.read(unifiedIngredientSearchServiceProvider);
+    if (generation == null) {
+      setState(() {
+        _catalogLoading = true;
+        _catalogError = null;
+        _catalogBlockedMessage = null;
+      });
+    }
 
-    OpenNutritionSearchMode catalogMode = OpenNutritionSearchMode.unavailable;
+    OpenNutritionSearchMode mode = OpenNutritionSearchMode.unavailable;
     try {
-      catalogMode = await service
+      mode = await service
           .openNutritionSearchMode()
           .timeout(const Duration(seconds: 8));
-      if (!_isCurrentSearch(generation)) return;
+      if (!_isCurrentSearch(activeGeneration)) return;
       setState(() {
-        _catalogMode = catalogMode;
-        _catalogAvailable = catalogMode != OpenNutritionSearchMode.unavailable;
+        _catalogMode = mode;
+        _catalogAvailable = mode != OpenNutritionSearchMode.unavailable;
       });
     } on TimeoutException {
-      if (!_isCurrentSearch(generation)) return;
+      if (!_isCurrentSearch(activeGeneration)) return;
       setState(() {
         _catalogAvailable = false;
         _catalogError = TimeoutException(
@@ -195,7 +245,7 @@ class _UnifiedIngredientSearchScreenState
       });
       return;
     } catch (error) {
-      if (!_isCurrentSearch(generation)) return;
+      if (!_isCurrentSearch(activeGeneration)) return;
       setState(() {
         _catalogAvailable = false;
         _catalogError = error;
@@ -204,9 +254,9 @@ class _UnifiedIngredientSearchScreenState
       return;
     }
 
-    if (catalogMode == OpenNutritionSearchMode.unavailable ||
-        !UnifiedIngredientSearchPolicy.canSearchOpenNutrition(query)) {
-      if (!_isCurrentSearch(generation)) return;
+    if (mode == OpenNutritionSearchMode.unavailable ||
+        !UnifiedIngredientSearchPolicy.canSearchOpenNutrition(activeQuery)) {
+      if (!_isCurrentSearch(activeGeneration)) return;
       setState(() {
         _catalog = _emptyPage();
         _catalogLoading = false;
@@ -214,25 +264,19 @@ class _UnifiedIngredientSearchScreenState
       return;
     }
 
-    setState(() {
-      _catalogLoading = true;
-      _catalogError = null;
-      _catalogBlockedMessage = null;
-    });
-
     try {
-      final UnifiedIngredientSearchPage catalog = await service
-          .searchOpenNutrition(query: query, page: _catalogPage)
-          .timeout(const Duration(minutes: 10));
-      if (!_isCurrentSearch(generation)) return;
+      final UnifiedIngredientSearchPage page = await service
+          .searchOpenNutrition(query: activeQuery, page: _catalogPage)
+          .timeout(const Duration(seconds: 25));
+      if (!_isCurrentSearch(activeGeneration)) return;
       setState(() {
-        _catalog = catalog;
+        _catalog = page;
         _catalogError = null;
         _catalogBlockedMessage = null;
         _catalogLoading = false;
       });
     } on OpenNutritionNetworkPolicyException catch (error) {
-      if (!_isCurrentSearch(generation)) return;
+      if (!_isCurrentSearch(activeGeneration)) return;
       setState(() {
         _catalog = _emptyPage();
         _catalogError = null;
@@ -240,20 +284,26 @@ class _UnifiedIngredientSearchScreenState
         _catalogLoading = false;
       });
     } on TimeoutException {
-      if (!_isCurrentSearch(generation)) return;
+      if (!_isCurrentSearch(activeGeneration)) return;
       setState(() {
         _catalogError = TimeoutException(
-          'OpenNutrition non ha completato i 20 tentativi automatici entro '
-          '10 minuti. I risultati Open Food Facts restano disponibili.',
+          'OpenNutrition non ha completato la ricerca entro 25 secondi.',
         );
         _catalogLoading = false;
       });
     } catch (error) {
-      if (!_isCurrentSearch(generation)) return;
+      if (!_isCurrentSearch(activeGeneration)) return;
       setState(() {
         _catalogError = error;
         _catalogLoading = false;
       });
+    }
+  }
+
+  Future<void> _refresh() async {
+    await _reloadLocal();
+    if (_onlineSearchActive && mounted) {
+      await _searchOnline();
     }
   }
 
@@ -262,21 +312,29 @@ class _UnifiedIngredientSearchScreenState
   }
 
   void _onQueryChanged(String value) {
-    setState(() {});
     _debounce?.cancel();
-    _debounce = Timer(
-      const Duration(milliseconds: 650),
-      () {
-        if (!mounted) return;
-        setState(() {
-          _query = value.trim();
-          _localPage = 0;
-          _catalogPage = 0;
-          _offPage = 0;
-        });
-        _reload();
-      },
-    );
+    final String normalized = value.trim();
+    ++_searchGeneration;
+    setState(() {
+      _query = normalized;
+      _localPage = 0;
+      _catalogPage = 0;
+      _offPage = 0;
+      _onlineSearchActive = false;
+      _localExpanded = true;
+      _off = _emptyPage();
+      _catalog = _emptyPage();
+      _offError = null;
+      _catalogError = null;
+      _catalogBlockedMessage = null;
+      _offLoading = false;
+      _catalogLoading = false;
+    });
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      if (mounted) {
+        _reloadLocal();
+      }
+    });
   }
 
   Future<void> _select(
@@ -314,7 +372,7 @@ class _UnifiedIngredientSearchScreenState
       await context.push(
         '/food/ingredients/${ingredient.id}',
       );
-      await _reload();
+      await _reloadLocal();
     }
   }
 
@@ -391,7 +449,7 @@ class _UnifiedIngredientSearchScreenState
       _catalogPage = 0;
       _offPage = 0;
     });
-    await _reload();
+    await _reloadLocal();
     if (!mounted) return;
 
     if (widget.selectionMode) {
@@ -403,7 +461,7 @@ class _UnifiedIngredientSearchScreenState
       await context.push(
         '/food/ingredients/${ingredient.id}',
       );
-      await _reload();
+      await _reloadLocal();
       return;
     }
 
@@ -443,19 +501,13 @@ class _UnifiedIngredientSearchScreenState
   Future<void> _showCreateSheet() async {
     final FoodServicePreferencesController preferences =
         ref.read(foodServicePreferencesProvider);
-
-    await showModalBottomSheet<void>(
+    final String? action = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
       builder: (BuildContext sheetContext) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              16,
-              0,
-              16,
-              20,
-            ),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
@@ -463,44 +515,28 @@ class _UnifiedIngredientSearchScreenState
                   leading: const Icon(Icons.person_outline),
                   title: const Text('Inserimento manuale'),
                   subtitle: const Text('Crea un alimento personale.'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _createManual();
-                  },
+                  onTap: () => Navigator.pop(sheetContext, 'manual'),
                 ),
                 ListTile(
                   enabled: preferences.openFoodFactsEnabled,
-                  leading: const Icon(
-                    Icons.qr_code_scanner_outlined,
-                  ),
+                  leading: const Icon(Icons.qr_code_scanner_outlined),
                   title: const Text('Scansiona Open Food Facts'),
                   subtitle: const Text(
                     'Fotocamera o inserimento testuale del barcode.',
                   ),
                   onTap: preferences.openFoodFactsEnabled
-                      ? () {
-                          Navigator.pop(sheetContext);
-                          _scanOpenFoodFacts();
-                        }
+                      ? () => Navigator.pop(sheetContext, 'scan')
                       : null,
                 ),
                 ListTile(
                   enabled: preferences.openFoodFactsEnabled,
-                  leading: const Icon(
-                    Icons.travel_explore_outlined,
-                  ),
+                  leading: const Icon(Icons.travel_explore_outlined),
                   title: const Text('Cerca Open Food Facts'),
                   subtitle: const Text(
-                    'Cerca online per nome o brand e importa dalla scheda.',
+                    'Scrivi nella barra e avvia poi la ricerca online.',
                   ),
                   onTap: preferences.openFoodFactsEnabled
-                      ? () {
-                          Navigator.pop(sheetContext);
-                          setState(
-                            () => _offExpanded = true,
-                          );
-                          _searchFocusNode.requestFocus();
-                        }
+                      ? () => Navigator.pop(sheetContext, 'focus-off')
                       : null,
                 ),
                 if (_catalogAvailable)
@@ -508,12 +544,9 @@ class _UnifiedIngredientSearchScreenState
                     leading: const Icon(Icons.storage_outlined),
                     title: const Text('Ricerca OpenNutrition'),
                     subtitle: const Text(
-                      'Digita almeno due caratteri nella barra di ricerca.',
+                      'Scrivi nella barra e premi “Cerca online”.',
                     ),
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      _searchFocusNode.requestFocus();
-                    },
+                    onTap: () => Navigator.pop(sheetContext, 'focus-catalog'),
                   ),
               ],
             ),
@@ -521,12 +554,33 @@ class _UnifiedIngredientSearchScreenState
         );
       },
     );
+
+    if (!mounted || action == null) return;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    switch (action) {
+      case 'manual':
+        await _createManual();
+        return;
+      case 'scan':
+        await _scanOpenFoodFacts();
+        return;
+      case 'focus-off':
+        setState(() => _offExpanded = true);
+        _searchFocusNode.requestFocus();
+        return;
+      case 'focus-catalog':
+        setState(() => _catalogExpanded = true);
+        _searchFocusNode.requestFocus();
+        return;
+    }
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
     final bool searching = _query.isNotEmpty;
-
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -542,21 +596,16 @@ class _UnifiedIngredientSearchScreenState
         currentSection: 'food',
       ),
       body: RefreshIndicator(
-        onRefresh: _reload,
+        onRefresh: _refresh,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(
-            16,
-            16,
-            16,
-            96,
-          ),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
           children: <Widget>[
             TextField(
               controller: _controller,
               focusNode: _searchFocusNode,
               onChanged: _onQueryChanged,
               textInputAction: TextInputAction.search,
-              onSubmitted: (_) => _reload(),
+              onSubmitted: (_) => _reloadLocal(),
               decoration: InputDecoration(
                 hintText: 'Cerca alimento, nome, brand o barcode',
                 prefixIcon: const Icon(Icons.search),
@@ -572,35 +621,57 @@ class _UnifiedIngredientSearchScreenState
                 border: const OutlineInputBorder(),
               ),
             ),
+            const SizedBox(height: 12),
+            if (searching)
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _canSearchOnline ? _searchOnline : null,
+                  icon: const Icon(Icons.travel_explore_rounded),
+                  label: const Text('Cerca online'),
+                ),
+              ),
+            if (searching)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'La digitazione filtra soltanto gli alimenti locali. '
+                  'Premi il pulsante per interrogare le fonti online.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
             const SizedBox(height: 16),
             if (_localLoading) const LinearProgressIndicator(),
             if (!searching)
               _buildRecentSection()
             else ...<Widget>[
               _buildLocalSection(),
-              const SizedBox(height: 12),
-              if (_offAvailable)
-                _buildOpenFoodFactsSection()
-              else
-                const _EmptyCard(
-                  message: 'Open Food Facts è disabilitato nelle impostazioni.',
-                ),
-              const SizedBox(height: 12),
-              if (_catalogAvailable)
-                _buildCatalogSection()
-              else
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.storage_outlined),
-                    title: const Text('OpenNutrition non disponibile'),
-                    subtitle: const Text(
-                      'La sorgente statica non è configurata nella build '
-                      'oppure la ricerca è disabilitata nelle impostazioni.',
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => context.push('/settings/opennutrition'),
+              if (_onlineSearchActive) ...<Widget>[
+                const SizedBox(height: 12),
+                if (_offAvailable)
+                  _buildOpenFoodFactsSection()
+                else
+                  const _EmptyCard(
+                    message:
+                        'Open Food Facts è disabilitato nelle impostazioni.',
                   ),
-                ),
+                const SizedBox(height: 12),
+                if (_catalogAvailable)
+                  _buildCatalogSection()
+                else
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.storage_outlined),
+                      title: const Text('OpenNutrition non disponibile'),
+                      subtitle: const Text(
+                        'La sorgente statica non è configurata nella build '
+                        'oppure la ricerca è disabilitata nelle impostazioni.',
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => context.push('/settings/opennutrition'),
+                    ),
+                  ),
+              ],
             ],
           ],
         ),
@@ -622,7 +693,7 @@ class _UnifiedIngredientSearchScreenState
         if (_localError != null)
           _ErrorCard(
             error: _localError!,
-            onRetry: _reload,
+            onRetry: _reloadLocal,
           )
         else if (_local.items.isEmpty && !_localLoading)
           const _EmptyCard(
@@ -649,7 +720,7 @@ class _UnifiedIngredientSearchScreenState
           () => _localExpanded = !_localExpanded,
         );
       },
-      onRetry: _reload,
+      onRetry: _reloadLocal,
       error: _localError,
       emptyMessage: 'Nessun risultato locale.',
       items: _local.items,
@@ -660,11 +731,11 @@ class _UnifiedIngredientSearchScreenState
         hasNext: _local.hasNext,
         onPrevious: () {
           setState(() => _localPage -= 1);
-          _reload();
+          _reloadLocal();
         },
         onNext: () {
           setState(() => _localPage += 1);
-          _reload();
+          _reloadLocal();
         },
       ),
     );
@@ -733,7 +804,7 @@ class _UnifiedIngredientSearchScreenState
           onToggle: () {
             setState(() => _catalogExpanded = !_catalogExpanded);
           },
-          onRetry: _reload,
+          onRetry: _reloadOpenNutrition,
           error: _catalogError,
           emptyMessage: emptyMessage,
           items: _catalog.items,
@@ -744,11 +815,11 @@ class _UnifiedIngredientSearchScreenState
             hasNext: _catalog.hasNext,
             onPrevious: () {
               setState(() => _catalogPage -= 1);
-              _reload();
+              _reloadOpenNutrition();
             },
             onNext: () {
               setState(() => _catalogPage += 1);
-              _reload();
+              _reloadOpenNutrition();
             },
           ),
         ),
@@ -776,7 +847,7 @@ class _UnifiedIngredientSearchScreenState
           onToggle: () {
             setState(() => _offExpanded = !_offExpanded);
           },
-          onRetry: _reload,
+          onRetry: _reloadOpenFoodFacts,
           error: _offError,
           emptyMessage: _offLoading
               ? 'Open Food Facts sta elaborando la richiesta.'
@@ -791,11 +862,11 @@ class _UnifiedIngredientSearchScreenState
             hasNext: _off.hasNext,
             onPrevious: () {
               setState(() => _offPage -= 1);
-              _reload();
+              _reloadOpenFoodFacts();
             },
             onNext: () {
               setState(() => _offPage += 1);
-              _reload();
+              _reloadOpenFoodFacts();
             },
           ),
         ),
@@ -1134,11 +1205,17 @@ class OpenNutritionImportOverlay extends ConsumerStatefulWidget {
 
 class _OpenNutritionImportOverlayState
     extends ConsumerState<OpenNutritionImportOverlay> {
+  int _refreshRevision = 0;
+  bool _isAdding = false;
+
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: <Widget>[
-        widget.child,
+        KeyedSubtree(
+          key: ValueKey<int>(_refreshRevision),
+          child: widget.child,
+        ),
         Positioned(
           right: 16,
           bottom: 104,
@@ -1147,8 +1224,13 @@ class _OpenNutritionImportOverlayState
               heroTag:
                   'ingredient-search-${widget.targetType}-${widget.targetId}',
               tooltip: 'Aggiungi alimento',
-              onPressed: _selectAndAdd,
-              icon: const Icon(Icons.add),
+              onPressed: _isAdding ? null : _selectAndAdd,
+              icon: _isAdding
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add),
               label: const Text('Alimento'),
             ),
           ),
@@ -1158,66 +1240,65 @@ class _OpenNutritionImportOverlayState
   }
 
   Future<void> _selectAndAdd() async {
-    final IngredientEntity? ingredient = await context.push<IngredientEntity>(
-      '/food/ingredients/search?select=1',
-    );
-    if (ingredient == null || !mounted) return;
+    if (_isAdding) return;
+    setState(() => _isAdding = true);
+    try {
+      final IngredientEntity? ingredient = await context.push(
+        '/food/ingredients/search?select=1',
+      );
+      if (ingredient == null || !mounted) return;
 
-    final double? grams = await _askGrams(ingredient.name);
-    if (grams == null || !mounted) return;
+      final double? grams = await _askGrams(ingredient.name);
+      if (grams == null || !mounted) return;
 
-    final int? id = int.tryParse(widget.targetId);
-    if (id == null) {
+      final int? id = int.tryParse(widget.targetId);
+      if (id == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Identificativo destinazione non valido.'),
+          ),
+        );
+        return;
+      }
+
+      if (widget.targetType == 'meal') {
+        ref.read(mealRepositoryProvider).addIngredientItem(
+              mealId: id,
+              ingredient: ingredient,
+              grams: grams,
+            );
+      } else if (widget.targetType == 'recipe') {
+        ref.read(recipeRepositoryProvider).addIngredientItem(
+              recipeId: id,
+              ingredient: ingredient,
+              grams: grams,
+            );
+      } else {
+        throw StateError(
+          'Tipo destinazione non supportato: ${widget.targetType}',
+        );
+      }
+
+      if (!mounted) return;
+      setState(() => _refreshRevision += 1);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'Identificativo destinazione non valido.',
+            '${ingredient.name} aggiunto: ${grams.toStringAsFixed(0)} g.',
           ),
         ),
       );
-      return;
-    }
-
-    if (widget.targetType == 'meal') {
-      ref.read(mealRepositoryProvider).addIngredientItem(
-            mealId: id,
-            ingredient: ingredient,
-            grams: grams,
-          );
-    } else if (widget.targetType == 'recipe') {
-      ref.read(recipeRepositoryProvider).addIngredientItem(
-            recipeId: id,
-            ingredient: ingredient,
-            grams: grams,
-          );
-    } else {
-      throw StateError(
-        'Tipo destinazione non supportato: '
-        '${widget.targetType}',
+      await WidgetsBinding.instance.endOfFrame;
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Aggiunta alimento non riuscita: $error')),
       );
+    } finally {
+      if (mounted) {
+        setState(() => _isAdding = false);
+      }
     }
-
-    if (!mounted) return;
-
-    final Uri currentUri = GoRouterState.of(context).uri;
-    final Map<String, String> queryParameters =
-        Map<String, String>.from(currentUri.queryParameters)
-          ..['_refresh'] = DateTime.now().microsecondsSinceEpoch.toString();
-    final String refreshLocation =
-        currentUri.replace(queryParameters: queryParameters).toString();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '${ingredient.name} aggiunto: '
-          '${grams.toStringAsFixed(0)} g.',
-        ),
-      ),
-    );
-
-    await Future<void>.delayed(Duration.zero);
-    if (!mounted) return;
-    context.replace(refreshLocation);
   }
 
   Future<double?> _askGrams(String name) async {

@@ -13,15 +13,20 @@ import '../../../shared/widgets/tt_primary_button.dart';
 import '../../../shared/widgets/tt_section_header.dart';
 import '../data/entities/nutrition_tracking_entities.dart';
 import '../domain/weight_measurement_anomaly.dart';
+import 'widgets/anatomical_body_measurements_card.dart';
 
 final FutureProvider<MeasurementHubData> measurementHubProvider =
     FutureProvider<MeasurementHubData>((Ref ref) async {
   final repository = ref.watch(measurementRepositoryProvider);
+  final List<ScaleMeasurementEntity> scaleMeasurements =
+      repository.getScaleMeasurements();
+  final List<TapeMeasurementEntity> tapeMeasurements =
+      repository.getTapeMeasurements();
   return MeasurementHubData(
-    scaleMeasurements: repository.getScaleMeasurements(),
-    tapeMeasurements: repository.getTapeMeasurements(),
+    scaleMeasurements: scaleMeasurements,
+    tapeMeasurements: tapeMeasurements,
     entriesByTapeId: <int, List<TapeMeasurementEntryEntity>>{
-      for (final TapeMeasurementEntity item in repository.getTapeMeasurements())
+      for (final TapeMeasurementEntity item in tapeMeasurements)
         item.id: repository.getTapeEntries(item.id),
     },
   );
@@ -238,8 +243,12 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
                 ],
               ),
               const SizedBox(height: AppSpacing.sectionGap),
-              _InteractiveBodyMeasurementsCard(
-                data: data,
+              AnatomicalBodyMeasurementsCard(
+                values: <String, double?>{
+                  for (final TapeMeasurementEntryEntity entry
+                      in data.latestTapeEntries())
+                    entry.measurementCode: entry.valueCm,
+                },
                 onRegionTap: (String code) =>
                     _showBodyRegionSheet(context, ref, data, code),
               ),
@@ -675,8 +684,12 @@ class TapeMeasurementsScreen extends ConsumerWidget {
           return ListView(
             padding: _screenPadding,
             children: <Widget>[
-              _InteractiveBodyMeasurementsCard(
-                data: data,
+              AnatomicalBodyMeasurementsCard(
+                values: <String, double?>{
+                  for (final TapeMeasurementEntryEntity entry
+                      in data.latestTapeEntries())
+                    entry.measurementCode: entry.valueCm,
+                },
                 onRegionTap: (String code) =>
                     _showBodyRegionSheet(context, ref, data, code),
               ),
@@ -1737,6 +1750,7 @@ Widget _field(
   );
 }
 
+// ignore: unused_element
 class _InteractiveBodyMeasurementsCard extends StatefulWidget {
   const _InteractiveBodyMeasurementsCard({
     required this.data,
