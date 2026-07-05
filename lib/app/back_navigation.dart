@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +12,30 @@ final GlobalKey<ScaffoldMessengerState> appScaffoldMessengerKey =
 final DashboardBackController dashboardBackController =
     DashboardBackController();
 
+class DashboardBackScope extends StatelessWidget {
+  const DashboardBackScope({
+    required this.router,
+    required this.child,
+    super.key,
+  });
+
+  final GoRouter router;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (!didPop) {
+          unawaited(dashboardBackController.handle(router));
+        }
+      },
+      child: child,
+    );
+  }
+}
+
 class DashboardBackController {
   static const Duration exitConfirmationWindow = Duration(seconds: 2);
 
@@ -17,7 +43,9 @@ class DashboardBackController {
   bool _handling = false;
 
   Future<bool> handle(GoRouter router) async {
-    if (_handling) return true;
+    if (_handling) {
+      return true;
+    }
 
     _handling = true;
     try {
@@ -27,35 +55,24 @@ class DashboardBackController {
         return true;
       }
 
-      final String preferredRoute =
+      final String configuredRoute =
           await AppNavigationPreferences.getDefaultDashboardRoute();
+      final String preferredRoute =
+          configuredRoute == '/' ? '/food' : configuredRoute;
       final String rawCurrent =
           router.routerDelegate.currentConfiguration.uri.path;
       final String currentRoute = rawCurrent == '/' ? '/food' : rawCurrent;
 
       if (currentRoute != preferredRoute) {
-        // Tornare alla dashboard non deve armare immediatamente l'uscita.
         _lastExitAttempt = null;
         router.go(preferredRoute);
-
-        final ScaffoldMessengerState? messenger =
-            appScaffoldMessengerKey.currentState;
-        messenger
-          ?..hideCurrentSnackBar()
-          ..showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Dashboard aperta. Premi Indietro altre due volte per '
-                'chiudere Total Tracker.',
-              ),
-              duration: exitConfirmationWindow,
-            ),
-          );
+        _showMessage('Home aperta.');
         return true;
       }
 
       final DateTime now = DateTime.now();
       final DateTime? previousAttempt = _lastExitAttempt;
+
       if (previousAttempt != null &&
           now.difference(previousAttempt) <= exitConfirmationWindow) {
         _lastExitAttempt = null;
@@ -64,48 +81,27 @@ class DashboardBackController {
       }
 
       _lastExitAttempt = now;
-      final ScaffoldMessengerState? messenger =
-          appScaffoldMessengerKey.currentState;
-      messenger
-        ?..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Premi di nuovo Indietro per chiudere Total Tracker.',
-            ),
-            duration: exitConfirmationWindow,
-          ),
-        );
+      _showMessage('Premi di nuovo Indietro per chiudere Total Tracker.');
       return true;
     } finally {
       _handling = false;
     }
   }
-}
 
-ChildBackButtonDispatcher? _dashboardBackDispatcher;
-
-
-void installDashboardBackDispatcher(GoRouter router) {
-  if (_dashboardBackDispatcher != null) {
-    return;
+  void _showMessage(String message) {
+    final ScaffoldMessengerState? messenger =
+        appScaffoldMessengerKey.currentState;
+    messenger
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: exitConfirmationWindow,
+        ),
+      );
   }
-
-  final ChildBackButtonDispatcher dispatcher =
-  router.backButtonDispatcher.createChildBackButtonDispatcher();
-
-  dispatcher.addCallback(
-        () => dashboardBackController.handle(router),
-  );
-
-  _dashboardBackDispatcher = dispatcher;
-
-  // MaterialApp.router deve prima registrare la callback sul dispatcher padre.
-  // Chiamare takePriority durante la creazione del GoRouter provoca
-  // l'assertion "hasCallbacks is not true".
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (identical(_dashboardBackDispatcher, dispatcher)) {
-      dispatcher.takePriority();
-    }
-  });
 }
+
+// La gestione del tasto Indietro avviene nel PopScope posto sopra il Router.
+// La funzione resta disponibile per compatibilità con la configurazione attuale.
+void installDashboardBackDispatcher(GoRouter _) {}

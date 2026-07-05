@@ -2,7 +2,7 @@ name: total_tracker
 description: Total Tracker - Nutrition, measurement and workout.
 publish_to: none
 
-version: 0.3.6+10
+version: 0.3.7+11
 environment:
   sdk: ">=3.0.0 <4.0.0"
 

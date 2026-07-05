@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -24,61 +22,122 @@ class _AnatomicalBodyMeasurementsCardState
     extends State<AnatomicalBodyMeasurementsCard> {
   String? _selectedCode;
   String? _hoveredCode;
-  Size? _geometrySize;
-  _BodyGeometry? _geometry;
+  Size? _cachedSize;
+  _BodyGeometry? _cachedGeometry;
 
   _BodyGeometry _geometryFor(Size size) {
-    if (_geometry == null || _geometrySize != size) {
-      _geometrySize = size;
-      _geometry = _BodyGeometry(size);
+    if (_cachedGeometry == null || _cachedSize != size) {
+      _cachedSize = size;
+      _cachedGeometry = _BodyGeometry(size);
     }
-    return _geometry!;
+    return _cachedGeometry!;
+  }
+
+  String? _hitTest(Offset position, Size size) {
+    final _BodyGeometry geometry = _geometryFor(size);
+    for (final _BodyRegion region in _hitOrder) {
+      if (geometry.hitPaths[region.code]?.contains(position) ?? false) {
+        return region.code;
+      }
+    }
+    return null;
+  }
+
+  void _selectRegion(String code) {
+    setState(() => _selectedCode = code);
+    (widget.onRegionTap ?? widget.onTapRegion)?.call(code);
+  }
+
+  String _valueText(String code) {
+    final double? value = widget.values[code];
+    if (value == null || !value.isFinite || value <= 0) {
+      return 'Nessuna misura registrata';
+    }
+    final String formatted = value == value.roundToDouble()
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(1);
+    return '$formatted cm';
   }
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final String activeCode = _hoveredCode ?? _selectedCode ?? 'chest_cm';
-    final _BodyRegion activeRegion = _regionsByCode[activeCode]!;
-    final double? value = widget.values[activeCode];
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colors = theme.colorScheme;
+    final String? activeCode = _hoveredCode ?? _selectedCode;
+    final _BodyRegion? activeRegion =
+        activeCode == null ? null : _regionsByCode[activeCode];
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+    return Semantics(
+      container: true,
+      label: 'Corpo interattivo per le misure corporee',
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: colors.outlineVariant.withValues(alpha: 0.72),
+          ),
+        ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(
-              'Corpo interattivo',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Tocca una zona per registrare o modificare la misura.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
+            Row(
+              children: <Widget>[
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: colors.primaryContainer,
+                    borderRadius: BorderRadius.circular(14),
                   ),
+                  child: Icon(
+                    Icons.accessibility_new_rounded,
+                    color: colors.onPrimaryContainer,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'Misure corporee',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Tocca una zona del corpo per inserire o aggiornare la misura.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {
-                final double height = math.min(
-                  560,
-                  math.max(390, constraints.maxWidth * 1.16),
-                );
-                final Size bodySize = Size(
-                  math.min(constraints.maxWidth, 430),
-                  height,
-                );
+                final double bodyWidth =
+                    constraints.maxWidth.clamp(220.0, 360.0).toDouble();
+                final Size bodySize = Size(bodyWidth, bodyWidth / 0.56);
                 final _BodyGeometry geometry = _geometryFor(bodySize);
+
                 return Center(
-                  child: SizedBox(
-                    width: bodySize.width,
-                    height: bodySize.height,
+                  child: SizedBox.fromSize(
+                    size: bodySize,
                     child: MouseRegion(
+                      cursor: SystemMouseCursors.click,
                       onHover: (PointerHoverEvent event) {
-                        _setHovered(event.localPosition, bodySize);
+                        final String? code =
+                            _hitTest(event.localPosition, bodySize);
+                        if (code != _hoveredCode) {
+                          setState(() => _hoveredCode = code);
+                        }
                       },
                       onExit: (_) {
                         if (_hoveredCode != null) {
@@ -90,10 +149,9 @@ class _AnatomicalBodyMeasurementsCardState
                         onTapUp: (TapUpDetails details) {
                           final String? code =
                               _hitTest(details.localPosition, bodySize);
-                          if (code == null) return;
-                          setState(() => _selectedCode = code);
-                          (widget.onRegionTap ?? widget.onTapRegion)
-                              ?.call(code);
+                          if (code != null) {
+                            _selectRegion(code);
+                          }
                         },
                         child: RepaintBoundary(
                           child: CustomPaint(
@@ -118,10 +176,14 @@ class _AnatomicalBodyMeasurementsCardState
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
-                color: colors.primaryContainer.withValues(alpha: 0.55),
+                color: activeRegion == null
+                    ? colors.surfaceContainerHighest
+                    : colors.primaryContainer.withValues(alpha: 0.62),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: colors.primary.withValues(alpha: 0.28),
+                  color: activeRegion == null
+                      ? colors.outlineVariant
+                      : colors.primary.withValues(alpha: 0.34),
                 ),
               ),
               child: Row(
@@ -130,32 +192,48 @@ class _AnatomicalBodyMeasurementsCardState
                     width: 10,
                     height: 10,
                     decoration: BoxDecoration(
-                      color: colors.primary,
+                      color: activeRegion == null
+                          ? colors.outline
+                          : colors.primary,
                       shape: BoxShape.circle,
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          activeRegion.label,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        Text(
-                          value == null
-                              ? 'Nessuna misura registrata'
-                              : '${value.toStringAsFixed(1)} cm',
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: colors.onSurfaceVariant,
-                                  ),
-                        ),
-                      ],
-                    ),
+                    child: activeRegion == null
+                        ? Text(
+                            'Seleziona collo, torace, vita, arti o fianchi.',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colors.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                activeRegion.label,
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  color: colors.onPrimaryContainer,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _valueText(activeRegion.code),
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: colors.onPrimaryContainer,
+                                ),
+                              ),
+                            ],
+                          ),
                   ),
-                  Icon(Icons.touch_app_rounded, color: colors.primary),
+                  if (activeRegion != null)
+                    Icon(
+                      Icons.edit_rounded,
+                      size: 19,
+                      color: colors.onPrimaryContainer,
+                    ),
                 ],
               ),
             ),
@@ -163,23 +241,6 @@ class _AnatomicalBodyMeasurementsCardState
         ),
       ),
     );
-  }
-
-  void _setHovered(Offset position, Size size) {
-    final String? code = _hitTest(position, size);
-    if (code != _hoveredCode) {
-      setState(() => _hoveredCode = code);
-    }
-  }
-
-  String? _hitTest(Offset position, Size size) {
-    final _BodyGeometry geometry = _geometryFor(size);
-    for (final _BodyRegion region in _hitOrder) {
-      if (geometry.hitPaths[region.code]?.contains(position) ?? false) {
-        return region.code;
-      }
-    }
-    return null;
   }
 }
 
@@ -198,131 +259,174 @@ class _AnatomicalBodyPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final Rect bounds = Offset.zero & size;
+    final Paint backgroundPaint = Paint()
+      ..color = colorScheme.surfaceContainerHighest.withValues(alpha: 0.46);
+    final RRect background = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      const Radius.circular(28),
+    );
+    canvas.drawRRect(background, backgroundPaint);
 
-    final Paint backgroundGlow = Paint()
-      ..shader = RadialGradient(
-        colors: <Color>[
-          colorScheme.primary.withValues(alpha: 0.10),
-          Colors.transparent,
-        ],
-      ).createShader(bounds)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 28);
-    final Path glowPath = Path()
-      ..moveTo(size.width * 0.24, size.height * 0.16)
-      ..cubicTo(
-        size.width * 0.08,
-        size.height * 0.42,
-        size.width * 0.15,
-        size.height * 0.83,
-        size.width * 0.40,
-        size.height * 0.96,
-      )
-      ..cubicTo(
-        size.width * 0.58,
-        size.height * 1.02,
-        size.width * 0.84,
-        size.height * 0.82,
-        size.width * 0.78,
-        size.height * 0.42,
-      )
-      ..cubicTo(
-        size.width * 0.74,
-        size.height * 0.17,
-        size.width * 0.48,
-        size.height * 0.04,
-        size.width * 0.24,
-        size.height * 0.16,
-      )
-      ..close();
-    canvas.drawPath(glowPath, backgroundGlow);
+    final Paint haloPaint = Paint()
+      ..color = colorScheme.primary.withValues(alpha: 0.055);
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(size.width * 0.5, size.height * 0.53),
+        width: size.width * 0.72,
+        height: size.height * 0.88,
+      ),
+      haloPaint,
+    );
 
-    canvas.save();
-    canvas.translate(0, size.height * 0.006);
-    final Paint shadow = Paint()
-      ..color = Colors.black.withValues(alpha: 0.18)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 11);
-    canvas.drawPath(geometry.fullSilhouette, shadow);
-    canvas.restore();
+    final Color skin = Color.alphaBlend(
+      colorScheme.tertiary.withValues(alpha: 0.10),
+      const Color(0xFFF1B78F),
+    );
+    final Color skinShade = Color.alphaBlend(
+      colorScheme.primary.withValues(alpha: 0.09),
+      const Color(0xFFD98F68),
+    );
+    final Color topColor = Color.alphaBlend(
+      colorScheme.primary.withValues(alpha: 0.82),
+      colorScheme.surface,
+    );
+    final Color shortsColor = Color.alphaBlend(
+      colorScheme.secondary.withValues(alpha: 0.76),
+      colorScheme.surface,
+    );
+    final Color outline = colorScheme.onSurface.withValues(alpha: 0.44);
 
-    final Paint bodyPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: <Color>[
-          colorScheme.surfaceContainerHighest,
-          Color.lerp(
-                colorScheme.surfaceContainerHighest,
-                colorScheme.primaryContainer,
-                0.22,
-              ) ??
-              colorScheme.surfaceContainerHighest,
-          colorScheme.surfaceContainer,
-        ],
-        stops: const <double>[0, 0.48, 1],
-      ).createShader(geometry.fullSilhouette.getBounds());
-    canvas.drawPath(geometry.fullSilhouette, bodyPaint);
-
-    final Paint edge = Paint()
+    final Paint skinPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = skin;
+    final Paint skinShadePaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = skinShade.withValues(alpha: 0.42);
+    final Paint outlinePaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(1.2, size.width * 0.004)
-      ..color = colorScheme.outline.withValues(alpha: 0.48)
-      ..strokeJoin = StrokeJoin.round;
-    canvas.drawPath(geometry.fullSilhouette, edge);
+      ..strokeWidth = size.width * 0.006
+      ..strokeJoin = StrokeJoin.round
+      ..strokeCap = StrokeCap.round
+      ..color = outline;
 
-    final Paint softContour = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(1.0, size.width * 0.003)
-      ..color = colorScheme.onSurface.withValues(alpha: 0.12)
-      ..strokeCap = StrokeCap.round;
-    for (final Path contour in geometry.contours) {
-      canvas.drawPath(contour, softContour);
+    for (final Path path in geometry.skinParts) {
+      canvas.drawPath(path, skinPaint);
+      canvas.drawPath(path, outlinePaint);
     }
 
-    final String? highlighted = hoveredCode ?? selectedCode;
-    if (highlighted != null) {
-      final Path? path = geometry.visualRegions[highlighted];
-      if (path != null) {
-        final Paint highlight = Paint()
-          ..color = colorScheme.primary.withValues(
-            alpha: hoveredCode != null ? 0.24 : 0.18,
-          )
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
-        canvas.drawPath(path, highlight);
-        final Paint highlightEdge = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.7
-          ..color = colorScheme.primary.withValues(alpha: 0.72);
-        canvas.drawPath(path, highlightEdge);
+    canvas.drawPath(geometry.torso, skinPaint);
+    canvas.drawPath(geometry.torso, outlinePaint);
+    canvas.drawPath(
+      geometry.tankTop,
+      Paint()
+        ..style = PaintingStyle.fill
+        ..color = topColor,
+    );
+    canvas.drawPath(
+      geometry.tankTop,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = size.width * 0.006
+        ..strokeJoin = StrokeJoin.round
+        ..color = colorScheme.primary.withValues(alpha: 0.68),
+    );
+
+    canvas.drawPath(
+      geometry.shorts,
+      Paint()
+        ..style = PaintingStyle.fill
+        ..color = shortsColor,
+    );
+    canvas.drawPath(
+      geometry.shorts,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = size.width * 0.006
+        ..strokeJoin = StrokeJoin.round
+        ..color = colorScheme.secondary.withValues(alpha: 0.70),
+    );
+
+    canvas.drawPath(geometry.neckShade, skinShadePaint);
+
+    final Paint hairPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = Color.alphaBlend(
+        colorScheme.primary.withValues(alpha: 0.12),
+        const Color(0xFF49372F),
+      );
+    canvas.drawPath(geometry.hair, hairPaint);
+
+    _paintFace(canvas, size, outline);
+    _paintMeasurementBands(canvas, size);
+
+    final String? activeCode = hoveredCode ?? selectedCode;
+    if (activeCode != null) {
+      final Path? activePath = geometry.visualRegions[activeCode];
+      if (activePath != null) {
+        final bool selected = selectedCode == activeCode;
+        canvas.drawPath(
+          activePath,
+          Paint()
+            ..style = PaintingStyle.fill
+            ..color = colorScheme.primary.withValues(
+              alpha: selected ? 0.30 : 0.20,
+            ),
+        );
+        canvas.drawPath(
+          activePath,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = size.width * (selected ? 0.011 : 0.008)
+            ..strokeJoin = StrokeJoin.round
+            ..strokeCap = StrokeCap.round
+            ..color = colorScheme.primary.withValues(
+              alpha: selected ? 0.95 : 0.74,
+            ),
+        );
       }
     }
+  }
 
-    final Paint facePaint = Paint()
-      ..color = colorScheme.onSurface.withValues(alpha: 0.28)
-      ..strokeWidth = 1.4
-      ..strokeCap = StrokeCap.round;
-    final double cx = size.width / 2;
+  void _paintFace(Canvas canvas, Size size, Color outline) {
+    final double cx = size.width * 0.5;
+    final Paint featurePaint = Paint()
+      ..color = outline.withValues(alpha: 0.72)
+      ..strokeWidth = size.width * 0.006
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
     canvas.drawLine(
-      Offset(cx - size.width * 0.026, size.height * 0.098),
-      Offset(cx - size.width * 0.008, size.height * 0.098),
-      facePaint,
+      Offset(cx - size.width * 0.032, size.height * 0.091),
+      Offset(cx - size.width * 0.012, size.height * 0.091),
+      featurePaint,
     );
     canvas.drawLine(
-      Offset(cx + size.width * 0.008, size.height * 0.098),
-      Offset(cx + size.width * 0.026, size.height * 0.098),
-      facePaint,
+      Offset(cx + size.width * 0.012, size.height * 0.091),
+      Offset(cx + size.width * 0.032, size.height * 0.091),
+      featurePaint,
     );
-    canvas.drawArc(
-      Rect.fromCenter(
-        center: Offset(cx, size.height * 0.126),
-        width: size.width * 0.055,
-        height: size.height * 0.026,
-      ),
-      0.15,
-      math.pi - 0.3,
-      false,
-      facePaint,
+    canvas.drawLine(
+      Offset(cx, size.height * 0.097),
+      Offset(cx - size.width * 0.005, size.height * 0.119),
+      featurePaint..strokeWidth = size.width * 0.004,
     );
+    canvas.drawLine(
+      Offset(cx - size.width * 0.019, size.height * 0.134),
+      Offset(cx + size.width * 0.019, size.height * 0.134),
+      featurePaint,
+    );
+  }
+
+  void _paintMeasurementBands(Canvas canvas, Size size) {
+    final Paint bandPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.009
+      ..strokeCap = StrokeCap.round
+      ..color = colorScheme.primary.withValues(alpha: 0.72);
+
+    for (final Path path in geometry.measurementBands) {
+      canvas.drawPath(path, bandPaint);
+    }
   }
 
   @override
@@ -340,152 +444,295 @@ class _BodyGeometry {
   }
 
   final Size size;
-  late final Path fullSilhouette;
+
+  late final Path head;
+  late final Path neck;
+  late final Path torso;
+  late final Path tankTop;
+  late final Path shorts;
+  late final Path hair;
+  late final Path neckShade;
+
+  final List<Path> skinParts = <Path>[];
+  final List<Path> measurementBands = <Path>[];
   final Map<String, Path> hitPaths = <String, Path>{};
   final Map<String, Path> visualRegions = <String, Path>{};
-  final List<Path> contours = <Path>[];
 
   double get w => size.width;
   double get h => size.height;
   double x(double value) => w * value;
   double y(double value) => h * value;
 
-  void _build() {
-    final Path head = Path()
-      ..moveTo(x(0.455), y(0.055))
-      ..cubicTo(x(0.46), y(0.018), x(0.54), y(0.018), x(0.545), y(0.055))
-      ..cubicTo(x(0.563), y(0.075), x(0.554), y(0.136), x(0.525), y(0.151))
-      ..cubicTo(x(0.512), y(0.161), x(0.488), y(0.161), x(0.475), y(0.151))
-      ..cubicTo(x(0.446), y(0.136), x(0.437), y(0.075), x(0.455), y(0.055))
-      ..close();
-
-    final Path neck = Path()
-      ..moveTo(x(0.474), y(0.145))
-      ..cubicTo(x(0.478), y(0.17), x(0.47), y(0.184), x(0.452), y(0.192))
-      ..lineTo(x(0.548), y(0.192))
-      ..cubicTo(x(0.53), y(0.184), x(0.522), y(0.17), x(0.526), y(0.145))
-      ..close();
-
-    final Path torso = Path()
-      ..moveTo(x(0.452), y(0.186))
-      ..cubicTo(x(0.41), y(0.19), x(0.376), y(0.212), x(0.36), y(0.252))
-      ..cubicTo(x(0.37), y(0.326), x(0.39), y(0.384), x(0.397), y(0.446))
-      ..cubicTo(x(0.402), y(0.491), x(0.392), y(0.522), x(0.39), y(0.56))
-      ..cubicTo(x(0.42), y(0.584), x(0.455), y(0.593), x(0.5), y(0.594))
-      ..cubicTo(x(0.545), y(0.593), x(0.58), y(0.584), x(0.61), y(0.56))
-      ..cubicTo(x(0.608), y(0.522), x(0.598), y(0.491), x(0.603), y(0.446))
-      ..cubicTo(x(0.61), y(0.384), x(0.63), y(0.326), x(0.64), y(0.252))
-      ..cubicTo(x(0.624), y(0.212), x(0.59), y(0.19), x(0.548), y(0.186))
-      ..cubicTo(x(0.526), y(0.205), x(0.474), y(0.205), x(0.452), y(0.186))
-      ..close();
-
-    final Path leftArm = Path()
-      ..moveTo(x(0.365), y(0.235))
-      ..cubicTo(x(0.337), y(0.249), x(0.32), y(0.292), x(0.314), y(0.349))
-      ..cubicTo(x(0.308), y(0.414), x(0.31), y(0.475), x(0.3), y(0.544))
-      ..cubicTo(x(0.293), y(0.596), x(0.282), y(0.646), x(0.284), y(0.7))
-      ..cubicTo(x(0.286), y(0.727), x(0.302), y(0.746), x(0.316), y(0.737))
-      ..cubicTo(x(0.33), y(0.704), x(0.333), y(0.651), x(0.339), y(0.602))
-      ..cubicTo(x(0.347), y(0.535), x(0.36), y(0.474), x(0.373), y(0.41))
-      ..cubicTo(x(0.386), y(0.342), x(0.394), y(0.281), x(0.389), y(0.247))
-      ..close();
-
-    final Path rightArm = _mirror(leftArm);
-
-    final Path leftLeg = Path()
-      ..moveTo(x(0.397), y(0.548))
-      ..cubicTo(x(0.383), y(0.616), x(0.386), y(0.686), x(0.394), y(0.75))
-      ..cubicTo(x(0.402), y(0.812), x(0.399), y(0.872), x(0.39), y(0.934))
-      ..cubicTo(x(0.386), y(0.966), x(0.397), y(0.984), x(0.426), y(0.982))
-      ..cubicTo(x(0.449), y(0.975), x(0.452), y(0.954), x(0.452), y(0.928))
-      ..cubicTo(x(0.451), y(0.864), x(0.46), y(0.804), x(0.469), y(0.742))
-      ..cubicTo(x(0.478), y(0.678), x(0.483), y(0.618), x(0.48), y(0.574))
-      ..close();
-    final Path rightLeg = _mirror(leftLeg);
-
-    fullSilhouette = Path()
-      ..addPath(head, Offset.zero)
-      ..addPath(neck, Offset.zero)
-      ..addPath(torso, Offset.zero)
-      ..addPath(leftArm, Offset.zero)
-      ..addPath(rightArm, Offset.zero)
-      ..addPath(leftLeg, Offset.zero)
-      ..addPath(rightLeg, Offset.zero);
-
-    Path region(double left, double top, double right, double bottom,
-        {double radius = 0.02}) {
-      return Path()
-        ..addRRect(RRect.fromRectAndRadius(
+  Path _rectBand(double left, double top, double right, double bottom) {
+    return Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
           Rect.fromLTRB(x(left), y(top), x(right), y(bottom)),
-          Radius.circular(math.min(w, h) * radius),
-        ));
-    }
-
-    hitPaths.addAll(<String, Path>{
-      'neck_cm': region(0.44, 0.14, 0.56, 0.205),
-      'shoulders_cm': region(0.34, 0.185, 0.66, 0.265),
-      'chest_cm': region(0.385, 0.245, 0.615, 0.35),
-      'waist_cm': region(0.395, 0.375, 0.605, 0.46),
-      'abdomen_cm': region(0.39, 0.445, 0.61, 0.525),
-      'hips_cm': region(0.375, 0.515, 0.625, 0.6),
-      'left_arm_cm': region(0.29, 0.245, 0.39, 0.44),
-      'right_arm_cm': region(0.61, 0.245, 0.71, 0.44),
-      'left_forearm_cm': region(0.275, 0.42, 0.355, 0.68),
-      'right_forearm_cm': region(0.645, 0.42, 0.725, 0.68),
-      'left_thigh_cm': region(0.37, 0.57, 0.49, 0.76),
-      'right_thigh_cm': region(0.51, 0.57, 0.63, 0.76),
-      'left_calf_cm': region(0.375, 0.75, 0.465, 0.94),
-      'right_calf_cm': region(0.535, 0.75, 0.625, 0.94),
-    });
-
-    final Map<String, Path> visualBands = <String, Path>{
-      'neck_cm': region(0.456, 0.145, 0.544, 0.205, radius: 0.025),
-      'shoulders_cm': region(0.35, 0.185, 0.65, 0.265, radius: 0.035),
-      'chest_cm': region(0.385, 0.245, 0.615, 0.35, radius: 0.045),
-      'waist_cm': region(0.395, 0.375, 0.605, 0.46, radius: 0.04),
-      'abdomen_cm': region(0.39, 0.44, 0.61, 0.525, radius: 0.04),
-      'hips_cm': region(0.375, 0.51, 0.625, 0.605, radius: 0.04),
-      'left_arm_cm': region(0.285, 0.235, 0.40, 0.44, radius: 0.03),
-      'right_arm_cm': region(0.60, 0.235, 0.715, 0.44, radius: 0.03),
-      'left_forearm_cm': region(0.27, 0.405, 0.365, 0.70, radius: 0.03),
-      'right_forearm_cm': region(0.635, 0.405, 0.73, 0.70, radius: 0.03),
-      'left_thigh_cm': region(0.37, 0.56, 0.495, 0.77, radius: 0.035),
-      'right_thigh_cm': region(0.505, 0.56, 0.63, 0.77, radius: 0.035),
-      'left_calf_cm': region(0.37, 0.74, 0.47, 0.95, radius: 0.03),
-      'right_calf_cm': region(0.53, 0.74, 0.63, 0.95, radius: 0.03),
-    };
-    for (final MapEntry<String, Path> entry in visualBands.entries) {
-      visualRegions[entry.key] = Path.combine(
-        PathOperation.intersect,
-        fullSilhouette,
-        entry.value,
+          Radius.circular(w * 0.018),
+        ),
       );
-    }
-
-    contours.addAll(<Path>[
-      Path()
-        ..moveTo(x(0.405), y(0.36))
-        ..cubicTo(x(0.45), y(0.375), x(0.55), y(0.375), x(0.595), y(0.36)),
-      Path()
-        ..moveTo(x(0.41), y(0.465))
-        ..cubicTo(x(0.45), y(0.48), x(0.55), y(0.48), x(0.59), y(0.465)),
-      Path()
-        ..moveTo(x(0.5), y(0.205))
-        ..cubicTo(x(0.493), y(0.28), x(0.495), y(0.46), x(0.5), y(0.56)),
-      Path()
-        ..moveTo(x(0.48), y(0.575))
-        ..cubicTo(x(0.49), y(0.65), x(0.495), y(0.74), x(0.5), y(0.82)),
-      Path()
-        ..moveTo(x(0.52), y(0.575))
-        ..cubicTo(x(0.51), y(0.65), x(0.505), y(0.74), x(0.5), y(0.82)),
-    ]);
   }
 
-  Path _mirror(Path source) {
-    final Matrix4 matrix = Matrix4.identity()
-      ..setEntry(0, 0, -1.0)
-      ..setEntry(0, 3, w);
-    return source.transform(matrix.storage);
+  Path _limb({
+    required bool left,
+    required double topY,
+    required double bottomY,
+    required double innerTop,
+    required double outerTop,
+    required double innerBottom,
+    required double outerBottom,
+  }) {
+    final double sign = left ? -1 : 1;
+    double px(double distance) => x(0.5 + sign * distance);
+
+    final Path path = Path()
+      ..moveTo(px(innerTop), y(topY))
+      ..cubicTo(
+        px(innerTop + 0.012),
+        y(topY + 0.10 * (bottomY - topY)),
+        px(innerBottom - 0.006),
+        y(bottomY - 0.10 * (bottomY - topY)),
+        px(innerBottom),
+        y(bottomY),
+      )
+      ..cubicTo(
+        px(outerBottom + 0.010),
+        y(bottomY + 0.006),
+        px(outerBottom + 0.010),
+        y(bottomY - 0.045 * (bottomY - topY)),
+        px(outerBottom),
+        y(bottomY - 0.005),
+      )
+      ..cubicTo(
+        px(outerTop + 0.006),
+        y(topY + 0.12 * (bottomY - topY)),
+        px(outerTop),
+        y(topY + 0.02),
+        px(outerTop),
+        y(topY),
+      )
+      ..close();
+
+    return path;
+  }
+
+  Path _leg({
+    required bool left,
+    required double topY,
+    required double kneeY,
+    required double ankleY,
+    required double innerTop,
+    required double outerTop,
+  }) {
+    final double sign = left ? -1 : 1;
+    double px(double distance) => x(0.5 + sign * distance);
+
+    return Path()
+      ..moveTo(px(innerTop), y(topY))
+      ..cubicTo(
+        px(innerTop + 0.005),
+        y(topY + 0.08),
+        px(0.047),
+        y(kneeY - 0.025),
+        px(0.046),
+        y(kneeY),
+      )
+      ..cubicTo(
+        px(0.047),
+        y(kneeY + 0.08),
+        px(0.055),
+        y(ankleY - 0.035),
+        px(0.049),
+        y(ankleY),
+      )
+      ..lineTo(px(0.082), y(ankleY + 0.018))
+      ..cubicTo(
+        px(0.100),
+        y(ankleY + 0.023),
+        px(0.106),
+        y(ankleY + 0.010),
+        px(0.091),
+        y(ankleY - 0.004),
+      )
+      ..cubicTo(
+        px(0.096),
+        y(kneeY + 0.07),
+        px(outerTop + 0.012),
+        y(topY + 0.08),
+        px(outerTop),
+        y(topY),
+      )
+      ..close();
+  }
+
+  void _register(String code, Path path) {
+    hitPaths[code] = path;
+    visualRegions[code] = path;
+  }
+
+  void _build() {
+    head = Path()
+      ..moveTo(x(0.445), y(0.047))
+      ..cubicTo(x(0.455), y(0.018), x(0.545), y(0.018), x(0.555), y(0.047))
+      ..cubicTo(x(0.570), y(0.080), x(0.558), y(0.143), x(0.526), y(0.160))
+      ..cubicTo(x(0.510), y(0.169), x(0.490), y(0.169), x(0.474), y(0.160))
+      ..cubicTo(x(0.442), y(0.143), x(0.430), y(0.080), x(0.445), y(0.047))
+      ..close();
+
+    hair = Path()
+      ..moveTo(x(0.442), y(0.061))
+      ..cubicTo(x(0.432), y(0.025), x(0.466), y(0.010), x(0.500), y(0.012))
+      ..cubicTo(x(0.548), y(0.009), x(0.568), y(0.036), x(0.558), y(0.078))
+      ..cubicTo(x(0.548), y(0.061), x(0.541), y(0.047), x(0.527), y(0.043))
+      ..cubicTo(x(0.505), y(0.051), x(0.474), y(0.037), x(0.455), y(0.052))
+      ..lineTo(x(0.445), y(0.084))
+      ..close();
+
+    neck = Path()
+      ..moveTo(x(0.476), y(0.151))
+      ..cubicTo(x(0.480), y(0.174), x(0.470), y(0.190), x(0.450), y(0.199))
+      ..lineTo(x(0.550), y(0.199))
+      ..cubicTo(x(0.530), y(0.190), x(0.520), y(0.174), x(0.524), y(0.151))
+      ..close();
+
+    neckShade = Path()
+      ..moveTo(x(0.476), y(0.158))
+      ..cubicTo(x(0.489), y(0.180), x(0.511), y(0.180), x(0.524), y(0.158))
+      ..lineTo(x(0.524), y(0.177))
+      ..cubicTo(x(0.510), y(0.195), x(0.490), y(0.195), x(0.476), y(0.177))
+      ..close();
+
+    torso = Path()
+      ..moveTo(x(0.450), y(0.190))
+      ..cubicTo(x(0.414), y(0.197), x(0.398), y(0.224), x(0.400), y(0.263))
+      ..cubicTo(x(0.405), y(0.325), x(0.420), y(0.410), x(0.413), y(0.488))
+      ..cubicTo(x(0.438), y(0.515), x(0.562), y(0.515), x(0.587), y(0.488))
+      ..cubicTo(x(0.580), y(0.410), x(0.595), y(0.325), x(0.600), y(0.263))
+      ..cubicTo(x(0.602), y(0.224), x(0.586), y(0.197), x(0.550), y(0.190))
+      ..cubicTo(x(0.532), y(0.216), x(0.518), y(0.231), x(0.500), y(0.232))
+      ..cubicTo(x(0.482), y(0.231), x(0.468), y(0.216), x(0.450), y(0.190))
+      ..close();
+
+    tankTop = Path()
+      ..moveTo(x(0.450), y(0.190))
+      ..cubicTo(x(0.462), y(0.226), x(0.477), y(0.248), x(0.500), y(0.251))
+      ..cubicTo(x(0.523), y(0.248), x(0.538), y(0.226), x(0.550), y(0.190))
+      ..lineTo(x(0.584), y(0.203))
+      ..cubicTo(x(0.575), y(0.298), x(0.582), y(0.402), x(0.584), y(0.474))
+      ..cubicTo(x(0.552), y(0.494), x(0.448), y(0.494), x(0.416), y(0.474))
+      ..cubicTo(x(0.418), y(0.402), x(0.425), y(0.298), x(0.416), y(0.203))
+      ..close();
+
+    shorts = Path()
+      ..moveTo(x(0.413), y(0.472))
+      ..cubicTo(x(0.445), y(0.488), x(0.555), y(0.488), x(0.587), y(0.472))
+      ..lineTo(x(0.598), y(0.585))
+      ..cubicTo(x(0.565), y(0.599), x(0.535), y(0.599), x(0.500), y(0.576))
+      ..cubicTo(x(0.465), y(0.599), x(0.435), y(0.599), x(0.402), y(0.585))
+      ..close();
+
+    final Path leftUpperArm = _limb(
+      left: true,
+      topY: 0.205,
+      bottomY: 0.405,
+      innerTop: 0.100,
+      outerTop: 0.147,
+      innerBottom: 0.126,
+      outerBottom: 0.165,
+    );
+    final Path rightUpperArm = _limb(
+      left: false,
+      topY: 0.205,
+      bottomY: 0.405,
+      innerTop: 0.100,
+      outerTop: 0.147,
+      innerBottom: 0.126,
+      outerBottom: 0.165,
+    );
+    final Path leftForearm = _limb(
+      left: true,
+      topY: 0.395,
+      bottomY: 0.585,
+      innerTop: 0.126,
+      outerTop: 0.165,
+      innerBottom: 0.145,
+      outerBottom: 0.174,
+    );
+    final Path rightForearm = _limb(
+      left: false,
+      topY: 0.395,
+      bottomY: 0.585,
+      innerTop: 0.126,
+      outerTop: 0.165,
+      innerBottom: 0.145,
+      outerBottom: 0.174,
+    );
+
+    final Path leftLeg = _leg(
+      left: true,
+      topY: 0.568,
+      kneeY: 0.755,
+      ankleY: 0.958,
+      innerTop: 0.018,
+      outerTop: 0.098,
+    );
+    final Path rightLeg = _leg(
+      left: false,
+      topY: 0.568,
+      kneeY: 0.755,
+      ankleY: 0.958,
+      innerTop: 0.018,
+      outerTop: 0.098,
+    );
+
+    skinParts
+      ..add(head)
+      ..add(neck)
+      ..add(leftUpperArm)
+      ..add(rightUpperArm)
+      ..add(leftForearm)
+      ..add(rightForearm)
+      ..add(leftLeg)
+      ..add(rightLeg);
+
+    _register('neck_cm', _rectBand(0.462, 0.157, 0.538, 0.198));
+    _register('shoulders_cm', _rectBand(0.401, 0.202, 0.599, 0.254));
+    _register('chest_cm', _rectBand(0.412, 0.274, 0.588, 0.333));
+    _register('waist_cm', _rectBand(0.420, 0.390, 0.580, 0.438));
+    _register('abdomen_cm', _rectBand(0.416, 0.432, 0.584, 0.487));
+    _register('hips_cm', _rectBand(0.405, 0.492, 0.595, 0.571));
+
+    _register('left_arm_cm', leftUpperArm);
+    _register('right_arm_cm', rightUpperArm);
+    _register('left_forearm_cm', leftForearm);
+    _register('right_forearm_cm', rightForearm);
+
+    final Path leftThigh = _rectBand(0.394, 0.568, 0.492, 0.758);
+    final Path rightThigh = _rectBand(0.508, 0.568, 0.606, 0.758);
+    final Path leftCalf = _rectBand(0.405, 0.744, 0.489, 0.955);
+    final Path rightCalf = _rectBand(0.511, 0.744, 0.595, 0.955);
+
+    _register('left_thigh_cm', leftThigh);
+    _register('right_thigh_cm', rightThigh);
+    _register('left_calf_cm', leftCalf);
+    _register('right_calf_cm', rightCalf);
+
+    measurementBands
+      ..add(
+        Path()
+          ..moveTo(x(0.415), y(0.302))
+          ..lineTo(x(0.585), y(0.302)),
+      )
+      ..add(
+        Path()
+          ..moveTo(x(0.421), y(0.414))
+          ..lineTo(x(0.579), y(0.414)),
+      )
+      ..add(
+        Path()
+          ..moveTo(x(0.410), y(0.515))
+          ..lineTo(x(0.590), y(0.515)),
+      );
   }
 }
 

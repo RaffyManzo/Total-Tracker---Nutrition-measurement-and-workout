@@ -203,9 +203,21 @@ class MealRepository {
   }
 
   List<MealWithItems> getAllWithItems() {
-    return getAllActive().map((MealEntity meal) {
-      return MealWithItems(meal: meal, items: getItemsForMeal(meal.id));
-    }).toList();
+    return _attachItems(getAllActive());
+  }
+
+  List<MealWithItems> getMealsWithItemsInRange({
+    required String fromDateKey,
+    required String toDateKey,
+  }) {
+    final List<MealEntity> meals = getAllActive()
+        .where(
+          (MealEntity meal) =>
+              meal.dateKey.compareTo(fromDateKey) >= 0 &&
+              meal.dateKey.compareTo(toDateKey) <= 0,
+        )
+        .toList();
+    return _attachItems(meals);
   }
 
   List<IngredientMealUsage> getIngredientUsage(
@@ -278,9 +290,45 @@ class MealRepository {
   }
 
   List<MealWithItems> getMealsWithItemsForDate(String dateKey) {
-    return getMealsForDate(dateKey).map((MealEntity meal) {
-      return MealWithItems(meal: meal, items: getItemsForMeal(meal.id));
-    }).toList();
+    return _attachItems(getMealsForDate(dateKey));
+  }
+
+  List<MealWithItems> _attachItems(List<MealEntity> meals) {
+    if (meals.isEmpty) {
+      return const <MealWithItems>[];
+    }
+
+    final Set<int> mealIds = meals.map((MealEntity meal) => meal.id).toSet();
+    final Map<int, List<MealItemEntity>> itemsByMealId =
+        <int, List<MealItemEntity>>{};
+
+    for (final MealItemEntity item in _itemBox.getAll()) {
+      if (item.deletedAtEpochMs != null) {
+        continue;
+      }
+
+      final int mealId = item.meal.targetId;
+      if (!mealIds.contains(mealId)) {
+        continue;
+      }
+
+      (itemsByMealId[mealId] ??= <MealItemEntity>[]).add(item);
+    }
+
+    for (final List<MealItemEntity> items in itemsByMealId.values) {
+      items.sort(
+        (MealItemEntity a, MealItemEntity b) =>
+            a.position.compareTo(b.position),
+      );
+    }
+
+    return <MealWithItems>[
+      for (final MealEntity meal in meals)
+        MealWithItems(
+          meal: meal,
+          items: itemsByMealId[meal.id] ?? const <MealItemEntity>[],
+        ),
+    ];
   }
 
   MealWithItems ensureMealSlot({

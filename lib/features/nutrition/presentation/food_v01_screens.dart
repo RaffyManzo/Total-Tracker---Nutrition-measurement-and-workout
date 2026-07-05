@@ -35,11 +35,12 @@ import 'measurement_screens.dart' show measurementHubProvider;
 
 final FutureProvider<FoodHubV01Data> foodHubV01Provider =
     FutureProvider<FoodHubV01Data>((Ref ref) async {
+  // Cede il thread al primo frame: la schermata di caricamento viene
+  // mostrata subito invece di bloccare l'avvio sulla dashboard.
+  await Future<void>.delayed(Duration.zero);
+
   final dailyRepository = ref.watch(dailyRecordRepositoryProvider);
   final mealRepository = ref.watch(mealRepositoryProvider);
-  final ingredientRepository = ref.watch(ingredientRepositoryProvider);
-  final recipeRepository = ref.watch(recipeRepositoryProvider);
-  final measurementRepository = ref.watch(measurementRepositoryProvider);
   final planning = ref.watch(foodPlanningServiceProvider);
   final analytics = ref.watch(foodAnalyticsServiceProvider);
   final UserProfileEntity? profile =
@@ -47,27 +48,39 @@ final FutureProvider<FoodHubV01Data> foodHubV01Provider =
 
   final String todayKey = _dateKey(DateTime.now());
   final FoodDayBundle todayBundle = planning.ensureDay(todayKey);
-
   final List<DailyRecordEntity> days = dailyRepository.getAllActive();
   final DailyRecordEntity latest = days
           .where((DailyRecordEntity day) => day.dateKey == todayKey)
           .firstOrNull ??
       todayBundle.day;
-  final List<MealWithItems> latestMeals =
-      mealRepository.getMealsWithItemsForDate(latest.dateKey);
+
   final DateTime reference = DateTime.parse(latest.dateKey);
   final DateTime monday =
       reference.subtract(Duration(days: reference.weekday - 1));
+  final String dashboardFromKey =
+      _dateKey(reference.subtract(const Duration(days: 45)));
+
+  final List<MealWithItems> allMeals = mealRepository.getMealsWithItemsInRange(
+    fromDateKey: dashboardFromKey,
+    toDateKey: latest.dateKey,
+  );
+  final List<MealWithItems> latestMeals = allMeals
+      .where(
+        (MealWithItems meal) => meal.meal.dateKey == latest.dateKey,
+      )
+      .toList();
 
   return FoodHubV01Data(
     latest: latest,
     latestMeals: latestMeals,
-    allMeals: mealRepository.getAllWithItems(),
+    allMeals: allMeals,
     days: days,
-    ingredients: ingredientRepository.getAllActive(),
-    recipes: recipeRepository.getAllActive(),
-    scaleMeasurements: measurementRepository.getScaleMeasurements(),
-    tapeMeasurements: measurementRepository.getTapeMeasurements(),
+    // Questi archivi non sono letti dal primo render della dashboard.
+    // Restano disponibili nei provider dedicati delle rispettive pagine.
+    ingredients: const <IngredientEntity>[],
+    recipes: const <RecipeEntity>[],
+    scaleMeasurements: const <ScaleMeasurementEntity>[],
+    tapeMeasurements: const <TapeMeasurementEntity>[],
     analytics: analytics,
     adaptiveSummary: analytics.adaptiveSummaryForWeek(
       monday: monday,
@@ -77,7 +90,6 @@ final FutureProvider<FoodHubV01Data> foodHubV01Provider =
     profile: profile,
   );
 });
-
 final FutureProvider<List<DailyRecordEntity>> foodDaysV01Provider =
     FutureProvider<List<DailyRecordEntity>>((Ref ref) async {
   return ref.watch(dailyRecordRepositoryProvider).getAllActive();

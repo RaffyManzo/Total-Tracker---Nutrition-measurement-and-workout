@@ -22,11 +22,17 @@ class UserProfileRepository {
   Box<UserProfileEntity> get _box => _store.box<UserProfileEntity>();
 
   UserProfileEntity? getActiveProfile() {
-    _enforceSingleActiveProfile();
     final List<UserProfileEntity> activeProfiles = _activeProfiles();
     if (activeProfiles.isEmpty) {
       return null;
     }
+
+    if (activeProfiles.length > 1) {
+      _enforceSingleActiveProfile();
+      final List<UserProfileEntity> normalizedProfiles = _activeProfiles();
+      return normalizedProfiles.isEmpty ? null : normalizedProfiles.first;
+    }
+
     return activeProfiles.first;
   }
 
