@@ -982,11 +982,44 @@ class PersistentIngredientListScreen extends ConsumerWidget {
   }
 }
 
-class RecipesScreen extends ConsumerWidget {
+class RecipesScreen extends ConsumerStatefulWidget {
   const RecipesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RecipesScreen> createState() => _RecipesScreenState();
+}
+
+class _RecipesScreenState extends ConsumerState<RecipesScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<RecipeEntity> _filterRecipes(List<RecipeEntity> recipes) {
+    final String query = _query.trim().toLowerCase();
+    final List<RecipeEntity> filtered = recipes.where((RecipeEntity recipe) {
+      if (query.isEmpty) return true;
+      return recipe.title.toLowerCase().contains(query) ||
+          recipe.subtitle.toLowerCase().contains(query) ||
+          recipe.summary.toLowerCase().contains(query) ||
+          recipe.source.toLowerCase().contains(query) ||
+          recipe.courseCode.toLowerCase().contains(query) ||
+          recipe.cuisineCode.toLowerCase().contains(query);
+    }).toList();
+
+    filtered.sort(
+      (RecipeEntity a, RecipeEntity b) =>
+          a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+    );
+    return filtered;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final AsyncValue<List<RecipeEntity>> asyncRecipes =
         ref.watch(recipesProvider);
 
@@ -1011,92 +1044,149 @@ class RecipesScreen extends ConsumerWidget {
             );
           }
 
-          return ListView.separated(
-            padding: _screenPadding,
-            itemCount: recipes.length,
-            separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.md),
-            itemBuilder: (BuildContext context, int index) {
-              final RecipeEntity recipe = recipes[index];
-              final double? kcal =
-                  recipe.kcalPerServing ?? recipe.caloriesTotal;
-
-              return TtAppCard(
-                onTap: () => context.push('/food/recipes/${recipe.id}'),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: SizedBox(
-                        width: 112,
-                        height: 104,
-                        child: _RecipeCardImage(path: recipe.imagePath),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            recipe.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                          if (recipe.subtitle.trim().isNotEmpty) ...<Widget>[
-                            const SizedBox(height: AppSpacing.xs),
-                            Text(
-                              recipe.subtitle.trim(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                          if (recipe.summary.trim().isNotEmpty) ...<Widget>[
-                            const SizedBox(height: AppSpacing.xs),
-                            Text(
-                              recipe.summary.trim(),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                          const SizedBox(height: AppSpacing.sm),
-                          Wrap(
-                            spacing: AppSpacing.sm,
-                            runSpacing: AppSpacing.xs,
-                            children: <Widget>[
-                              if (kcal != null)
-                                Text(
-                                  recipe.kcalPerServing != null
-                                      ? '${_fmtKcal(kcal)} / porzione'
-                                      : _fmtKcal(kcal),
-                                  style: Theme.of(context).textTheme.labelLarge,
-                                ),
-                              Text(
-                                '${recipe.servings} porzioni',
-                                style: Theme.of(context).textTheme.labelMedium,
-                              ),
-                              if (recipe.prepTimeMinutes +
-                                      recipe.cookTimeMinutes >
-                                  0)
-                                Text(
-                                  '${recipe.prepTimeMinutes + recipe.cookTimeMinutes} min',
-                                  style:
-                                      Theme.of(context).textTheme.labelMedium,
-                                ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    const Icon(Icons.chevron_right_rounded),
-                  ],
+          final List<RecipeEntity> filtered = _filterRecipes(recipes);
+          return Column(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  16,
+                  16,
+                  16,
+                  12,
                 ),
-              );
-            },
+                child: TextField(
+                  controller: _searchController,
+                  textInputAction: TextInputAction.search,
+                  onChanged: (String value) {
+                    setState(() => _query = value);
+                  },
+                  decoration: InputDecoration(
+                    labelText: 'Cerca ricette',
+                    hintText: 'Titolo, descrizione, fonte o categoria',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Cancella ricerca',
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _query = '');
+                            },
+                            icon: const Icon(Icons.clear_rounded),
+                          ),
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: filtered.isEmpty
+                    ? _EmptyState(
+                        title: 'Nessuna corrispondenza',
+                        message:
+                            'Nessuna ricetta corrisponde a “${_query.trim()}”.',
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(
+                          16,
+                          0,
+                          16,
+                          112,
+                        ),
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(height: AppSpacing.sm),
+                        itemBuilder: (BuildContext context, int index) {
+                          final RecipeEntity recipe = filtered[index];
+                          final double? kcal =
+                              recipe.kcalPerServing ?? recipe.caloriesTotal;
+
+                          return TtAppCard(
+                            onTap: () =>
+                                context.push('/food/recipes/${recipe.id}'),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: <Widget>[
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: SizedBox.square(
+                                    dimension: 68,
+                                    child: _RecipeCardImage(
+                                      path: recipe.imagePath,
+                                      fallbackText: recipe.title,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.md),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      Text(
+                                        recipe.title,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleMedium,
+                                      ),
+                                      if (recipe.subtitle.trim().isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: AppSpacing.xxs,
+                                          ),
+                                          child: Text(
+                                            recipe.subtitle.trim(),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall,
+                                          ),
+                                        ),
+                                      const SizedBox(height: AppSpacing.xs),
+                                      Wrap(
+                                        spacing: AppSpacing.sm,
+                                        runSpacing: AppSpacing.xxs,
+                                        children: <Widget>[
+                                          if (kcal != null)
+                                            Text(
+                                              recipe.kcalPerServing != null
+                                                  ? '${_fmtKcal(kcal)} / porzione'
+                                                  : _fmtKcal(kcal),
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .labelLarge,
+                                            ),
+                                          Text(
+                                            '${recipe.servings} porzioni',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelMedium,
+                                          ),
+                                          if (recipe.prepTimeMinutes +
+                                                  recipe.cookTimeMinutes >
+                                              0)
+                                            Text(
+                                              '${recipe.prepTimeMinutes + recipe.cookTimeMinutes} min',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .labelMedium,
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.xs),
+                                const Icon(Icons.chevron_right_rounded),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
           );
         },
       ),
@@ -1105,32 +1195,53 @@ class RecipesScreen extends ConsumerWidget {
 }
 
 class _RecipeCardImage extends StatelessWidget {
-  const _RecipeCardImage({required this.path});
+  const _RecipeCardImage({
+    required this.path,
+    required this.fallbackText,
+  });
 
   final String path;
+  final String fallbackText;
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final String trimmedTitle = fallbackText.trim();
+    final String initial =
+        trimmedTitle.isEmpty ? '?' : trimmedTitle.substring(0, 1).toUpperCase();
+
     final Widget fallback = ColoredBox(
-      color: colors.surfaceContainerHighest,
-      child: Icon(
-        Icons.restaurant_menu_rounded,
-        color: colors.onSurfaceVariant,
-        size: 34,
+      color: colors.primaryContainer,
+      child: Center(
+        child: Text(
+          initial,
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                color: colors.onPrimaryContainer,
+                fontWeight: FontWeight.w700,
+              ),
+        ),
       ),
     );
 
     final String value = path.trim();
-    if (value.isEmpty) {
-      return fallback;
-    }
+    if (value.isEmpty) return fallback;
 
     final Uri? uri = Uri.tryParse(value);
     if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
       return Image.network(
         value,
         fit: BoxFit.cover,
+        filterQuality: FilterQuality.medium,
+        errorBuilder: (_, __, ___) => fallback,
+      );
+    }
+
+    if (uri != null && uri.scheme == 'file') {
+      return Image.file(
+        File.fromUri(uri),
+        fit: BoxFit.cover,
+        cacheWidth: 192,
+        filterQuality: FilterQuality.medium,
         errorBuilder: (_, __, ___) => fallback,
       );
     }
@@ -1139,19 +1250,20 @@ class _RecipeCardImage extends StatelessWidget {
       return Image.asset(
         value,
         fit: BoxFit.cover,
+        cacheWidth: 192,
+        filterQuality: FilterQuality.medium,
         errorBuilder: (_, __, ___) => fallback,
       );
     }
 
     final File file = File(value);
-    if (!file.existsSync()) {
-      return fallback;
-    }
+    if (!file.existsSync()) return fallback;
 
     return Image.file(
       file,
       fit: BoxFit.cover,
-      cacheWidth: 480,
+      cacheWidth: 192,
+      filterQuality: FilterQuality.medium,
       errorBuilder: (_, __, ___) => fallback,
     );
   }

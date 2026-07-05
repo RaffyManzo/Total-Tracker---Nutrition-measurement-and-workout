@@ -246,31 +246,82 @@ class FoodHubV01Data {
   }
 }
 
-class FoodHubScreen extends ConsumerWidget {
+class FoodHubScreen extends ConsumerStatefulWidget {
   const FoodHubScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FoodHubScreen> createState() => _FoodHubScreenState();
+}
+
+class _FoodHubScreenState extends ConsumerState<FoodHubScreen> {
+  static FoodHubV01Data? _cachedBaseData;
+  static FoodHubV01Data? _cachedExtendedData;
+
+  @override
+  Widget build(BuildContext context) {
     final AsyncValue<FoodHubV01Data> data = ref.watch(foodHubV01Provider);
     final AsyncValue<FoodHubV01Data> extended =
         ref.watch(foodHubExtendedV01Provider);
-    final FoodHubV01Data? extendedData = extended.asData?.value;
 
-    return Scaffold(
-      bottomNavigationBar: const TtFoodBottomNavBar(),
-      body: data.when(
+    final FoodHubV01Data? currentBase = data.asData?.value;
+    final FoodHubV01Data? currentExtended = extended.asData?.value;
+
+    if (currentBase != null) {
+      _cachedBaseData = currentBase;
+    }
+    if (currentExtended != null) {
+      _cachedExtendedData = currentExtended;
+    }
+
+    final FoodHubV01Data? visibleBase = currentBase ?? _cachedBaseData;
+    final FoodHubV01Data? visibleExtended =
+        currentExtended ?? _cachedExtendedData;
+
+    Widget body;
+    if (visibleBase == null) {
+      body = data.when(
         loading: () => const _DashboardLoadingState(),
         error: (Object error, StackTrace stackTrace) => _ErrorState(
           error: error,
-          onRetry: () => ref.invalidate(foodHubV01Provider),
+          onRetry: () {
+            ref.invalidate(foodHubV01Provider);
+            ref.invalidate(foodHubExtendedV01Provider);
+          },
         ),
         data: (FoodHubV01Data baseData) => _FoodHubV01Body(
-          data: extendedData ?? baseData,
+          data: currentExtended ?? baseData,
           extendedLoading: extended.isLoading,
-          extendedReady: extendedData != null,
+          extendedReady: currentExtended != null,
           onRetryExtended: () => ref.invalidate(foodHubExtendedV01Provider),
         ),
-      ),
+      );
+    } else {
+      final bool refreshing = data.isLoading || extended.isLoading;
+      body = Stack(
+        children: <Widget>[
+          _FoodHubV01Body(
+            data: visibleExtended ?? visibleBase,
+            extendedLoading: extended.isLoading && visibleExtended == null,
+            extendedReady: visibleExtended != null,
+            onRetryExtended: () {
+              ref.invalidate(foodHubV01Provider);
+              ref.invalidate(foodHubExtendedV01Provider);
+            },
+          ),
+          if (refreshing)
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
+        ],
+      );
+    }
+
+    return Scaffold(
+      bottomNavigationBar: const TtFoodBottomNavBar(),
+      body: body,
     );
   }
 }

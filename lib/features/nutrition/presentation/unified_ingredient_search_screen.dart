@@ -32,6 +32,7 @@ class _UnifiedIngredientSearchScreenState
   final TextEditingController _controller = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   Timer? _debounce;
+  bool _selectionReturning = false;
 
   String _query = '';
   int _localPage = 0;
@@ -340,18 +341,22 @@ class _UnifiedIngredientSearchScreenState
   Future<void> _returnSelection(
     IngredientEntity ingredient,
   ) async {
+    if (_selectionReturning || !mounted) return;
+    _selectionReturning = true;
     _debounce?.cancel();
+    ++_searchGeneration;
     FocusManager.instance.primaryFocus?.unfocus();
 
-    // La route viene chiusa soltanto a frame concluso. In questo modo non
-    // vengono rimossi InheritedElement mentre hanno ancora dipendenti attivi.
+    final NavigatorState navigator = Navigator.of(context);
     await WidgetsBinding.instance.endOfFrame;
     await Future<void>.delayed(Duration.zero);
-    if (!mounted) {
+
+    if (!mounted || !navigator.mounted || !navigator.canPop()) {
+      _selectionReturning = false;
       return;
     }
 
-    context.pop<IngredientEntity>(ingredient);
+    navigator.pop<IngredientEntity>(ingredient);
   }
 
   Future<void> _select(
