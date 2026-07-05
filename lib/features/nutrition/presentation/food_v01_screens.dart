@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -36,113 +37,188 @@ import 'measurement_screens.dart' show measurementHubProvider;
 
 final FutureProvider<FoodHubV01Data> foodHubV01Provider =
     FutureProvider<FoodHubV01Data>((Ref ref) async {
-  // Il primo frame mostra subito lo stato di caricamento.
-  await Future<void>.delayed(Duration.zero);
+  final Stopwatch total = Stopwatch()..start();
+  final Map<String, Object?> phases = <String, Object?>{};
 
-  final dailyRepository = ref.watch(dailyRecordRepositoryProvider);
-  final mealRepository = ref.watch(mealRepositoryProvider);
-  final planning = ref.watch(foodPlanningServiceProvider);
-  final analytics = ref.watch(foodAnalyticsServiceProvider);
-  final UserProfileEntity? profile =
-      ref.watch(userProfileRepositoryProvider).getActiveProfile();
+  T phase<T>(String name, T Function() operation) {
+    final Stopwatch watch = Stopwatch()..start();
+    final T value = operation();
+    watch.stop();
+    phases[name] = watch.elapsedMilliseconds;
+    return value;
+  }
 
-  final DateTime now = DateTime.now();
-  final String todayKey = _dateKey(now);
-  final String fromDateKey = _dateKey(now.subtract(const Duration(days: 6)));
-
-  final FoodDayBundle todayBundle = planning.ensureDay(todayKey);
-
-  // I record giornalieri sono piccoli e restano disponibili per target e
-  // filtri dei grafici. Il carico costoso dei MealItem è limitato a 7 giorni.
-  final List<DailyRecordEntity> allDays = dailyRepository.getAllActive();
-
-  final DailyRecordEntity latest = allDays
-          .where((DailyRecordEntity day) => day.dateKey == todayKey)
-          .firstOrNull ??
-      todayBundle.day;
-
-  final List<MealWithItems> recentMeals =
-      mealRepository.getMealsWithItemsInRange(
-    fromDateKey: fromDateKey,
-    toDateKey: todayKey,
-  );
-
-  final List<MealWithItems> latestMeals = recentMeals
-      .where((MealWithItems meal) => meal.meal.dateKey == todayKey)
-      .toList();
-
-  final DateTime monday = now.subtract(Duration(days: now.weekday - 1));
-
-  return FoodHubV01Data(
-    latest: latest,
-    latestMeals: latestMeals,
-    allMeals: recentMeals,
-    days: allDays,
-    ingredients: const <IngredientEntity>[],
-    recipes: const <RecipeEntity>[],
-    scaleMeasurements: const <ScaleMeasurementEntity>[],
-    tapeMeasurements: const <TapeMeasurementEntity>[],
-    analytics: analytics,
-    adaptiveSummary: analytics.adaptiveSummaryForWeek(
-      monday: monday,
-      allDays: allDays,
+  try {
+    final dailyRepository = ref.watch(dailyRecordRepositoryProvider);
+    final mealRepository = ref.watch(mealRepositoryProvider);
+    final planning = ref.watch(foodPlanningServiceProvider);
+    final analytics = ref.watch(foodAnalyticsServiceProvider);
+    final UserProfileEntity? profile = phase<UserProfileEntity?>(
+      'profileMs',
+      () => ref.watch(userProfileRepositoryProvider).getActiveProfile(),
+    );
+    final DateTime now = DateTime.now();
+    final String todayKey = _dateKey(now);
+    final FoodDayBundle todayBundle = phase<FoodDayBundle>(
+      'ensureTodayMs',
+      () => planning.ensureDay(todayKey),
+    );
+    final List<MealWithItems> todayMeals = phase<List<MealWithItems>>(
+      'todayMealsMs',
+      () => mealRepository.getMealsWithItemsInRange(
+        fromDateKey: todayKey,
+        toDateKey: todayKey,
+      ),
+    );
+    final DailyRecordEntity latest = phase<DailyRecordEntity>(
+      'todayRecordMs',
+      () => dailyRepository.findByDate(todayKey) ?? todayBundle.day,
+    );
+    final DateTime monday = now.subtract(Duration(days: now.weekday - 1));
+    final List<DailyRecordEntity> minimalDays = <DailyRecordEntity>[latest];
+    final WeekAdaptiveSummary adaptiveSummary = phase<WeekAdaptiveSummary>(
+      'minimalAdaptiveSummaryMs',
+      () => analytics.adaptiveSummaryForWeek(
+        monday: monday,
+        allDays: minimalDays,
+        profile: profile,
+      ),
+    );
+    total.stop();
+    unawaited(
+      AppDiagnostics.instance.info(
+        'dashboard.today_load.breakdown',
+        data: <String, Object?>{
+          ...phases,
+          'totalMs': total.elapsedMilliseconds,
+          'mealCount': todayMeals.length,
+          'dateKey': todayKey,
+        },
+      ),
+    );
+    return FoodHubV01Data(
+      latest: latest,
+      latestMeals: todayMeals,
+      allMeals: todayMeals,
+      days: minimalDays,
+      ingredients: const <IngredientEntity>[],
+      recipes: const <RecipeEntity>[],
+      scaleMeasurements: const <ScaleMeasurementEntity>[],
+      tapeMeasurements: const <TapeMeasurementEntity>[],
+      analytics: analytics,
+      adaptiveSummary: adaptiveSummary,
       profile: profile,
-    ),
-    profile: profile,
-  );
+    );
+  } catch (error, stackTrace) {
+    total.stop();
+    await AppDiagnostics.instance.error(
+      'dashboard.today_load.failed',
+      error: error,
+      stackTrace: stackTrace,
+      data: <String, Object?>{
+        ...phases,
+        'totalMs': total.elapsedMilliseconds,
+      },
+    );
+    rethrow;
+  }
 });
 
 final FutureProvider<FoodHubV01Data> foodHubExtendedV01Provider =
     FutureProvider<FoodHubV01Data>((Ref ref) async {
-  return AppDiagnostics.instance.measure<FoodHubV01Data>(
-    'dashboard.extended_load',
-    () async {
-      await WidgetsBinding.instance.endOfFrame;
-      final dailyRepository = ref.watch(dailyRecordRepositoryProvider);
-      final mealRepository = ref.watch(mealRepositoryProvider);
-      final planning = ref.watch(foodPlanningServiceProvider);
-      final analytics = ref.watch(foodAnalyticsServiceProvider);
-      final UserProfileEntity? profile =
-          ref.watch(userProfileRepositoryProvider).getActiveProfile();
-      final DateTime now = DateTime.now();
-      final String todayKey = _dateKey(now);
-      final String fromDateKey =
-          _dateKey(now.subtract(const Duration(days: 34)));
-      final FoodDayBundle todayBundle = planning.ensureDay(todayKey);
-      final List<DailyRecordEntity> allDays = dailyRepository.getAllActive();
-      final DailyRecordEntity latest = allDays
-              .where((DailyRecordEntity day) => day.dateKey == todayKey)
-              .firstOrNull ??
-          todayBundle.day;
-      final List<MealWithItems> allMeals =
-          mealRepository.getMealsWithItemsInRange(
+  final Stopwatch total = Stopwatch()..start();
+  final Map<String, Object?> phases = <String, Object?>{};
+
+  T phase<T>(String name, T Function() operation) {
+    final Stopwatch watch = Stopwatch()..start();
+    final T value = operation();
+    watch.stop();
+    phases[name] = watch.elapsedMilliseconds;
+    return value;
+  }
+
+  try {
+    final dailyRepository = ref.watch(dailyRecordRepositoryProvider);
+    final mealRepository = ref.watch(mealRepositoryProvider);
+    final planning = ref.watch(foodPlanningServiceProvider);
+    final analytics = ref.watch(foodAnalyticsServiceProvider);
+    final UserProfileEntity? profile = phase<UserProfileEntity?>(
+      'profileMs',
+      () => ref.watch(userProfileRepositoryProvider).getActiveProfile(),
+    );
+    final DateTime now = DateTime.now();
+    final String todayKey = _dateKey(now);
+    final String fromDateKey = _dateKey(now.subtract(const Duration(days: 34)));
+    final FoodDayBundle todayBundle = phase<FoodDayBundle>(
+      'ensureTodayMs',
+      () => planning.ensureDay(todayKey),
+    );
+    final List<DailyRecordEntity> allDays = phase<List<DailyRecordEntity>>(
+      'allDaysMs',
+      dailyRepository.getAllActive,
+    );
+    final DailyRecordEntity latest = allDays
+            .where((DailyRecordEntity day) => day.dateKey == todayKey)
+            .firstOrNull ??
+        todayBundle.day;
+    final List<MealWithItems> allMeals = phase<List<MealWithItems>>(
+      'rangeMealsMs',
+      () => mealRepository.getMealsWithItemsInRange(
         fromDateKey: fromDateKey,
         toDateKey: todayKey,
-      );
-      final List<MealWithItems> latestMeals = allMeals
-          .where((MealWithItems meal) => meal.meal.dateKey == todayKey)
-          .toList();
-      final DateTime monday = now.subtract(Duration(days: now.weekday - 1));
-      return FoodHubV01Data(
-        latest: latest,
-        latestMeals: latestMeals,
-        allMeals: allMeals,
-        days: allDays,
-        ingredients: const <IngredientEntity>[],
-        recipes: const <RecipeEntity>[],
-        scaleMeasurements: const <ScaleMeasurementEntity>[],
-        tapeMeasurements: const <TapeMeasurementEntity>[],
-        analytics: analytics,
-        adaptiveSummary: analytics.adaptiveSummaryForWeek(
-          monday: monday,
-          allDays: allDays,
-          profile: profile,
-        ),
+      ),
+    );
+    final List<MealWithItems> latestMeals = allMeals
+        .where((MealWithItems meal) => meal.meal.dateKey == todayKey)
+        .toList();
+    final DateTime monday = now.subtract(Duration(days: now.weekday - 1));
+    final WeekAdaptiveSummary adaptiveSummary = phase<WeekAdaptiveSummary>(
+      'adaptiveSummaryMs',
+      () => analytics.adaptiveSummaryForWeek(
+        monday: monday,
+        allDays: allDays,
         profile: profile,
-      );
-    },
-    data: const <String, Object?>{'windowDays': 35},
-  );
+      ),
+    );
+    total.stop();
+    unawaited(
+      AppDiagnostics.instance.info(
+        'dashboard.extended_load.breakdown',
+        data: <String, Object?>{
+          ...phases,
+          'totalMs': total.elapsedMilliseconds,
+          'dayCount': allDays.length,
+          'mealCount': allMeals.length,
+          'windowDays': 35,
+        },
+      ),
+    );
+    return FoodHubV01Data(
+      latest: latest,
+      latestMeals: latestMeals,
+      allMeals: allMeals,
+      days: allDays,
+      ingredients: const <IngredientEntity>[],
+      recipes: const <RecipeEntity>[],
+      scaleMeasurements: const <ScaleMeasurementEntity>[],
+      tapeMeasurements: const <TapeMeasurementEntity>[],
+      analytics: analytics,
+      adaptiveSummary: adaptiveSummary,
+      profile: profile,
+    );
+  } catch (error, stackTrace) {
+    total.stop();
+    await AppDiagnostics.instance.error(
+      'dashboard.extended_load.failed',
+      error: error,
+      stackTrace: stackTrace,
+      data: <String, Object?>{
+        ...phases,
+        'totalMs': total.elapsedMilliseconds,
+      },
+    );
+    rethrow;
+  }
 });
 
 final FutureProvider<List<DailyRecordEntity>> foodDaysV01Provider =
@@ -256,29 +332,72 @@ class FoodHubScreen extends ConsumerStatefulWidget {
   ConsumerState<FoodHubScreen> createState() => _FoodHubScreenState();
 }
 
-class _FoodHubScreenState extends ConsumerState<FoodHubScreen> {
+class _FoodHubScreenState extends ConsumerState<FoodHubScreen>
+    with WidgetsBindingObserver {
   static FoodHubV01Data? _cachedBaseData;
   static FoodHubV01Data? _cachedExtendedData;
+  bool _loadExtended = false;
+  DateTime? _backgroundedAt;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(AppDiagnostics.instance.info('dashboard.screen_opened'));
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _backgroundedAt = DateTime.now();
+      unawaited(AppDiagnostics.instance.info('lifecycle.background'));
+      return;
+    }
+    if (state == AppLifecycleState.resumed) {
+      final DateTime now = DateTime.now();
+      unawaited(
+        AppDiagnostics.instance.info(
+          'lifecycle.resume',
+          data: <String, Object?>{
+            if (_backgroundedAt != null)
+              'backgroundMs': now.difference(_backgroundedAt!).inMilliseconds,
+            'hasBaseCache': _cachedBaseData != null,
+            'hasExtendedCache': _cachedExtendedData != null,
+          },
+        ),
+      );
+    }
+  }
+
+  void _requestExtended() {
+    if (_loadExtended) {
+      ref.invalidate(foodHubExtendedV01Provider);
+      return;
+    }
+    setState(() => _loadExtended = true);
+  }
 
   @override
   Widget build(BuildContext context) {
     final AsyncValue<FoodHubV01Data> data = ref.watch(foodHubV01Provider);
-    final AsyncValue<FoodHubV01Data> extended =
-        ref.watch(foodHubExtendedV01Provider);
-
+    final AsyncValue<FoodHubV01Data>? extended =
+        _loadExtended ? ref.watch(foodHubExtendedV01Provider) : null;
     final FoodHubV01Data? currentBase = data.asData?.value;
-    final FoodHubV01Data? currentExtended = extended.asData?.value;
-
-    if (currentBase != null) {
-      _cachedBaseData = currentBase;
-    }
-    if (currentExtended != null) {
-      _cachedExtendedData = currentExtended;
-    }
+    final FoodHubV01Data? currentExtended = extended?.asData?.value;
+    if (currentBase != null) _cachedBaseData = currentBase;
+    if (currentExtended != null) _cachedExtendedData = currentExtended;
 
     final FoodHubV01Data? visibleBase = currentBase ?? _cachedBaseData;
     final FoodHubV01Data? visibleExtended =
-        currentExtended ?? _cachedExtendedData;
+        currentExtended ?? (_loadExtended ? _cachedExtendedData : null);
+    final bool extendedLoading = extended?.isLoading ?? false;
 
     Widget body;
     if (visibleBase == null) {
@@ -286,32 +405,25 @@ class _FoodHubScreenState extends ConsumerState<FoodHubScreen> {
         loading: () => const _DashboardLoadingState(),
         error: (Object error, StackTrace stackTrace) => _ErrorState(
           error: error,
-          onRetry: () {
-            ref.invalidate(foodHubV01Provider);
-            ref.invalidate(foodHubExtendedV01Provider);
-          },
+          onRetry: () => ref.invalidate(foodHubV01Provider),
         ),
         data: (FoodHubV01Data baseData) => _FoodHubV01Body(
-          data: currentExtended ?? baseData,
-          extendedLoading: extended.isLoading,
-          extendedReady: currentExtended != null,
-          onRetryExtended: () => ref.invalidate(foodHubExtendedV01Provider),
+          data: visibleExtended ?? baseData,
+          extendedLoading: extendedLoading,
+          extendedReady: visibleExtended != null,
+          onRetryExtended: _requestExtended,
         ),
       );
     } else {
-      final bool refreshing = data.isLoading || extended.isLoading;
       body = Stack(
         children: <Widget>[
           _FoodHubV01Body(
             data: visibleExtended ?? visibleBase,
-            extendedLoading: extended.isLoading && visibleExtended == null,
+            extendedLoading: extendedLoading,
             extendedReady: visibleExtended != null,
-            onRetryExtended: () {
-              ref.invalidate(foodHubV01Provider);
-              ref.invalidate(foodHubExtendedV01Provider);
-            },
+            onRetryExtended: _requestExtended,
           ),
-          if (refreshing)
+          if (data.isLoading)
             const Positioned(
               top: 0,
               left: 0,

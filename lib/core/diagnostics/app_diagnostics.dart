@@ -7,6 +7,20 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+class AppDiagnosticLogFile {
+  const AppDiagnosticLogFile({
+    required this.path,
+    required this.name,
+    required this.modifiedAt,
+    required this.sizeBytes,
+  });
+
+  final String path;
+  final String name;
+  final DateTime modifiedAt;
+  final int sizeBytes;
+}
+
 class AppDiagnosticsStatus {
   const AppDiagnosticsStatus({
     required this.activeDirectory,
@@ -29,7 +43,7 @@ class AppDiagnostics {
   static const String _customDirectoryPreference =
       'diagnostics.custom_directory.v1';
   static const int _maxFileBytes = 2 * 1024 * 1024;
-  static const int _retainedFileCount = 12;
+  static const Duration _retention = Duration(hours: 24);
 
   final Completer<void> _initialization = Completer<void>();
   Future<void> _writeQueue = Future<void>.value();
@@ -38,7 +52,9 @@ class AppDiagnostics {
   bool _usingCustomDirectory = false;
 
   Future<void> initialize() async {
-    if (_initialization.isCompleted) return;
+    if (_initialization.isCompleted) {
+      return;
+    }
 
     try {
       final Directory support = await getApplicationSupportDirectory();
@@ -67,6 +83,7 @@ class AppDiagnostics {
         _activeDirectory = _internalDirectory;
       }
 
+      await _deleteExpiredLogs();
       _initialization.complete();
       await _writeDirect(
         level: 'info',
@@ -106,6 +123,42 @@ class AppDiagnostics {
       usingCustomDirectory: _usingCustomDirectory,
       currentLogFile: file.path,
     );
+  }
+
+  Future<List<AppDiagnosticLogFile>> listLogFiles() async {
+    await _ensureInitialized();
+    await _deleteExpiredLogs();
+    final Directory directory = _activeDirectory ?? _internalDirectory!;
+    if (!await directory.exists()) {
+      return const <AppDiagnosticLogFile>[];
+    }
+    final List<AppDiagnosticLogFile> files = <AppDiagnosticLogFile>[];
+    await for (final FileSystemEntity entity in directory.list()) {
+      if (entity is! File || !_isLogFile(entity)) {
+        continue;
+      }
+      final FileStat stat = await entity.stat();
+      files.add(AppDiagnosticLogFile(
+        path: entity.path,
+        name: p.basename(entity.path),
+        modifiedAt: stat.modified,
+        sizeBytes: stat.size,
+      ));
+    }
+    files.sort(
+      (AppDiagnosticLogFile a, AppDiagnosticLogFile b) =>
+          b.modifiedAt.compareTo(a.modifiedAt),
+    );
+    return files;
+  }
+
+  Future<String> readLogFile(String path) async {
+    await _ensureInitialized();
+    final File file = File(path);
+    if (!await file.exists()) {
+      throw FileSystemException('File di log non trovato.', path);
+    }
+    return file.readAsString();
   }
 
   Future<void> setCustomDirectory(String directoryPath) async {
@@ -150,7 +203,9 @@ class AppDiagnostics {
     }.toList();
 
     for (final Directory directory in directories) {
-      if (!await directory.exists()) continue;
+      if (!await directory.exists()) {
+        continue;
+      }
       await for (final FileSystemEntity entity in directory.list()) {
         if (entity is File &&
             p.basename(entity.path).startsWith('total_tracker_') &&
@@ -353,7 +408,7 @@ class AppDiagnostics {
       mode: FileMode.append,
       flush: level == 'error',
     );
-    await _trimOldFiles(file.parent);
+    await _deleteExpiredLogs();
   }
 
   Future<File> _resolveLogFile() async {
@@ -383,22 +438,33 @@ class AppDiagnostics {
     await probe.delete();
   }
 
-  Future<void> _trimOldFiles(Directory directory) async {
-    final List<File> files = <File>[];
-    await for (final FileSystemEntity entity in directory.list()) {
-      if (entity is File &&
-          p.basename(entity.path).startsWith('total_tracker_') &&
-          entity.path.endsWith('.jsonl')) {
-        files.add(entity);
+  bool _isLogFile(FileSystemEntity entity) {
+    final String name = p.basename(entity.path);
+    return name.startsWith('total_tracker_') && name.endsWith('.jsonl');
+  }
+
+  Future<void> _deleteExpiredLogs() async {
+    final DateTime cutoff = DateTime.now().subtract(_retention);
+    final Set<Directory> directories = <Directory>{
+      if (_internalDirectory != null) _internalDirectory!,
+      if (_activeDirectory != null) _activeDirectory!,
+    };
+    for (final Directory directory in directories) {
+      if (!await directory.exists()) {
+        continue;
       }
-    }
-    if (files.length <= _retainedFileCount) return;
-    files.sort((File a, File b) => a.path.compareTo(b.path));
-    for (final File file in files.take(files.length - _retainedFileCount)) {
-      try {
-        await file.delete();
-      } catch (_) {
-        // La rotazione non deve bloccare il flusso applicativo.
+      await for (final FileSystemEntity entity in directory.list()) {
+        if (entity is! File || !_isLogFile(entity)) {
+          continue;
+        }
+        try {
+          final FileStat stat = await entity.stat();
+          if (stat.modified.isBefore(cutoff)) {
+            await entity.delete();
+          }
+        } catch (_) {
+          // La pulizia non deve rallentare o bloccare l'app.
+        }
       }
     }
   }
@@ -407,7 +473,9 @@ class AppDiagnostics {
     if (value == null || value is num || value is bool || value is String) {
       return value;
     }
-    if (value is DateTime) return value.toUtc().toIso8601String();
+    if (value is DateTime) {
+      return value.toUtc().toIso8601String();
+    }
     if (value is Iterable<Object?>) {
       return value.take(100).map<Object?>(_jsonSafe).toList();
     }

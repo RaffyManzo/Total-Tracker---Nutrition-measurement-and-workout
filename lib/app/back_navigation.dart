@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/diagnostics/app_diagnostics.dart';
@@ -13,10 +14,7 @@ final DashboardBackController dashboardBackController =
     DashboardBackController();
 
 class DashboardBackScope extends StatelessWidget {
-  const DashboardBackScope({
-    required this.child,
-    super.key,
-  });
+  const DashboardBackScope({required this.child, super.key});
 
   final Widget child;
 
@@ -35,26 +33,28 @@ class DashboardBackScope extends StatelessWidget {
 
 class DashboardBackController {
   static const Set<String> _dashboardRoots = <String>{
+    '/',
     '/food',
     '/workout',
     '/measurements',
     '/settings',
   };
+  static const Duration _exitWindow = Duration(seconds: 2);
 
   bool _handling = false;
+  DateTime? _lastExitAttempt;
 
   Future<bool> handle(GoRouter router) async {
     if (_handling) return true;
     _handling = true;
-
     try {
-      final String configuredRoute =
-          await AppNavigationPreferences.getDefaultDashboardRoute();
-      final String preferredRoute = _normalizeRoot(configuredRoute);
-      final String rawCurrent =
-          router.routerDelegate.currentConfiguration.uri.path;
-      final String currentRoute = _normalizeRoot(rawCurrent);
-      final bool isDashboardRoot = _dashboardRoots.contains(currentRoute);
+      final String preferredRoute = _normalizeRoot(
+        await AppNavigationPreferences.getDefaultDashboardRoute(),
+      );
+      final String currentRoute = _normalizeRoot(
+        router.routerDelegate.currentConfiguration.uri.path,
+      );
+      final bool isRoot = _dashboardRoots.contains(currentRoute);
 
       unawaited(
         AppDiagnostics.instance.info(
@@ -63,26 +63,34 @@ class DashboardBackController {
             'currentRoute': currentRoute,
             'preferredRoute': preferredRoute,
             'routerCanPop': router.canPop(),
-            'isDashboardRoot': isDashboardRoot,
+            'isDashboardRoot': isRoot,
           },
         ),
       );
 
-      if (isDashboardRoot) {
-        if (currentRoute != preferredRoute) {
-          router.go(preferredRoute);
-          _showMessage('Dashboard aperta.');
-        }
-        // Il back sulla root viene sempre consumato. L'app non viene chiusa.
-        return true;
-      }
-
-      if (router.canPop()) {
+      if (!isRoot && router.canPop()) {
         router.pop();
         return true;
       }
 
-      router.go(preferredRoute);
+      if (currentRoute != preferredRoute) {
+        _lastExitAttempt = null;
+        router.go(preferredRoute);
+        _showMessage('Dashboard aperta.');
+        return true;
+      }
+
+      final DateTime now = DateTime.now();
+      final DateTime? previous = _lastExitAttempt;
+      if (previous == null || now.difference(previous) > _exitWindow) {
+        _lastExitAttempt = now;
+        _showMessage('Premi di nuovo Indietro per chiudere.');
+        return true;
+      }
+
+      _lastExitAttempt = null;
+      unawaited(AppDiagnostics.instance.info('navigation.exit_confirmed'));
+      await SystemNavigator.pop();
       return true;
     } catch (error, stackTrace) {
       unawaited(
@@ -99,23 +107,19 @@ class DashboardBackController {
   }
 
   String _normalizeRoot(String route) {
-    final String normalized = route.trim();
-    if (normalized.isEmpty || normalized == '/') return '/food';
-    return normalized;
+    final String value = route.trim();
+    if (value.isEmpty || value == '/') return '/food';
+    final Uri uri = Uri.tryParse(value) ?? Uri(path: value);
+    return uri.path.isEmpty ? '/food' : uri.path;
   }
 
   void _showMessage(String message) {
     appScaffoldMessengerKey.currentState
       ?..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          duration: const Duration(seconds: 1),
-        ),
+        SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
       );
   }
 }
 
-// Conservata per compatibilità con l'inizializzazione esistente.
-// Il tasto Indietro è gestito da DashboardBackScope nel ShellRoute.
 void installDashboardBackDispatcher(GoRouter router) {}
