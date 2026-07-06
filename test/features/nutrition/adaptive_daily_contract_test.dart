@@ -77,8 +77,8 @@ void main() {
     );
     _expectContains(
       source,
-      'targetKcal: target.targetKcal',
-      'daily target snapshot value',
+      'final bool hasPersistedTarget',
+      'persisted target reuse marker',
     );
     _expectContains(
       source,
@@ -132,8 +132,8 @@ void main() {
       'Duration(milliseconds: 420)',
       'fixed lifecycle delay',
     );
-    _expectNotContains(source, 'KeyedSubtree', 'legacy keyed overlay');
-    _expectNotContains(source, '_mealRevision', 'legacy meal revision state');
+    _expectContains(source, 'KeyedSubtree', 'meal detail reload boundary');
+    _expectContains(source, '_childRevision', 'meal detail reload revision');
     _expectNotContains(
       source,
       'TextEditingController',

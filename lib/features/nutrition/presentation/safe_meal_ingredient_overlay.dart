@@ -30,6 +30,7 @@ class SafeMealIngredientOverlay extends ConsumerStatefulWidget {
 class _SafeMealIngredientOverlayState
     extends ConsumerState<SafeMealIngredientOverlay> {
   bool _busy = false;
+  int _childRevision = 0;
 
   Future<void> _addIngredient() async {
     if (_busy) {
@@ -41,7 +42,7 @@ class _SafeMealIngredientOverlayState
         DateTime.now().microsecondsSinceEpoch.toRadixString(36);
     final InteractionTraceSpan flowTrace = InteractionTrace.start(
       'meal_add_flow',
-      data: <String, Object?>{'flowId': flowId, 'flowVersion': 6},
+      data: <String, Object?>{'flowId': flowId, 'flowVersion': 7},
     );
 
     try {
@@ -179,6 +180,15 @@ class _SafeMealIngredientOverlayState
       flowTrace.complete(data: <String, Object?>{'result': 'saved'});
 
       if (!mounted) return;
+      setState(() => _childRevision += 1);
+      InteractionTrace.event(
+        'meal_add_flow.detail_reloaded',
+        data: <String, Object?>{
+          'flowId': flowId,
+          'targetId': widget.targetId,
+          'childRevision': _childRevision,
+        },
+      );
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Alimento aggiunto al pasto.')),
       );
@@ -188,7 +198,7 @@ class _SafeMealIngredientOverlayState
         'ingredient.add_to_meal.failed',
         error: error,
         stackTrace: stackTrace,
-        data: <String, Object?>{'flowId': flowId, 'flowVersion': 6},
+        data: <String, Object?>{'flowId': flowId, 'flowVersion': 7},
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -211,7 +221,12 @@ class _SafeMealIngredientOverlayState
   Widget build(BuildContext context) {
     return Stack(
       children: <Widget>[
-        widget.child,
+        KeyedSubtree(
+          key: ValueKey<String>(
+            'meal-detail-${widget.targetId}-$_childRevision',
+          ),
+          child: widget.child,
+        ),
         Positioned(
           right: 16,
           bottom: 86,

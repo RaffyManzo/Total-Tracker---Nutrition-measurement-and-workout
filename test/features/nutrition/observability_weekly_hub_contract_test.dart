@@ -64,8 +64,33 @@ void main() {
     _expectContains(source, "'weekly_hub.load'", 'weekly load trace');
     _expectContains(
       source,
-      '// ignore: unused_element\nclass _WeekCalendarStrip extends StatelessWidget',
-      'documented legacy calendar widget',
+      'class _WeekHubMealRow extends StatelessWidget',
+      'horizontal weekly meal row',
+    );
+    _expectContains(
+      source,
+      'class _FoodWeekDaySnapshot',
+      'cached daily week snapshot',
+    );
+    _expectNotContains(
+      source,
+      'class _WeekCalendarStrip extends StatelessWidget',
+      'removed legacy calendar widget',
+    );
+    _expectNotContains(
+      source,
+      'class _WeekDaySummaryCard extends StatelessWidget',
+      'removed legacy week day summary card',
+    );
+    _expectNotContains(
+      source,
+      'class _InlineInfo extends StatelessWidget',
+      'removed legacy inline info widget',
+    );
+    _expectNotContains(
+      source,
+      '_weekdayFromDate',
+      'removed legacy weekday helper',
     );
     _expectNotContains(source, '..add(meal);', 'single-use cascade');
   });

@@ -21,14 +21,20 @@ class MonthMealCalendarCard extends ConsumerStatefulWidget {
 class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
   static final Map<String, _MonthCalendarSnapshot> _cache =
       <String, _MonthCalendarSnapshot>{};
+  static final Map<String, Future<_MonthCalendarSnapshot>> _inFlight =
+      <String, Future<_MonthCalendarSnapshot>>{};
 
   static void invalidateDateKey(String dateKey) {
     final DateTime? date = DateTime.tryParse(dateKey);
     if (date == null) return;
-    _cache.remove(_monthKey(date));
+    final String key = _monthKey(date);
+    _cache.remove(key);
   }
 
-  late DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
+  late DateTime _month = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+  );
   _MonthCalendarSnapshot? _snapshot;
   bool _loading = true;
   Object? _error;
@@ -42,7 +48,7 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
     final FoodDataChange? lastChange = FoodDataRefreshBus.lastChange;
     if (lastChange != null &&
         lastChange.kind != FoodDataChangeKind.dailyRecord) {
-      _cache.remove(_monthKey(DateTime.parse(lastChange.dateKey)));
+      invalidateDateKey(lastChange.dateKey);
     }
     unawaited(_loadMonth(_month));
   }
@@ -55,30 +61,23 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
 
   void _onDataChange(FoodDataChange change) {
     if (change.kind == FoodDataChangeKind.dailyRecord) return;
+    final DateTime? changedDate = DateTime.tryParse(change.dateKey);
+    if (changedDate == null) return;
     invalidateDateKey(change.dateKey);
-    if (!mounted) return;
-    if (_monthKey(DateTime.parse(change.dateKey)) == _monthKey(_month)) {
-      unawaited(_loadMonth(_month, force: true));
-    }
+    if (!mounted || _monthKey(changedDate) != _monthKey(_month)) return;
+    unawaited(_loadMonth(_month, force: true));
   }
 
-  Future<void> _loadMonth(DateTime month, {bool force = false}) async {
-    final String cacheKey = _monthKey(month);
-    final _MonthCalendarSnapshot? cached = force ? null : _cache[cacheKey];
-    final int generation = ++_requestGeneration;
+  Future<_MonthCalendarSnapshot> _fetchMonth(
+    DateTime first,
+    DateTime last,
+  ) {
+    final String key = _monthKey(first);
+    final Future<_MonthCalendarSnapshot>? existing = _inFlight[key];
+    if (existing != null) return existing;
 
-    setState(() {
-      _month = month;
-      _snapshot = cached;
-      _loading = cached == null;
-      _error = null;
-    });
-    if (cached != null) return;
-
-    final Stopwatch watch = Stopwatch()..start();
-    try {
-      final DateTime first = DateTime(month.year, month.month);
-      final DateTime last = DateTime(month.year, month.month + 1, 0);
+    final Future<_MonthCalendarSnapshot> future = () async {
+      final Stopwatch watch = Stopwatch()..start();
       final Map<String, Map<String, num>> aggregated = await ref
           .read(objectBoxStoreProvider)
           .runAsync<List<String>, Map<String, Map<String, num>>>(
@@ -86,7 +85,6 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
         <String>[_dateKey(first), _dateKey(last)],
       );
       watch.stop();
-
       final _MonthCalendarSnapshot snapshot = _MonthCalendarSnapshot(
         month: first,
         days: aggregated.map(
@@ -94,40 +92,85 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
             key,
             _DayMeals(
               meals: value['meals']!.toInt(),
+              filledMealSlots: value['filledMealSlots']!.toInt(),
+              itemCount: value['itemCount']!.toInt(),
               kcal: value['kcal']!.toDouble(),
-              freeMeals: value['freeMeals']!.toInt(),
+              trackedFreeMeals: value['trackedFreeMeals']!.toInt(),
+              estimatedFreeMeals: value['estimatedFreeMeals']!.toInt(),
+              untrackedFreeMeals: value['untrackedFreeMeals']!.toInt(),
             ),
           ),
         ),
       );
-      _cache[cacheKey] = snapshot;
-
       unawaited(
         AppDiagnostics.instance.info(
           'dashboard.month_calendar_load.completed',
           data: <String, Object?>{
-            'month': cacheKey,
+            'month': key,
             'backgroundObjectBoxMs': watch.elapsedMilliseconds,
             'dayCount': aggregated.length,
+            'deduplicated': false,
           },
         ),
       );
+      return snapshot;
+    }();
 
+    _inFlight[key] = future;
+    void clearInFlight() {
+      if (identical(_inFlight[key], future)) {
+        _inFlight.remove(key);
+      }
+    }
+
+    unawaited(
+      future.then<void>(
+        (_) => clearInFlight(),
+        onError: (Object _, StackTrace __) {
+          clearInFlight();
+        },
+      ),
+    );
+    return future;
+  }
+
+  Future<void> _loadMonth(DateTime month, {bool force = false}) async {
+    final String cacheKey = _monthKey(month);
+    final _MonthCalendarSnapshot? cached = force ? null : _cache[cacheKey];
+    final int generation = ++_requestGeneration;
+    setState(() {
+      _month = month;
+      _snapshot = cached ?? _snapshot;
+      _loading = cached == null;
+      _error = null;
+    });
+    if (cached != null) return;
+
+    final DateTime first = DateTime(month.year, month.month);
+    final DateTime last = DateTime(month.year, month.month + 1, 0);
+    final bool joinedInFlight = _inFlight.containsKey(cacheKey);
+    try {
+      final _MonthCalendarSnapshot snapshot = await _fetchMonth(first, last);
+      _cache[cacheKey] = snapshot;
+      if (joinedInFlight) {
+        unawaited(
+          AppDiagnostics.instance.info(
+            'dashboard.month_calendar_load.deduplicated',
+            data: <String, Object?>{'month': cacheKey},
+          ),
+        );
+      }
       if (!mounted || generation != _requestGeneration) return;
       setState(() {
         _snapshot = snapshot;
         _loading = false;
       });
     } catch (error, stackTrace) {
-      watch.stop();
       await AppDiagnostics.instance.error(
         'dashboard.month_calendar_load.failed',
         error: error,
         stackTrace: stackTrace,
-        data: <String, Object?>{
-          'month': cacheKey,
-          'totalMs': watch.elapsedMilliseconds,
-        },
+        data: <String, Object?>{'month': cacheKey},
       );
       if (!mounted || generation != _requestGeneration) return;
       setState(() {
@@ -166,7 +209,7 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       Text(
-                        'Caricamento limitato al mese visualizzato.',
+                        'Stato dei pasti del mese visualizzato.',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
@@ -217,7 +260,9 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
     final int leading = first.weekday - 1;
     final int daysInMonth = DateTime(first.year, first.month + 1, 0).day;
     final int totalCells = ((leading + daysInMonth + 6) ~/ 7) * 7;
-    final DateTime today = DateTime.now();
+    final DateTime rawToday = DateTime.now();
+    final DateTime today =
+        DateTime(rawToday.year, rawToday.month, rawToday.day);
 
     return Column(
       children: <Widget>[
@@ -254,13 +299,48 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
             final DateTime date = DateTime(first.year, first.month, dayNumber);
             final String dateKey = _dateKey(date);
             final _DayMeals? info = snapshot.days[dateKey];
-            final bool isToday = today.year == date.year &&
-                today.month == date.month &&
-                today.day == date.day;
-            final String tooltip = info == null
-                ? '$dateKey: nessun dato'
-                : '$dateKey: ${info.meals} pasti, '
-                    '${info.kcal.round()} kcal';
+            final bool isToday = date == today;
+            final bool isFuture = date.isAfter(today);
+            final bool isPast = date.isBefore(today);
+            final bool hasFood = (info?.itemCount ?? 0) > 0;
+            final bool hasFreeMeal = info?.hasFreeMeal ?? false;
+            final bool complete = (info?.filledMealSlots ?? 0) >= 4;
+            final bool pastIncomplete = isPast &&
+                info != null &&
+                info.meals > 0 &&
+                !hasFreeMeal &&
+                !complete;
+
+            final Color fillColor;
+            final Color textColor;
+            if ((info?.untrackedFreeMeals ?? 0) > 0) {
+              fillColor = colors.errorContainer;
+              textColor = colors.onErrorContainer;
+            } else if ((info?.trackedOrEstimatedFreeMeals ?? 0) > 0) {
+              fillColor = Colors.orange.withValues(alpha: .42);
+              textColor = colors.onSurface;
+            } else if (isFuture && hasFood) {
+              fillColor = colors.surfaceContainerHighest;
+              textColor = colors.onSurface;
+            } else if (!isFuture && complete) {
+              fillColor = Colors.green.withValues(alpha: .34);
+              textColor = colors.onSurface;
+            } else {
+              fillColor = colors.surfaceContainerLow;
+              textColor = colors.onSurfaceVariant;
+            }
+
+            final Color borderColor = isToday
+                ? const Color(0xFF228B22)
+                : pastIncomplete
+                    ? Colors.orange.shade700
+                    : colors.outlineVariant;
+            final double borderWidth = isToday
+                ? 2.6
+                : pastIncomplete
+                    ? 2
+                    : 1;
+            final String tooltip = _tooltip(dateKey, info, isFuture);
 
             return Tooltip(
               message: tooltip,
@@ -271,81 +351,123 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                      color: isToday ? colors.primary : colors.outlineVariant,
-                      width: isToday ? 2 : 1,
+                      color: borderColor,
+                      width: borderWidth,
                     ),
-                    color: info == null
-                        ? colors.surfaceContainerLow
-                        : colors.primaryContainer.withValues(alpha: .55),
+                    color: fillColor,
                   ),
-                  child: Stack(
-                    children: <Widget>[
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 2,
-                          vertical: 3,
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: <Widget>[
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                '$dayNumber',
-                                style: Theme.of(context).textTheme.labelMedium,
-                              ),
-                            ),
-                            if (info != null) ...<Widget>[
-                              const SizedBox(height: 2),
-                              FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: <Widget>[
-                                    const Icon(
-                                      Icons.local_fire_department_rounded,
-                                      size: 9,
-                                      semanticLabel: 'Calorie assunte',
-                                    ),
-                                    const SizedBox(width: 1),
-                                    Text(
-                                      '${info.kcal.round()} kcal',
-                                      maxLines: 1,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelSmall
-                                          ?.copyWith(fontSize: 7.5),
-                                    ),
-                                  ],
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 2,
+                      vertical: 3,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            '$dayNumber',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelMedium
+                                ?.copyWith(
+                                  color: textColor,
+                                  fontWeight: FontWeight.w700,
                                 ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      if (info != null && info.freeMeals > 0)
-                        Positioned(
-                          right: 3,
-                          top: 3,
-                          child: Container(
-                            width: 5,
-                            height: 5,
-                            decoration: BoxDecoration(
-                              color: colors.error,
-                              shape: BoxShape.circle,
-                            ),
                           ),
                         ),
-                    ],
+                        if (!isFuture &&
+                            info != null &&
+                            info.itemCount > 0) ...<Widget>[
+                          const SizedBox(height: 2),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                Icon(
+                                  Icons.local_fire_department_rounded,
+                                  size: 9,
+                                  color: textColor,
+                                  semanticLabel: 'Calorie assunte',
+                                ),
+                                const SizedBox(width: 1),
+                                Text(
+                                  '${info.kcal.round()} kcal',
+                                  maxLines: 1,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelSmall
+                                      ?.copyWith(
+                                        color: textColor,
+                                        fontSize: 7.5,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ),
             );
           },
         ),
+        const SizedBox(height: 12),
+        const Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: <Widget>[
+            _CalendarLegendItem(
+              fillColor: Colors.green,
+              label: 'Completo, nessun pasto libero',
+            ),
+            _CalendarLegendItem(
+              fillColor: Colors.red,
+              label: 'Libero non tracciato',
+            ),
+            _CalendarLegendItem(
+              fillColor: Colors.orange,
+              label: 'Libero tracciato o stimato',
+            ),
+            _CalendarLegendItem(
+              fillColor: Color(0xFFE0E0E0),
+              label: 'Pasti futuri pianificati',
+            ),
+            _CalendarLegendItem(
+              fillColor: Colors.transparent,
+              borderColor: Color(0xFF228B22),
+              label: 'Giorno corrente',
+            ),
+            _CalendarLegendItem(
+              fillColor: Colors.transparent,
+              borderColor: Colors.orange,
+              label: 'Giorno passato incompleto',
+            ),
+          ],
+        ),
       ],
     );
   }
+}
+
+String _tooltip(String dateKey, _DayMeals? info, bool isFuture) {
+  if (info == null) return '$dateKey: nessun pasto compilato';
+  final List<String> parts = <String>[
+    '$dateKey: ${info.filledMealSlots}/4 pasti compilati',
+  ];
+  if (!isFuture && info.itemCount > 0) parts.add('${info.kcal.round()} kcal');
+  if (info.untrackedFreeMeals > 0) {
+    parts.add('pasto libero non tracciato');
+  } else if (info.estimatedFreeMeals > 0) {
+    parts.add('pasto libero stimato');
+  } else if (info.trackedFreeMeals > 0) {
+    parts.add('pasto libero tracciato');
+  }
+  return parts.join(' · ');
 }
 
 Map<String, Map<String, num>> _queryAndAggregateMonthMeals(
@@ -358,17 +480,48 @@ Map<String, Map<String, num>> _queryAndAggregateMonthMeals(
     toDateKey: range[1],
   );
   final Map<String, Map<String, num>> output = <String, Map<String, num>>{};
+  final Map<String, Set<String>> filledSlots = <String, Set<String>>{};
+
   for (final MealWithItems meal in meals) {
+    final String dateKey = meal.meal.dateKey;
     final Map<String, num> day = output.putIfAbsent(
-      meal.meal.dateKey,
-      () => <String, num>{'meals': 0, 'kcal': 0, 'freeMeals': 0},
+      dateKey,
+      () => <String, num>{
+        'meals': 0,
+        'filledMealSlots': 0,
+        'itemCount': 0,
+        'kcal': 0,
+        'trackedFreeMeals': 0,
+        'estimatedFreeMeals': 0,
+        'untrackedFreeMeals': 0,
+      },
     );
     day['meals'] = day['meals']! + 1;
+    day['itemCount'] = day['itemCount']! + meal.items.length;
     day['kcal'] = day['kcal']! + meal.totals.kcal;
-    if (meal.meal.mealModeCode == 'free' ||
-        meal.meal.freeMealTrackingCode.isNotEmpty) {
-      day['freeMeals'] = day['freeMeals']! + 1;
+    if (meal.items.isNotEmpty) {
+      filledSlots
+          .putIfAbsent(dateKey, () => <String>{})
+          .add(meal.meal.mealTypeCode);
     }
+
+    final bool isFree = meal.meal.mealModeCode == 'free' ||
+        meal.meal.freeMealTrackingCode.isNotEmpty;
+    if (isFree) {
+      final String tracking =
+          meal.meal.freeMealTrackingCode.trim().toLowerCase();
+      if (tracking == 'untracked') {
+        day['untrackedFreeMeals'] = day['untrackedFreeMeals']! + 1;
+      } else if (tracking == 'estimated') {
+        day['estimatedFreeMeals'] = day['estimatedFreeMeals']! + 1;
+      } else {
+        day['trackedFreeMeals'] = day['trackedFreeMeals']! + 1;
+      }
+    }
+  }
+
+  for (final MapEntry<String, Set<String>> entry in filledSlots.entries) {
+    output[entry.key]!['filledMealSlots'] = entry.value.length;
   }
   return output;
 }
@@ -383,13 +536,62 @@ class _MonthCalendarSnapshot {
 class _DayMeals {
   const _DayMeals({
     required this.meals,
+    required this.filledMealSlots,
+    required this.itemCount,
     required this.kcal,
-    required this.freeMeals,
+    required this.trackedFreeMeals,
+    required this.estimatedFreeMeals,
+    required this.untrackedFreeMeals,
   });
 
   final int meals;
+  final int filledMealSlots;
+  final int itemCount;
   final double kcal;
-  final int freeMeals;
+  final int trackedFreeMeals;
+  final int estimatedFreeMeals;
+  final int untrackedFreeMeals;
+
+  int get trackedOrEstimatedFreeMeals => trackedFreeMeals + estimatedFreeMeals;
+  bool get hasFreeMeal =>
+      trackedOrEstimatedFreeMeals > 0 || untrackedFreeMeals > 0;
+}
+
+class _CalendarLegendItem extends StatelessWidget {
+  const _CalendarLegendItem({
+    required this.fillColor,
+    required this.label,
+    this.borderColor,
+  });
+
+  final Color fillColor;
+  final Color? borderColor;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Container(
+          width: 15,
+          height: 15,
+          decoration: BoxDecoration(
+            color: fillColor.withValues(
+                alpha: fillColor == Colors.transparent ? 1 : .55),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+              color:
+                  borderColor ?? Theme.of(context).colorScheme.outlineVariant,
+              width: borderColor == null ? 1 : 2,
+            ),
+          ),
+        ),
+        const SizedBox(width: 5),
+        Text(label, style: Theme.of(context).textTheme.labelSmall),
+      ],
+    );
+  }
 }
 
 class _CalendarSkeleton extends StatelessWidget {

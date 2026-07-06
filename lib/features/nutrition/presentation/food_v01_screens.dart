@@ -40,6 +40,7 @@ import '../data/services/open_food_facts_service.dart';
 import '../domain/adaptive_target_engine.dart';
 import '../domain/meal_target_settings.dart';
 import 'measurement_screens.dart' show measurementHubProvider;
+import 'meal_ingredient_batch_picker_sheet.dart';
 import 'widgets/month_meal_calendar_card.dart';
 
 final FutureProvider<FoodHubV01Data> foodHubV01Provider =
@@ -99,13 +100,42 @@ final FutureProvider<FoodHubV01Data> foodHubV01Provider =
       (DailyRecordEntity a, DailyRecordEntity b) =>
           b.dateKey.compareTo(a.dateKey),
     );
-    final WeekAdaptiveSummary adaptiveSummary = phase<WeekAdaptiveSummary>(
-      'dailyAdaptiveSummaryMs',
-      () => analytics.adaptiveSummaryForDay(
-        dayDate: now,
+    final TargetDayResult latestTargetResult = phase<TargetDayResult>(
+      'dailyTargetResultMs',
+      () => analytics.targetResultForDay(
+        day: latest,
         allDays: adaptiveDays,
         profile: profile,
+        now: now,
       ),
+    );
+    final DateTime normalizedToday = DateTime(now.year, now.month, now.day);
+    final WeekAdaptiveSummary adaptiveSummary = WeekAdaptiveSummary(
+      monday: normalizedToday,
+      sunday: normalizedToday,
+      targetKcal: latestTargetResult.targetKcal,
+      targetStatusCode: latestTargetResult.targetStatusCode,
+      tdeeRefKcal: latestTargetResult.tdeeRefKcal,
+      tdeeTheoreticalKcal: latestTargetResult.tdeeTheoreticalKcal,
+      tdeeObservedKcal: latestTargetResult.tdeeObservedKcal,
+      observedConfidence: latestTargetResult.observedConfidence,
+      referenceDaysCount: latestTargetResult.referenceDaysCount,
+      validIntakeDays: latestTargetResult.validIntakeDays,
+      validWeightDays: latestTargetResult.validWeightDays,
+      rmrKcal: latestTargetResult.rmrKcal,
+      weightRefKg: latestTargetResult.weightRefKg,
+      weightStatusCode: latestTargetResult.weightStatusCode,
+      weightDaysSinceMeasurement: latestTargetResult.weightDaysSinceMeasurement,
+      weightTrendEnabled: latestTargetResult.validWeightDays >= 4,
+      activeRefKcal: latestTargetResult.activeRefKcal,
+      activeRefSourceCode: 'daily_target_result',
+      currentWeekActiveKcal: latestTargetResult.activity.totalKcal,
+      activityStatusCode: latestTargetResult.activity.statusCode,
+      activityDeltaKcal: latestTargetResult.activityDeltaKcal,
+      deltaWeightKg: latestTargetResult.deltaWeightKg,
+      avgCalories: latestTargetResult.avgCalories,
+      kcalPerKg: latestTargetResult.kcalPerKg,
+      alerts: latestTargetResult.alerts,
     );
     total.stop();
     unawaited(
@@ -130,6 +160,7 @@ final FutureProvider<FoodHubV01Data> foodHubV01Provider =
       tapeMeasurements: const <TapeMeasurementEntity>[],
       analytics: analytics,
       adaptiveSummary: adaptiveSummary,
+      latestTargetResult: latestTargetResult,
       profile: profile,
       sourceRevision: sourceRevision,
     );
@@ -184,6 +215,7 @@ class FoodHubV01Data {
     required this.tapeMeasurements,
     required this.analytics,
     required this.adaptiveSummary,
+    this.latestTargetResult,
     required this.profile,
     required this.sourceRevision,
   });
@@ -198,6 +230,7 @@ class FoodHubV01Data {
   final List<TapeMeasurementEntity> tapeMeasurements;
   final FoodAnalyticsService analytics;
   final WeekAdaptiveSummary adaptiveSummary;
+  final TargetDayResult? latestTargetResult;
   final UserProfileEntity? profile;
   final int sourceRevision;
 
@@ -480,13 +513,8 @@ class _FoodHubV01Body extends StatelessWidget {
         profileName.isEmpty ? 'Dashboard' : 'Dashboard di $profileName';
     final DailyRecordEntity? latest = data.latest;
     final MealNutritionTotals totals = data.latestTotals;
-    final TargetDayResult? latestTargetResult = latest == null
-        ? null
-        : data.analytics.targetResultForDay(
-            day: latest,
-            allDays: data.days,
-            profile: data.profile,
-          );
+    final TargetDayResult? latestTargetResult =
+        latest == null ? null : data.latestTargetResult;
     final double latestTarget =
         latestTargetResult?.targetKcal ?? data.adaptiveSummary.targetKcal;
     final ProfileNutritionTargets macroTargets = latest == null
@@ -1109,19 +1137,43 @@ _FoodWeekSnapshot _loadFoodWeekInBackground(
 
   final Stopwatch targetWatch = Stopwatch();
   targetWatch.start();
+  final DateTime todayValue = DateTime.now();
+  final DateTime today = DateTime(
+    todayValue.year,
+    todayValue.month,
+    todayValue.day,
+  );
+  final DailyRecordEntity? anchorDay = daysByDate[_dateKey(today)] ??
+      daysByDate[_dateKey(monday)] ??
+      (history.isEmpty ? null : history.first);
+  final TargetDayResult? liveTarget = anchorDay == null
+      ? null
+      : analytics.targetResultForDay(
+          day: anchorDay,
+          allDays: history,
+          profile: profile,
+        );
+  final double liveReliability = liveTarget == null
+      ? 0
+      : TdeeReliabilityScore.fromTarget(liveTarget).total;
+  int snapshotTargetDays = 0;
+  int derivedTargetDays = 0;
   final List<_FoodWeekDaySnapshot> days = <_FoodWeekDaySnapshot>[];
   for (int index = 0; index < 7; index += 1) {
     final DateTime date = monday.add(Duration(days: index));
     final String dateKey = _dateKey(date);
     final DailyRecordEntity? day = daysByDate[dateKey];
     if (day == null) continue;
-    final TargetDayResult target = analytics.targetResultForDay(
-      day: day,
-      allDays: history,
-      profile: profile,
-    );
-    final TdeeReliabilityScore reliability =
-        TdeeReliabilityScore.fromTarget(target);
+    final bool hasPersistedTarget =
+        day.targetKcal != null && day.targetKcal! > 0;
+    final double targetKcal;
+    if (hasPersistedTarget) {
+      targetKcal = day.targetKcal!;
+      snapshotTargetDays += 1;
+    } else {
+      targetKcal = liveTarget?.targetKcal ?? 2000;
+      derivedTargetDays += 1;
+    }
     final List<MealWithItems> dayMeals =
         mealsByDate[dateKey] ?? const <MealWithItems>[];
     final double calories = dayMeals.fold<double>(
@@ -1136,14 +1188,18 @@ _FoodWeekSnapshot _loadFoodWeekInBackground(
         steps: day.steps,
         stepGoal: day.stepGoal,
         calories: calories,
-        targetKcal: target.targetKcal,
-        reliabilityTotal: reliability.total,
+        targetKcal: targetKcal,
+        reliabilityTotal: liveReliability,
         meals: <_FoodWeekMealSnapshot>[
           for (final MealWithItems meal in dayMeals)
             _FoodWeekMealSnapshot(
               id: meal.meal.id,
               slotCode: meal.meal.mealTypeCode,
               calories: meal.totals.kcal,
+              itemCount: meal.items.length,
+              isFreeMeal: meal.meal.mealModeCode == 'free' ||
+                  meal.meal.freeMealTrackingCode.isNotEmpty,
+              freeTrackingCode: meal.meal.freeMealTrackingCode,
             ),
         ],
       ),
@@ -1151,6 +1207,9 @@ _FoodWeekSnapshot _loadFoodWeekInBackground(
   }
   targetWatch.stop();
   phases['dailyTargetsMs'] = targetWatch.elapsedMilliseconds;
+  phases['liveTargetCalculations'] = liveTarget == null ? 0 : 1;
+  phases['snapshotTargetDays'] = snapshotTargetDays;
+  phases['derivedTargetDays'] = derivedTargetDays;
 
   return _FoodWeekSnapshot(
     monday: monday,
@@ -1616,7 +1675,6 @@ class _WeekHubDayCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TtAppCard(
-      onTap: () => context.push('/food/days/${item.dateKey}'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -1633,33 +1691,110 @@ class _WeekHubDayCard extends StatelessWidget {
                 style: Theme.of(context).textTheme.labelLarge,
               ),
               const SizedBox(width: AppSpacing.xs),
-              const Icon(Icons.chevron_right_rounded),
+              IconButton(
+                tooltip: 'Apri giornata',
+                onPressed: () => context.push('/food/days/${item.dateKey}'),
+                icon: const Icon(Icons.open_in_new_rounded),
+              ),
             ],
           ),
-          const SizedBox(height: AppSpacing.sm),
           Text(
             '${item.calories.round()} / ${item.targetKcal.round()} kcal'
             ' · ${item.steps}/${item.stepGoal} passi',
           ),
-          if (item.meals.isNotEmpty) ...<Widget>[
-            const SizedBox(height: AppSpacing.md),
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
-              children: <Widget>[
-                for (final _FoodWeekMealSnapshot meal in item.meals)
-                  ActionChip(
-                    avatar: const Icon(Icons.restaurant_rounded, size: 18),
-                    label: Text(
-                      '${_slotLabel(meal.slotCode)} '
-                      '${meal.calories.round()} kcal',
-                    ),
-                    onPressed: () => context.push('/food/meals/${meal.id}'),
-                  ),
-              ],
-            ),
+          const SizedBox(height: AppSpacing.md),
+          for (final _FoodWeekMealSnapshot meal in item.meals) ...<Widget>[
+            _WeekHubMealRow(meal: meal),
+            const SizedBox(height: AppSpacing.xs),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _WeekHubMealRow extends StatelessWidget {
+  const _WeekHubMealRow({required this.meal});
+
+  final _FoodWeekMealSnapshot meal;
+
+  String get _statusLabel {
+    if (!meal.isFreeMeal) {
+      return meal.itemCount == 0 ? 'Vuoto' : 'Standard';
+    }
+    return switch (meal.normalizedFreeTrackingCode) {
+      'untracked' => 'Libero · non tracciato',
+      'estimated' => 'Libero · stimato',
+      _ => 'Libero · tracciato',
+    };
+  }
+
+  String get _calorieLabel {
+    if (meal.isFreeMeal && meal.normalizedFreeTrackingCode == 'untracked') {
+      return 'Parziale';
+    }
+    if (meal.itemCount == 0) return '—';
+    return '${meal.calories.round()} kcal';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool warning = meal.isFreeMeal || meal.itemCount == 0;
+    return Material(
+      color: warning
+          ? colors.tertiaryContainer.withValues(alpha: 0.42)
+          : colors.surfaceContainerHighest.withValues(alpha: 0.55),
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => context.push('/food/meals/${meal.id}'),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                flex: 5,
+                child: Text(
+                  _slotLabel(meal.slotCode),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+              Expanded(
+                flex: 3,
+                child: Text(
+                  _calorieLabel,
+                  textAlign: TextAlign.end,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                flex: 5,
+                child: Text(
+                  _statusLabel,
+                  textAlign: TextAlign.end,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: warning
+                            ? colors.onTertiaryContainer
+                            : colors.onSurfaceVariant,
+                      ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              const Icon(Icons.chevron_right_rounded, size: 20),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1736,11 +1871,25 @@ class _FoodWeekMealSnapshot {
     required this.id,
     required this.slotCode,
     required this.calories,
+    required this.itemCount,
+    required this.isFreeMeal,
+    required this.freeTrackingCode,
   });
 
   final int id;
   final String slotCode;
   final double calories;
+  final int itemCount;
+  final bool isFreeMeal;
+  final String freeTrackingCode;
+
+  String get normalizedFreeTrackingCode {
+    final String clean = freeTrackingCode.trim().toLowerCase();
+    if (clean == 'untracked' || clean == 'estimated' || clean == 'tracked') {
+      return clean;
+    }
+    return isFreeMeal ? 'tracked' : '';
+  }
 }
 
 class FoodDaysScreen extends ConsumerWidget {
@@ -4057,26 +4206,11 @@ class FoodMealDetailScreen extends ConsumerStatefulWidget {
 
 class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
   late MealWithItems _details;
-  final TextEditingController _ingredientSheetQuery = TextEditingController();
-  final Set<int> _pendingIngredientIds = <int>{};
-  final Map<int, TextEditingController> _pendingIngredientGrams =
-      <int, TextEditingController>{};
-  int _ingredientSheetStep = 0;
 
   @override
   void initState() {
     super.initState();
     _load();
-  }
-
-  @override
-  void dispose() {
-    _ingredientSheetQuery.dispose();
-    for (final TextEditingController controller
-        in _pendingIngredientGrams.values) {
-      controller.dispose();
-    }
-    super.dispose();
   }
 
   void _load() {
@@ -4781,341 +4915,32 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
       _snack('Nessun ingrediente salvato.');
       return;
     }
-    await showModalBottomSheet<void>(
+
+    final List<MealIngredientBatchSelection>? selections =
+        await showModalBottomSheet<List<MealIngredientBatchSelection>>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (BuildContext sheetContext) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setSheetState) {
-            final String clean =
-                _ingredientSheetQuery.text.trim().toLowerCase();
-            final List<IngredientEntity> filtered =
-                ingredients.where((IngredientEntity ingredient) {
-              return clean.isEmpty ||
-                  ingredient.name.toLowerCase().contains(clean) ||
-                  ingredient.brand.toLowerCase().contains(clean) ||
-                  ingredient.barcode.toLowerCase().contains(clean);
-            }).toList();
-            final List<IngredientEntity> selectedIngredients = ingredients
-                .where((IngredientEntity ingredient) =>
-                    _pendingIngredientIds.contains(ingredient.id))
-                .toList();
-            for (final IngredientEntity ingredient in selectedIngredients) {
-              _pendingIngredientGrams.putIfAbsent(
-                ingredient.id,
-                () => TextEditingController(text: '100'),
-              );
-            }
-            return DraggableScrollableSheet(
-              expand: false,
-              initialChildSize: 0.92,
-              minChildSize: 0.32,
-              maxChildSize: 0.96,
-              builder: (
-                BuildContext context,
-                ScrollController scrollController,
-              ) {
-                return SafeArea(
-                  child: ListView(
-                    controller: scrollController,
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg,
-                      AppSpacing.sm,
-                      AppSpacing.lg,
-                      AppSpacing.lg,
-                    ),
-                    children: <Widget>[
-                      Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: Text(
-                              _ingredientSheetStep == 0
-                                  ? 'Seleziona alimenti'
-                                  : 'Inserisci grammature',
-                              style: Theme.of(context).textTheme.headlineSmall,
-                            ),
-                          ),
-                          _StatusPill(
-                            label:
-                                '${_pendingIngredientIds.length} selezionati',
-                            isWarning: _pendingIngredientIds.isEmpty,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                if (_ingredientSheetStep == 1) {
-                                  setSheetState(() {
-                                    _ingredientSheetStep = 0;
-                                  });
-                                } else {
-                                  Navigator.of(sheetContext).pop();
-                                }
-                              },
-                              icon: Icon(_ingredientSheetStep == 1
-                                  ? Icons.arrow_back_rounded
-                                  : Icons.keyboard_arrow_down),
-                              label: Text(_ingredientSheetStep == 1
-                                  ? 'Indietro'
-                                  : 'Chiudi'),
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: _pendingIngredientIds.isEmpty
-                                  ? null
-                                  : () {
-                                      if (_ingredientSheetStep == 0) {
-                                        setSheetState(() {
-                                          _ingredientSheetStep = 1;
-                                        });
-                                      } else {
-                                        _confirmPendingIngredients(
-                                          selectedIngredients,
-                                        );
-                                        Navigator.of(sheetContext).pop();
-                                      }
-                                    },
-                              icon: Icon(_ingredientSheetStep == 0
-                                  ? Icons.arrow_forward_rounded
-                                  : Icons.check_rounded),
-                              label: Text(_ingredientSheetStep == 0
-                                  ? 'Continua'
-                                  : 'Conferma'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      if (_ingredientSheetStep == 0) ...<Widget>[
-                        TextField(
-                          controller: _ingredientSheetQuery,
-                          decoration: const InputDecoration(
-                            labelText: 'Cerca per nome, brand o barcode',
-                            prefixIcon: Icon(Icons.search_rounded),
-                          ),
-                          onChanged: (_) => setSheetState(() {}),
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        if (filtered.isEmpty)
-                          const _EmptyInline(
-                            message: 'Nessun alimento trovato.',
-                          )
-                        else
-                          for (final IngredientEntity ingredient in filtered)
-                            Padding(
-                              padding: const EdgeInsets.only(
-                                bottom: AppSpacing.sm,
-                              ),
-                              child: TtAppCard(
-                                onTap: () {
-                                  setSheetState(() {
-                                    if (_pendingIngredientIds
-                                        .contains(ingredient.id)) {
-                                      _pendingIngredientIds
-                                          .remove(ingredient.id);
-                                    } else {
-                                      _pendingIngredientIds.add(ingredient.id);
-                                      _pendingIngredientGrams.putIfAbsent(
-                                        ingredient.id,
-                                        () =>
-                                            TextEditingController(text: '100'),
-                                      );
-                                    }
-                                  });
-                                },
-                                child: Row(
-                                  children: <Widget>[
-                                    _FoodThumb(
-                                      imageUrl: ingredient.imageUrl,
-                                      fallbackIcon: Icons.inventory_2_outlined,
-                                    ),
-                                    const SizedBox(width: AppSpacing.md),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: <Widget>[
-                                          Text(
-                                            ingredient.name,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .titleMedium,
-                                          ),
-                                          Text(
-                                            ingredient.brand.isEmpty
-                                                ? _fmtKcal(
-                                                    ingredient.kcalPerReference,
-                                                  )
-                                                : ingredient.brand,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodySmall,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Icon(
-                                      _pendingIngredientIds
-                                              .contains(ingredient.id)
-                                          ? Icons.check_circle_rounded
-                                          : Icons.circle_outlined,
-                                      color: _pendingIngredientIds
-                                              .contains(ingredient.id)
-                                          ? Theme.of(context)
-                                              .colorScheme
-                                              .primary
-                                          : Theme.of(context)
-                                              .colorScheme
-                                              .outline,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                      ] else ...<Widget>[
-                        for (final IngredientEntity ingredient
-                            in selectedIngredients)
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              bottom: AppSpacing.sm,
-                            ),
-                            child: TtAppCard(
-                              child: Row(
-                                children: <Widget>[
-                                  _FoodThumb(
-                                    imageUrl: ingredient.imageUrl,
-                                    fallbackIcon: Icons.inventory_2_outlined,
-                                  ),
-                                  const SizedBox(width: AppSpacing.md),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: <Widget>[
-                                        Text(
-                                          ingredient.name,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleMedium,
-                                        ),
-                                        Text(
-                                          ingredient.brand,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodySmall,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  SizedBox(
-                                    width: 112,
-                                    child: TextField(
-                                      controller: _pendingIngredientGrams[
-                                          ingredient.id],
-                                      keyboardType: TextInputType.number,
-                                      decoration: const InputDecoration(
-                                        labelText: 'g',
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                      ],
-                      const SizedBox(height: AppSpacing.sectionGap),
-                      Row(
-                        children: <Widget>[
-                          if (_ingredientSheetStep == 1)
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: () {
-                                  setSheetState(() {
-                                    _ingredientSheetStep = 0;
-                                  });
-                                },
-                                icon: const Icon(Icons.arrow_back_rounded),
-                                label: const Text('Indietro'),
-                              ),
-                            )
-                          else
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: () =>
-                                    Navigator.of(sheetContext).pop(),
-                                icon: const Icon(Icons.keyboard_arrow_down),
-                                label: const Text('Chiudi'),
-                              ),
-                            ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: _pendingIngredientIds.isEmpty
-                                  ? null
-                                  : () {
-                                      if (_ingredientSheetStep == 0) {
-                                        setSheetState(() {
-                                          _ingredientSheetStep = 1;
-                                        });
-                                      } else {
-                                        _confirmPendingIngredients(
-                                          selectedIngredients,
-                                        );
-                                        Navigator.of(sheetContext).pop();
-                                      }
-                                    },
-                              icon: Icon(_ingredientSheetStep == 0
-                                  ? Icons.arrow_forward_rounded
-                                  : Icons.check_rounded),
-                              label: Text(_ingredientSheetStep == 0
-                                  ? 'Continua'
-                                  : 'Conferma'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                );
-              },
-            );
-          },
-        );
+      useSafeArea: true,
+      builder: (BuildContext _) {
+        return MealIngredientBatchPickerSheet(ingredients: ingredients);
       },
     );
-  }
+    if (!mounted || selections == null || selections.isEmpty) {
+      return;
+    }
 
-  void _confirmPendingIngredients(List<IngredientEntity> ingredients) {
     MealWithItems next = _details;
     final FoodPlanningService planning = ref.read(foodPlanningServiceProvider);
-    for (final IngredientEntity ingredient in ingredients) {
-      final TextEditingController? controller =
-          _pendingIngredientGrams[ingredient.id];
-      final double grams = _toDouble(controller?.text ?? '') ?? 100;
+    for (final MealIngredientBatchSelection selection in selections) {
       next = planning.addIngredientToMeal(
         meal: next,
-        ingredient: ingredient,
-        grams: grams <= 0 ? 100 : grams,
+        ingredient: selection.ingredient,
+        grams: selection.grams,
       );
     }
-    setState(() {
-      _details = next;
-      _ingredientSheetStep = 0;
-      _pendingIngredientIds.clear();
-      for (final TextEditingController controller
-          in _pendingIngredientGrams.values) {
-        controller.dispose();
-      }
-      _pendingIngredientGrams.clear();
-      _ingredientSheetQuery.clear();
-    });
+    if (!mounted) return;
+    setState(() => _details = next);
     _invalidateFood(ref);
   }
 
@@ -8818,184 +8643,6 @@ class _MonthCalendarCardState extends State<_MonthCalendarCard> {
 }
 
 // Retained temporarily for compatibility with the legacy weekly presentation.
-// ignore: unused_element
-class _WeekCalendarStrip extends StatelessWidget {
-  const _WeekCalendarStrip({
-    required this.monday,
-    required this.daysByDate,
-    required this.mealRepository,
-    required this.analytics,
-    required this.profile,
-  });
-
-  final DateTime monday;
-  final Map<String, DailyRecordEntity> daysByDate;
-  final MealRepository mealRepository;
-  final FoodAnalyticsService analytics;
-  final UserProfileEntity? profile;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget buildCard(int index) {
-      final DateTime date = monday.add(Duration(days: index));
-      final String dateKey = _dateKey(date);
-      final DailyRecordEntity? day = daysByDate[dateKey];
-      final List<MealWithItems> meals =
-          mealRepository.getMealsWithItemsForDate(dateKey);
-      final int loggedMeals = meals
-          .where((MealWithItems meal) => meal.items.isNotEmpty)
-          .length
-          .clamp(0, 4)
-          .toInt();
-      final double kcal = meals.fold<double>(
-        0,
-        (double sum, MealWithItems meal) => sum + meal.totals.kcal,
-      );
-      return _WeekDaySummaryCard(
-        date: date,
-        day: day,
-        loggedMeals: loggedMeals,
-        kcal: kcal,
-        steps: day?.steps ?? 0,
-        weight: day == null ? null : analytics.weightForDay(day),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          'Giorni della settimana',
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        const SizedBox(height: AppSpacing.md),
-        for (int index = 0; index < 7; index += 1) ...<Widget>[
-          buildCard(index),
-          if (index != 6) const SizedBox(height: AppSpacing.sm),
-        ],
-      ],
-    );
-  }
-}
-
-class _WeekDaySummaryCard extends StatelessWidget {
-  const _WeekDaySummaryCard({
-    required this.date,
-    required this.day,
-    required this.loggedMeals,
-    required this.kcal,
-    required this.steps,
-    required this.weight,
-  });
-
-  final DateTime date;
-  final DailyRecordEntity? day;
-  final int loggedMeals;
-  final double kcal;
-  final int steps;
-  final double? weight;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final String dateKey = _dateKey(date);
-    final double progress = (loggedMeals / 4).clamp(0, 1).toDouble();
-    final String weekday = day?.weekdayLabel.isNotEmpty == true
-        ? day!.weekdayLabel
-        : _weekdayFromDate(date);
-    return TtAppCard(
-      onTap: () => context.push('/food/days/$dateKey'),
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: Row(
-        children: <Widget>[
-          SizedBox.square(
-            dimension: 64,
-            child: Stack(
-              alignment: Alignment.center,
-              children: <Widget>[
-                CircularProgressIndicator(
-                  value: progress,
-                  strokeWidth: 7,
-                  backgroundColor: colors.surfaceContainerHighest,
-                ),
-                Text(
-                  '$loggedMeals/4',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  '$weekday ${date.day}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Wrap(
-                  spacing: AppSpacing.md,
-                  runSpacing: AppSpacing.xs,
-                  children: <Widget>[
-                    _InlineInfo(
-                      icon: '⚖',
-                      label: _fmtNullable(weight, 'kg'),
-                    ),
-                    _InlineInfo(
-                      icon: '🔥',
-                      label: _fmtKcal(kcal),
-                    ),
-                    _InlineInfo(
-                      icon: '🚶',
-                      label: '$steps passi',
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Icon(
-            Icons.chevron_right_rounded,
-            color: colors.onSurfaceVariant,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InlineInfo extends StatelessWidget {
-  const _InlineInfo({
-    required this.icon,
-    required this.label,
-  });
-
-  final String icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Text(icon),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ],
-    );
-  }
-}
 
 class _CalendarDayCell extends StatelessWidget {
   const _CalendarDayCell({
@@ -11299,18 +10946,6 @@ String _shortWeekdayLabel(DateTime date) {
     'Dom',
   ];
   return labels[date.weekday - 1];
-}
-
-String _weekdayFromDate(DateTime date) {
-  return const <int, String>{
-    DateTime.monday: 'Lunedì',
-    DateTime.tuesday: 'Martedì',
-    DateTime.wednesday: 'Mercoledì',
-    DateTime.thursday: 'Giovedì',
-    DateTime.friday: 'Venerdì',
-    DateTime.saturday: 'Sabato',
-    DateTime.sunday: 'Domenica',
-  }[date.weekday]!;
 }
 
 String _slotLabel(String slot) {
