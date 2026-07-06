@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:total_tracker/features/nutrition/domain/target_model_constants.dart';
 import 'package:total_tracker/features/profile/data/entities/user_profile_entity.dart';
 import 'package:total_tracker/features/profile/domain/profile_codes.dart';
 import 'package:total_tracker/features/profile/domain/profile_nutrition_calculator.dart';
@@ -6,22 +7,22 @@ import 'package:total_tracker/features/profile/domain/profile_nutrition_calculat
 void main() {
   UserProfileEntity profile({
     String targetMode = TargetModeCodes.appCalculatedFixed,
+    String sex = BiologicalSexCodes.male,
+    String macroMode = MacroModeCodes.defaultByWeight,
+    int defaultTargetKcal = 2100,
   }) {
     return UserProfileEntity(
       uuid: 'profile-calculator-test',
       targetModeCode: targetMode,
-      defaultTargetKcal: 2100,
+      biologicalSexCode: sex,
+      defaultTargetKcal: defaultTargetKcal,
       defaultStepGoal: 8000,
-      stepKcalCoefficient: 0.025,
       averageWorkoutsPerWeek: 3,
       averageWorkoutDurationMinutes: 60,
       workoutActivityTypeCode: WorkoutActivityTypeCodes.weights,
       initialWeightKg: 64,
       heightCm: 160,
-      proteinGramsPerKg: 2,
-      fatGramsPerKg: 1,
-      fiberGramsPerKg: 0.5,
-      sugarCarbsPercent: 20,
+      macroModeCode: macroMode,
       birthDateEpochDay: DateTime(2004, 1, 1).millisecondsSinceEpoch ~/
           Duration.millisecondsPerDay,
       createdAtEpochMs: 1,
@@ -29,22 +30,61 @@ void main() {
     );
   }
 
-  test('calculated fixed target includes profile steps and workouts', () {
+  test('uses Mifflin St Jeor male equation without intermediate rounding', () {
     const ProfileNutritionCalculator calculator = ProfileNutritionCalculator();
     final ProfileNutritionTargets result = calculator.calculateFixedTargets(
       profile(),
       now: DateTime(2026, 7, 2),
     );
 
-    expect(result.stepDailyKcal, 200);
+    expect(result.rmrKcal, closeTo(1535, 0.0001));
+    expect(result.rmrEquationCode, TargetModelConstants.rmrEquation);
+    expect(result.rmrPhysiologicalCoefficientCode, 'male_plus_5');
+    expect(result.rmrFallbackUsed, isFalse);
+  });
+
+  test('uses Mifflin St Jeor female equation', () {
+    const ProfileNutritionCalculator calculator = ProfileNutritionCalculator();
+    final ProfileNutritionTargets result = calculator.calculateFixedTargets(
+      profile(sex: BiologicalSexCodes.female),
+      now: DateTime(2026, 7, 2),
+    );
+
+    expect(result.rmrKcal, closeTo(1369, 0.0001));
+    expect(result.rmrPhysiologicalCoefficientCode, 'female_minus_161');
+    expect(result.rmrFallbackUsed, isFalse);
+  });
+
+  test('unspecified physiological coefficient uses approved minus 78 fallback',
+      () {
+    const ProfileNutritionCalculator calculator = ProfileNutritionCalculator();
+    final ProfileNutritionTargets result = calculator.calculateFixedTargets(
+      profile(sex: BiologicalSexCodes.unspecified),
+      now: DateTime(2026, 7, 2),
+    );
+
+    expect(result.rmrKcal, closeTo(1452, 0.0001));
+    expect(result.rmrPhysiologicalCoefficientCode, 'unspecified_minus_78');
+    expect(result.rmrFallbackUsed, isTrue);
+  });
+
+  test('step estimate uses weight, height-derived step length and distance',
+      () {
+    const ProfileNutritionCalculator calculator = ProfileNutritionCalculator();
+    final ProfileNutritionTargets result = calculator.calculateFixedTargets(
+      profile(),
+      now: DateTime(2026, 7, 2),
+    );
+
+    expect(result.stepEstimate.stepLengthMeters, closeTo(0.672, 0.000001));
+    expect(result.stepEstimate.distanceKm, closeTo(5.376, 0.000001));
+    expect(
+        result.stepEstimate.effectiveKcalPerStep, closeTo(0.021504, 0.000001));
+    expect(result.stepDailyKcal, closeTo(172.032, 0.0001));
     expect(result.workoutDailyKcal, greaterThan(0));
     expect(
       result.profileActivityDailyKcal,
       closeTo(result.stepDailyKcal + result.workoutDailyKcal, 0.0001),
-    );
-    expect(
-      result.targetKcal,
-      closeTo(result.sedentaryKcal + result.profileActivityDailyKcal, 0.0001),
     );
   });
 
@@ -58,7 +98,7 @@ void main() {
     expect(result.targetKcal, 2100);
   });
 
-  test('macro grams reproduce the caloric target with 4 4 9 factors', () {
+  test('new default macros reproduce target with 4 4 9 factors', () {
     const ProfileNutritionCalculator calculator = ProfileNutritionCalculator();
     final ProfileNutritionTargets result = calculator.calculateFixedTargets(
       profile(targetMode: TargetModeCodes.fixedUser),
@@ -69,10 +109,28 @@ void main() {
         result.proteinGrams * 4 + result.carbsGrams * 4 + result.fatGrams * 9;
 
     expect(macroKcal, closeTo(result.targetKcal, 0.0001));
-    expect(result.proteinGrams, 128);
-    expect(result.fatGrams, 64);
-    expect(result.carbsGrams, closeTo(253, 0.0001));
-    expect(result.fiberGrams, 32);
-    expect(result.sugarGrams, closeTo(50.6, 0.0001));
+    expect(result.proteinGramsPerKg, 1.8);
+    expect(result.proteinGrams, closeTo(115.2, 0.0001));
+    expect(result.fatEnergyPercent, 25);
+    expect(result.fatGrams, closeTo(58.333333, 0.0001));
+    expect(result.carbsGrams, closeTo(278.55, 0.0001));
+    expect(result.fiberGrams, closeTo(29.4, 0.0001));
+    expect(result.freeSugarLimitGrams, closeTo(52.5, 0.0001));
+    expect(result.freeSugarPreferredGrams, closeTo(26.25, 0.0001));
+  });
+
+  test('fiber target keeps the 25 gram minimum at lower energy', () {
+    const ProfileNutritionCalculator calculator = ProfileNutritionCalculator();
+    final ProfileNutritionTargets result = calculator.calculateFixedTargets(
+      profile(
+        targetMode: TargetModeCodes.fixedUser,
+        defaultTargetKcal: 1500,
+      ),
+      now: DateTime(2026, 7, 2),
+    );
+
+    expect(result.fiberGrams, 25);
+    expect(result.freeSugarLimitGrams, closeTo(37.5, 0.0001));
+    expect(result.freeSugarPreferredGrams, closeTo(18.75, 0.0001));
   });
 }

@@ -39,6 +39,7 @@ import '../data/services/food_planning_service.dart';
 import '../data/services/open_food_facts_service.dart';
 import '../domain/adaptive_target_engine.dart';
 import '../domain/meal_target_settings.dart';
+import '../domain/target_model_constants.dart';
 import 'measurement_screens.dart' show measurementHubProvider;
 import 'meal_ingredient_batch_picker_sheet.dart';
 import 'widgets/month_meal_calendar_card.dart';
@@ -879,9 +880,9 @@ class _DashboardDailySummary extends StatelessWidget {
                       target: macroTargets.fiberGrams,
                     ),
                     _MacroProgressLine(
-                      label: 'Zuccheri',
+                      label: 'Zuccheri totali · nessun limite automatico',
                       value: totals.sugarGrams,
-                      target: macroTargets.sugarGrams,
+                      target: null,
                     ),
                   ],
                 ),
@@ -2111,7 +2112,8 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                         _detailRow('Pasti', meals.length.toString()),
                         _detailRow('Voci nei pasti', mealItemCount.toString()),
                         _detailRow('Passi', day.steps.toString()),
-                        _detailRow('Obiettivo passi', day.stepGoal.toString()),
+                        _detailRow('Obiettivo passi configurato',
+                            day.stepGoal.toString()),
                         _detailRow('Acqua', _fmtNullable(day.waterLiters, 'l')),
                         _detailRow(
                             'Bicchieri', day.waterGlasses?.toString() ?? ''),
@@ -2478,8 +2480,8 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                         ),
                         detailRow(
                           'Metodo osservato',
-                          'media ponderata delle calorie assunte - '
-                              '(variazione di peso × kcal/kg ÷ giorni)',
+                          'media ponderata delle calorie assunte − '
+                              '(pendenza Theil–Sen kg/giorno × 7700 kcal/kg)',
                         ),
                         detailRow(
                           'Media calorie usata',
@@ -2488,6 +2490,27 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                         detailRow(
                           'Variazione peso usata',
                           fmtNullable(targetResult.deltaWeightKg, 'kg'),
+                        ),
+                        detailRow(
+                          'Pendenza robusta peso',
+                          fmtNullable(
+                              targetResult.weightSlopeKgPerDay, 'kg/giorno'),
+                        ),
+                        detailRow(
+                          'Livello osservato',
+                          targetResult.observedModelLevelCode,
+                        ),
+                        detailRow(
+                          'Composizione corporea',
+                          '${targetResult.compositionFallbackReasonCode} · '
+                              'confidenza ${(targetResult.compositionConfidence * 100).round()}%',
+                        ),
+                        detailRow(
+                          'Candidato energetico composizione',
+                          fmtNullable(
+                            targetResult.compositionEnergyChangeKcalPerDay,
+                            'kcal/giorno',
+                          ),
                         ),
                         detailRow(
                           'Conversione energetica',
@@ -2513,6 +2536,10 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                         detailRow('Passi registrati', day.steps.toString()),
                         detailRow('Obiettivo passi', day.stepGoal.toString()),
                         detailRow(
+                          'Passi degli allenamenti',
+                          'esclusi manualmente dal totale giornaliero',
+                        ),
+                        detailRow(
                           'Kcal passi registrate',
                           '${fmt(resolved.actualStepKcal)} kcal',
                         ),
@@ -2521,18 +2548,47 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                           '${fmt(resolved.effectiveStepKcal)} kcal',
                         ),
                         detailRow(
-                          'Workout registrato',
+                          'Calorie allenamento registrate',
                           '${fmt(resolved.actualWorkoutKcal)} kcal',
                         ),
                         detailRow(
-                          'Workout usato',
+                          'Calorie allenamento usate',
                           '${fmt(resolved.effectiveWorkoutKcal)} kcal',
+                        ),
+                        detailRow(
+                          'Sorgente calorie allenamento',
+                          'estimated_active_calories esposto dalle sessioni completate',
                         ),
                         detailRow(
                           'Consumo attivo usato',
                           '${fmt(resolved.totalKcal)} kcal',
                         ),
-                        detailRow('Stato attività', resolved.statusCode),
+                        detailRow(
+                          'Stato attività',
+                          resolved.statusCode == 'partially_provisional'
+                              ? 'parzialmente provvisorio'
+                              : resolved.statusCode == 'provisional'
+                                  ? 'provvisorio'
+                                  : resolved.statusCode,
+                        ),
+                        detailRow(
+                          'Lunghezza passo',
+                          resolved.stepLengthMeters == null
+                              ? 'fallback legacy'
+                              : '${resolved.stepLengthMeters!.toStringAsFixed(3)} m',
+                        ),
+                        detailRow(
+                          'Sorgente lunghezza',
+                          resolved.stepLengthSourceCode,
+                        ),
+                        detailRow(
+                          'Peso usato per i passi',
+                          resolved.stepWeightSourceCode,
+                        ),
+                        detailRow(
+                          'Coefficiente effettivo',
+                          '${resolved.effectiveStepKcalCoefficient.toStringAsFixed(5)} kcal/passo',
+                        ),
                         detailRow(
                           'Fallback passi',
                           resolved.usedStepGoalFallback ? 'sì' : 'no',
@@ -2586,12 +2642,25 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                           '${profile?.adaptiveMinimumObservedDays ?? 7}',
                         ),
                         detailRow(
-                          'Coefficiente passi',
-                          '${profile?.stepKcalCoefficient ?? 0.020} kcal/passo',
+                          'Versione modello',
+                          targetResult.targetModelVersion,
                         ),
                         detailRow(
-                          'Kcal per kg',
-                          '${profile?.kcalPerKg ?? 7700}',
+                          'Data di entrata in vigore',
+                          TargetModelConstants.effectiveDate,
+                        ),
+                        detailRow(
+                          'RMR',
+                          '${targetResult.rmrEquationCode} · '
+                              '${targetResult.rmrPhysiologicalCoefficientCode}',
+                        ),
+                        detailRow(
+                          'Formula passi',
+                          'peso × passi × lunghezza × 0,50 / 1000',
+                        ),
+                        detailRow(
+                          'Prior variazione peso',
+                          '${TargetModelConstants.energyDensityPriorKcalPerKg.round()} kcal/kg',
                         ),
                         detailRow(
                           'Limiti TDEE',
@@ -2599,8 +2668,54 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                               '${profile?.maximumReasonableTdee ?? 4600} kcal',
                         ),
                         detailRow(
+                          'Guardrail',
+                          targetResult.guardrailApplied
+                              ? 'applicato (${targetResult.guardrailReasonCode}) · '
+                                  'prima ${fmtNullable(targetResult.unclampedTargetKcal, 'kcal')}'
+                              : 'non applicato',
+                        ),
+                        detailRow(
                           'Fallback attività',
                           profile?.activityFallbackModeCode ?? 'recorded_only',
+                        ),
+                        detailRow(
+                          'Regola fallback',
+                          'ogni componente registrata prevale; viene stimata '
+                              'solo la componente mancante',
+                        ),
+                      ],
+                    ),
+                    section(
+                      title: 'Fonti, formule e limiti',
+                      children: <Widget>[
+                        detailRow(
+                          'Evidenza scientifica',
+                          'Mifflin–St Jeor per RMR; stima di popolazione non clinica',
+                        ),
+                        detailRow(
+                          'Linea guida passi',
+                          'escludere passi di allenamenti registrati separatamente',
+                        ),
+                        detailRow(
+                          'Obiettivo passi',
+                          'configurabile dall’utente; usato come fallback solo se i passi mancano',
+                        ),
+                        detailRow(
+                          'Contratto allenamenti',
+                          'il giorno usa estimated_active_calories; il modello interno dell’allenamento è fuori ambito',
+                        ),
+                        detailRow(
+                          'Euristiche interne',
+                          'Theil–Sen, 7700 kcal/kg, blending e confidenza',
+                        ),
+                        detailRow(
+                          'IN STALLO',
+                          'quota base 1,10; soglie composizione; blending; '
+                              'guardrail 1300–4600',
+                        ),
+                        detailRow(
+                          'Limite d’uso',
+                          'adulti sani, uso generale/sportivo non clinico',
                         ),
                       ],
                     ),
@@ -3579,11 +3694,12 @@ class _MacroProgressLine extends StatelessWidget {
 
   final String label;
   final double value;
-  final double target;
+  final double? target;
 
   @override
   Widget build(BuildContext context) {
-    final double safeTarget = target <= 0 ? 1 : target;
+    final double? cleanTarget = target != null && target! > 0 ? target : null;
+    final double safeTarget = cleanTarget ?? 1;
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Column(
@@ -3592,15 +3708,20 @@ class _MacroProgressLine extends StatelessWidget {
           Row(
             children: <Widget>[
               Expanded(child: Text(label)),
-              Text('${_fmt(value)} / ${_fmt(safeTarget)} g'),
+              Text(
+                cleanTarget == null
+                    ? '${_fmt(value)} g'
+                    : '${_fmt(value)} / ${_fmt(safeTarget)} g',
+              ),
             ],
           ),
           const SizedBox(height: 4),
-          LinearProgressIndicator(
-            value: (value / safeTarget).clamp(0, 1).toDouble(),
-            minHeight: 8,
-            borderRadius: BorderRadius.circular(999),
-          ),
+          if (cleanTarget != null)
+            LinearProgressIndicator(
+              value: (value / safeTarget).clamp(0, 1).toDouble(),
+              minHeight: 8,
+              borderRadius: BorderRadius.circular(999),
+            ),
         ],
       ),
     );
@@ -9083,10 +9204,8 @@ class _MealNutritionRecap extends StatelessWidget {
             percent: target.percentages.fiberPercent,
           ),
           _MealMacroRow(
-            label: 'Zuccheri',
+            label: 'Zuccheri totali · nessun limite automatico',
             value: totals.sugarGrams,
-            target: target.sugarGrams,
-            percent: target.percentages.sugarPercent,
           ),
         ],
       ),

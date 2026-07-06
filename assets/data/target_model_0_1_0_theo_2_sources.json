@@ -1,0 +1,101 @@
+{
+  "logicalPatchId": "0.1.0_01_theo",
+  "modelVersion": "target-model-0.1.0-theo.2",
+  "effectiveDate": "2026-07-06",
+  "scope": "healthy_adults_general_or_sport_non_clinical",
+  "sources": [
+    {
+      "code": "mifflin_1990",
+      "category": "scientific_evidence",
+      "title": "A new predictive equation for resting energy expenditure in healthy individuals",
+      "authors": "Mifflin MD et al.",
+      "year": 1990,
+      "reference": "American Journal of Clinical Nutrition; PubMed 2305711",
+      "usedFor": [
+        "resting_metabolic_rate"
+      ]
+    },
+    {
+      "code": "step_distance_cost",
+      "category": "approved_internal_heuristic",
+      "title": "Distance-based active walking estimate",
+      "formula": "weight_kg * distance_km * 0.50",
+      "usedFor": [
+        "daily_steps_active_energy"
+      ],
+      "limitations": "Engineering estimate; not an individual physiological constant."
+    },
+    {
+      "code": "weight_energy_prior",
+      "category": "approved_internal_heuristic",
+      "title": "Static body-weight energy prior",
+      "formula": "weight_slope_kg_per_day * 7700",
+      "usedFor": [
+        "observed_tdee_weight_only"
+      ]
+    },
+    {
+      "code": "body_composition_candidate",
+      "category": "approved_model_with_stalled_activation",
+      "title": "Body composition energy-change candidate",
+      "formula": "fat_mass_slope * 9500 + fat_free_mass_slope * 1020",
+      "usedFor": [
+        "diagnostic_candidate_only"
+      ],
+      "limitations": "Activation threshold and blending are stalled; production falls back to weight-only."
+    },
+    {
+      "code": "macro_guidelines",
+      "category": "guideline",
+      "title": "Macronutrient and fibre defaults",
+      "values": {
+        "protein_g_per_kg": 1.8,
+        "protein_range_g_per_kg": [
+          1.4,
+          2.2
+        ],
+        "fat_energy_percent": 25,
+        "fat_energy_percent_range": [
+          20,
+          35
+        ],
+        "fibre": "max(25 g, 14 g per 1000 kcal)",
+        "free_sugar_limit_energy_percent": 10,
+        "free_sugar_preferred_energy_percent": 5
+      }
+    }
+  ],
+  "stalledParameters": [
+    "rmr_activity_factor_1_10",
+    "body_composition_activation_threshold",
+    "observed_theoretical_blending",
+    "observed_confidence_thresholds",
+    "tdee_guardrails_1300_4600"
+  ],
+  "activityFallbackPolicy": {
+    "code": "component_wise_fallback",
+    "rule": "Recorded steps and recorded completed workouts always win independently. Only a missing component receives its profile fallback.",
+    "statuses": {
+      "actual": "no fallback used",
+      "partially_provisional": "exactly one component uses fallback",
+      "provisional": "both components use fallback",
+      "unavailable": "no actual data and fallback disabled or unavailable"
+    }
+  },
+  "stepExclusionPolicyVersion": "steps-exclusion-policy-1",
+  "userConfiguredParameters": {
+    "dailyStepGoal": {
+      "status": "user_configurable",
+      "defaultCompatibilityValue": 8000,
+      "rule": "The user-selected daily step goal is used only as the step fallback when recorded daily steps are missing."
+    }
+  },
+  "workoutCaloriesContract": {
+    "status": "external_input_contract",
+    "field": "estimated_active_calories",
+    "currentStorageMapping": "WorkoutSessionEntity.estimatedKcalBurned",
+    "rule": "For each completed workout, the day consumes the non-negative calorie value exposed by the workout. The nutrition target engine does not derive workout calories from exercise details.",
+    "fallback": "A profile-level workout fallback may be used only when no completed workout value is available for the day.",
+    "scope": "Workout calorie-model design and correction factors are outside 0.1.0_01_theo."
+  }
+}

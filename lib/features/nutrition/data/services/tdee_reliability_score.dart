@@ -168,14 +168,16 @@ class TdeeReliabilityScore {
     final String status = result.activity.statusCode;
     final double points = switch (status) {
       'actual' => 15,
-      'mixed' => 10,
-      'estimated' => 5,
+      'partially_provisional' => 10,
+      'provisional' => 5,
       _ => 0,
     };
     final String explanation = switch (status) {
       'actual' => 'Passi e attività del giorno provengono da dati effettivi.',
-      'mixed' => 'Il giorno combina dati effettivi e valori previsionali.',
-      'estimated' => 'L’attività del giorno è prevalentemente stimata.',
+      'partially_provisional' =>
+        'Una componente è registrata e una sola componente usa il fallback.',
+      'provisional' =>
+        'Passi e allenamenti usano entrambi i fallback del profilo.',
       _ => 'Attività non disponibile per il giorno.',
     };
     return TdeeReliabilityComponent(

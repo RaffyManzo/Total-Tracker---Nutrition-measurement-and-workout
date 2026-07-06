@@ -5,6 +5,7 @@ import '../../../shared/widgets/tt_app_card.dart';
 import '../data/entities/user_profile_entity.dart';
 import '../domain/profile_activity_estimator.dart';
 import '../domain/profile_nutrition_calculator.dart';
+import '../../nutrition/domain/target_model_constants.dart';
 
 class ProfileTargetActivityBanner extends StatelessWidget {
   const ProfileTargetActivityBanner({
@@ -171,16 +172,22 @@ class ProfileTargetActivityBanner extends StatelessWidget {
                 subtitle: '${targets.sedentaryKcal.round()} kcal',
                 children: <Widget>[
                   _DetailRow(
+                    label: 'Modello',
+                    value: TargetModelConstants.modelVersion,
+                    detail:
+                        'Mifflin–St Jeor; stima di popolazione non clinica.',
+                  ),
+                  _DetailRow(
                     label: 'RMR usato',
                     value: '${targets.rmrKcal.toStringAsFixed(2)} kcal',
                     detail:
-                        'Valore prodotto dal calcolatore metabolico del profilo.',
+                        '${targets.rmrEquationCode} · ${targets.rmrPhysiologicalCoefficientCode}${targets.rmrFallbackUsed ? ' · affidabilità ridotta' : ''}',
                   ),
                   _DetailRow(
-                    label: 'Moltiplicatore sedentario',
+                    label: 'Quota base provvisoria',
                     value: targets.sedentaryMultiplier.toStringAsFixed(3),
                     detail:
-                        'Include la base sedentaria; passi e allenamenti sono aggiunti solo come calorie attive.',
+                        'Parametro interno 1,10 IN STALLO; passi e allenamenti sono aggiunti separatamente come calorie attive.',
                   ),
                   _DetailRow(
                     label: 'Formula',
@@ -194,7 +201,7 @@ class ProfileTargetActivityBanner extends StatelessWidget {
                     value:
                         '+${targets.sedentaryMultiplier.toStringAsFixed(3)} kcal',
                     detail:
-                        'Il RMR viene moltiplicato per il fattore sedentario.',
+                        'Il RMR viene moltiplicato per la quota base provvisoria.',
                   ),
                   _DetailRow(
                     label: 'Effetto di +0,01 sul fattore',
@@ -215,29 +222,39 @@ class ProfileTargetActivityBanner extends StatelessWidget {
                     detail: 'Valore medio o obiettivo usato nella previsione.',
                   ),
                   _DetailRow(
-                    label: 'Coefficiente attivo per passo',
+                    label: 'Lunghezza del passo',
+                    value: targets.stepEstimate.stepLengthMeters == null
+                        ? 'non disponibile'
+                        : '${targets.stepEstimate.stepLengthMeters!.toStringAsFixed(3)} m',
+                    detail: targets.stepEstimate.stepLengthSourceCode,
+                  ),
+                  _DetailRow(
+                    label: 'Peso usato',
                     value:
-                        '${profile.stepKcalCoefficient.toStringAsFixed(4)} kcal/passo',
-                    detail: 'Non contiene la quota di riposo.',
+                        '${targets.stepEstimate.weightKg.toStringAsFixed(1)} kg',
+                    detail:
+                        'Il coefficiente viene ricalcolato quando cambia il peso.',
                   ),
                   _DetailRow(
                     label: 'Formula',
-                    value:
-                        '${profile.defaultStepGoal} × ${profile.stepKcalCoefficient.toStringAsFixed(4)}',
+                    value: targets.stepEstimate.usedLegacyFallback
+                        ? '${profile.defaultStepGoal} × ${TargetModelConstants.legacyStepKcalCoefficient.toStringAsFixed(3)}'
+                        : 'peso × passi × lunghezza × 0,50 / 1000',
                     detail:
                         '= ${targets.stepDailyKcal.toStringAsFixed(2)} kcal attive.',
                   ),
                   _DetailRow(
-                    label: 'Effetto di +1.000 passi',
+                    label: 'Coefficiente effettivo',
                     value:
-                        '+${(1000 * profile.stepKcalCoefficient).toStringAsFixed(2)} kcal',
-                    detail: 'Con coefficiente invariato.',
+                        '${targets.stepEstimate.effectiveKcalPerStep.toStringAsFixed(5)} kcal/passo',
+                    detail: targets.stepEstimate.coefficientSourceCode,
                   ),
                   _DetailRow(
-                    label: 'Effetto di +0,001 kcal/passo',
-                    value:
-                        '+${(profile.defaultStepGoal * 0.001).toStringAsFixed(2)} kcal',
-                    detail: 'Con numero di passi invariato.',
+                    label: 'Distanza stimata',
+                    value: targets.stepEstimate.distanceKm == null
+                        ? 'n/d'
+                        : '${targets.stepEstimate.distanceKm!.toStringAsFixed(2)} km',
+                    detail: 'Derivata dai passi e dalla lunghezza del passo.',
                   ),
                 ],
               ),
@@ -254,7 +271,7 @@ class ProfileTargetActivityBanner extends StatelessWidget {
                   _DetailRow(
                     label: '+ passi attivi',
                     value: '${targets.stepDailyKcal.toStringAsFixed(2)} kcal',
-                    detail: 'Passi × coefficiente attivo per passo.',
+                    detail: 'Peso × distanza × 0,50 kcal/kg/km.',
                   ),
                   _DetailRow(
                     label: '+ allenamenti attivi',

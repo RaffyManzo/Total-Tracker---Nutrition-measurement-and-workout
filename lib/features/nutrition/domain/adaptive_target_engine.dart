@@ -34,6 +34,11 @@ class ResolvedActivityBreakdown {
     required this.statusCode,
     required this.usedStepGoalFallback,
     required this.usedProfileWorkoutFallback,
+    this.stepLengthMeters,
+    this.effectiveStepKcalCoefficient = 0,
+    this.stepLengthSourceCode = 'unavailable',
+    this.stepCoefficientSourceCode = 'unavailable',
+    this.stepWeightSourceCode = 'unavailable',
   });
 
   final double actualStepKcal;
@@ -44,6 +49,17 @@ class ResolvedActivityBreakdown {
   final String statusCode;
   final bool usedStepGoalFallback;
   final bool usedProfileWorkoutFallback;
+  final double? stepLengthMeters;
+  final double effectiveStepKcalCoefficient;
+  final String stepLengthSourceCode;
+  final String stepCoefficientSourceCode;
+  final String stepWeightSourceCode;
+
+  bool get isPartiallyProvisional =>
+      usedStepGoalFallback != usedProfileWorkoutFallback;
+
+  bool get isFullyProvisional =>
+      usedStepGoalFallback && usedProfileWorkoutFallback;
 }
 
 class WeightFreshnessResult {
@@ -79,46 +95,60 @@ class AdaptiveTargetEngine {
     required String fallbackModeCode,
     required DateTime dayDate,
     required DateTime now,
+    double? actualStepKcalOverride,
+    double? targetStepKcalOverride,
+    bool? hasRecordedSteps,
+    bool? hasRecordedWorkout,
+    double? stepLengthMeters,
+    String stepLengthSourceCode = 'unavailable',
+    String stepCoefficientSourceCode = 'legacy_fixed',
+    String stepWeightSourceCode = 'unavailable',
   }) {
-    final double coefficient = math.max(0, stepKcalCoefficient);
-    final double actualStepKcal = math.max(0, steps) * coefficient;
-    final double targetStepKcal = math.max(0, stepGoal) * coefficient;
-    final double actualWorkoutKcal = math.max(0, completedWorkoutKcal);
-    final double estimatedWorkoutKcal = math.max(0, profileWorkoutDailyKcal);
-    final bool isPast = _dateOnly(dayDate).isBefore(_dateOnly(now));
+    final double coefficient = math.max(0.0, stepKcalCoefficient);
+    final double actualStepKcal = math.max(
+      0.0,
+      actualStepKcalOverride ?? math.max(0, steps) * coefficient,
+    );
+    final double targetStepKcal = math.max(
+      0.0,
+      targetStepKcalOverride ?? math.max(0, stepGoal) * coefficient,
+    );
+    final double actualWorkoutKcal = math.max(0.0, completedWorkoutKcal);
+    final double estimatedWorkoutKcal = math.max(0.0, profileWorkoutDailyKcal);
+    final bool recordedSteps = hasRecordedSteps ?? steps > 0;
+    final bool recordedWorkout = hasRecordedWorkout ?? actualWorkoutKcal > 0;
 
     bool useStepFallback = false;
     bool useWorkoutFallback = false;
     double effectiveStepKcal = actualStepKcal;
     double effectiveWorkoutKcal = actualWorkoutKcal;
 
-    if (fallbackModeCode == ActivityFallbackModeCodes.profileEstimate) {
+    // The legacy profileEstimate code is intentionally treated as an alias
+    // of the component-wise policy. A recorded component always wins; only
+    // the missing component receives its profile fallback.
+    final bool allowsFallback =
+        fallbackModeCode != ActivityFallbackModeCodes.recordedOnly;
+    if (allowsFallback &&
+        !recordedSteps &&
+        stepGoal > 0 &&
+        targetStepKcal > 0) {
       effectiveStepKcal = targetStepKcal;
-      effectiveWorkoutKcal = estimatedWorkoutKcal;
       useStepFallback = true;
+    }
+    if (allowsFallback && !recordedWorkout && estimatedWorkoutKcal > 0) {
+      effectiveWorkoutKcal = estimatedWorkoutKcal;
       useWorkoutFallback = true;
-    } else if (fallbackModeCode ==
-        ActivityFallbackModeCodes.recordedWithProfileFallback) {
-      if (!isPast && steps <= 0 && stepGoal > 0) {
-        effectiveStepKcal = targetStepKcal;
-        useStepFallback = true;
-      }
-      if (!isPast && actualWorkoutKcal <= 0 && estimatedWorkoutKcal > 0) {
-        effectiveWorkoutKcal = estimatedWorkoutKcal;
-        useWorkoutFallback = true;
-      }
     }
 
     final double total = effectiveStepKcal + effectiveWorkoutKcal;
-    final bool hasActual = actualStepKcal > 0 || actualWorkoutKcal > 0;
-    final bool hasFallback = useStepFallback || useWorkoutFallback;
+    final bool hasActualSteps = recordedSteps;
+    final bool hasActualWorkout = recordedWorkout;
+    final bool hasActual = hasActualSteps || hasActualWorkout;
     final String statusCode;
-    if (fallbackModeCode == ActivityFallbackModeCodes.profileEstimate) {
-      statusCode = total > 0 ? 'estimated' : 'unavailable';
-    } else if (hasFallback && hasActual) {
-      statusCode = 'mixed';
-    } else if (hasFallback) {
-      statusCode = 'estimated';
+    if (useStepFallback && useWorkoutFallback) {
+      statusCode = 'provisional';
+    } else if (useStepFallback || useWorkoutFallback) {
+      statusCode = 'partially_provisional';
     } else if (hasActual) {
       statusCode = 'actual';
     } else {
@@ -130,10 +160,15 @@ class AdaptiveTargetEngine {
       effectiveStepKcal: effectiveStepKcal,
       actualWorkoutKcal: actualWorkoutKcal,
       effectiveWorkoutKcal: effectiveWorkoutKcal,
-      totalKcal: math.max(0, total),
+      totalKcal: math.max(0.0, total),
       statusCode: statusCode,
       usedStepGoalFallback: useStepFallback,
       usedProfileWorkoutFallback: useWorkoutFallback,
+      stepLengthMeters: stepLengthMeters,
+      effectiveStepKcalCoefficient: coefficient,
+      stepLengthSourceCode: stepLengthSourceCode,
+      stepCoefficientSourceCode: stepCoefficientSourceCode,
+      stepWeightSourceCode: stepWeightSourceCode,
     );
   }
 

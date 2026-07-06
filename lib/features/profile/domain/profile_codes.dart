@@ -62,10 +62,12 @@ class MacroModeCodes {
 
   static const String defaultByWeight = 'default_by_weight';
   static const String custom = 'custom';
+  static const String customTheo2 = 'custom_theo2';
 
   static const Set<String> values = <String>{
     defaultByWeight,
     custom,
+    customTheo2,
   };
 }
 

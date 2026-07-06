@@ -7,6 +7,7 @@ import 'package:objectbox/objectbox.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../core/database/objectbox_providers.dart';
 import '../../../core/services/app_info_service.dart';
+import '../../../core/preferences/target_model_preferences.dart';
 import '../../../shared/widgets/tt_app_card.dart';
 import '../../../shared/widgets/tt_global_nav_fab.dart';
 import '../../../shared/widgets/tt_section_header.dart';
@@ -14,6 +15,7 @@ import '../../nutrition/data/entities/ingredient_entity.dart';
 import '../../nutrition/data/entities/nutrition_tracking_entities.dart';
 import '../../nutrition/data/services/food_analytics_service.dart';
 import '../../nutrition/domain/meal_target_settings.dart';
+import '../../nutrition/domain/target_model_constants.dart';
 import '../../nutrition/presentation/food_v01_screens.dart';
 import '../../nutrition/presentation/measurement_screens.dart';
 import '../data/entities/user_profile_entity.dart';
@@ -42,7 +44,6 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
   final TextEditingController _targetKcal = TextEditingController();
   final TextEditingController _adaptiveReferenceDays = TextEditingController();
   final TextEditingController _sedentaryBase = TextEditingController();
-  final TextEditingController _stepCoeff = TextEditingController();
   final TextEditingController _workoutsPerWeek = TextEditingController();
   final TextEditingController _workoutDuration = TextEditingController();
   final TextEditingController _proteinKg = TextEditingController();
@@ -54,14 +55,45 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
   String _sex = BiologicalSexCodes.unspecified;
   String _targetMode = TargetModeCodes.adaptiveWeekly;
   String _workoutType = WorkoutActivityTypeCodes.weights;
-  String _activityFallbackMode = ActivityFallbackModeCodes.profileEstimate;
+  String _activityFallbackMode =
+      ActivityFallbackModeCodes.recordedWithProfileFallback;
   String _macroMode = MacroModeCodes.defaultByWeight;
   String _themeMode = ThemePreferenceCodes.system;
   String _language = 'it';
-  String _weightLossResponse = _WeightLossResponseCodes.standard;
+  bool _stepsPolicyBannerVisible = true;
+  final TargetModelPreferences _targetModelPreferences =
+      TargetModelPreferences();
   bool _isApplying = false;
   double? _applyProgress;
   String _applyMessage = 'Preparazione aggiornamento...';
+  @override
+  void initState() {
+    super.initState();
+    _refreshStepsPolicyBanner();
+  }
+
+  Future<void> _refreshStepsPolicyBanner() async {
+    final bool visible =
+        await _targetModelPreferences.isStepsExclusionBannerVisible();
+    if (!mounted) return;
+    setState(() => _stepsPolicyBannerVisible = visible);
+  }
+
+  Future<void> _dismissStepsPolicyBanner() async {
+    await _targetModelPreferences.dismissStepsExclusionBanner();
+    if (!mounted) return;
+    setState(() => _stepsPolicyBannerVisible = false);
+  }
+
+  Future<void> _resetInformationalWarnings() async {
+    await _targetModelPreferences.resetInformationalWarnings();
+    if (!mounted) return;
+    setState(() => _stepsPolicyBannerVisible = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Avvisi informativi ripristinati.')),
+    );
+  }
+
   @override
   void dispose() {
     _name.dispose();
@@ -72,7 +104,6 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     _targetKcal.dispose();
     _adaptiveReferenceDays.dispose();
     _sedentaryBase.dispose();
-    _stepCoeff.dispose();
     _workoutsPerWeek.dispose();
     _workoutDuration.dispose();
     _proteinKg.dispose();
@@ -210,6 +241,12 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     if (sectionCode == 'target_activity') {
       final double weightKg = currentWeight ?? profile.initialWeightKg ?? 70.0;
       return <Widget>[
+        if (_stepsPolicyBannerVisible) ...<Widget>[
+          _StepsExclusionPolicyBanner(
+            onDismiss: _dismissStepsPolicyBanner,
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
         ProfileTargetActivityBanner(
           profile: profile,
           targets: estimate,
@@ -225,9 +262,14 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
             _workoutsPerWeek.text = config.sessionsPerWeek.round().toString();
             _workoutDuration.text = config.totalDurationMinutes.toString();
             _workoutType = config.legacyWorkoutTypeCode;
-            _activityFallbackMode = ActivityFallbackModeCodes.profileEstimate;
             await _save(profile);
           },
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _TargetModelSourcesCard(
+          profile: profile,
+          targets: estimate,
+          onResetWarnings: _resetInformationalWarnings,
         ),
       ];
     }
@@ -247,7 +289,10 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
             _SettingRowData('Grassi', '${estimate.fatGrams.round()} g'),
             _SettingRowData('Fibre', '${estimate.fiberGrams.round()} g'),
             _SettingRowData('Carboidrati', '${estimate.carbsGrams.round()} g'),
-            _SettingRowData('Zuccheri max', '${estimate.sugarGrams.round()} g'),
+            _SettingRowData(
+              'Zuccheri liberi',
+              'limite ${estimate.freeSugarLimitGrams.round()} g · preferibile ${estimate.freeSugarPreferredGrams.round()} g',
+            ),
           ],
         ),
         const SizedBox(height: AppSpacing.md),
@@ -349,11 +394,11 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
         ),
         rows: <_SettingRowData>[
           _SettingRowData('RMR', '${estimate.rmrKcal.round()} kcal'),
-          _SettingRowData('Moltiplicatore sedentario',
+          _SettingRowData('Quota base provvisoria',
               'x${estimate.sedentaryMultiplier.toStringAsFixed(2)}'),
           _SettingRowData(
               'Base sedentaria', '${estimate.sedentaryKcal.round()} kcal'),
-          _SettingRowData('Allenamenti medi',
+          _SettingRowData('Fallback allenamenti mancanti',
               '${estimate.workoutDailyKcal.round()} kcal/giorno'),
           _SettingRowData(
               'Target calcolato', '${estimate.targetKcal.round()} kcal'),
@@ -402,15 +447,17 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               'Modalita target', _targetModeLabel(profile.targetModeCode)),
           _SettingRowData('Target fisso', '${profile.defaultTargetKcal} kcal'),
           _SettingRowData('Target passi', '${profile.defaultStepGoal} passi'),
-          _SettingRowData('Kcal per passo', _num(profile.stepKcalCoefficient)),
+          _SettingRowData(
+            'Kcal per passo',
+            '${estimate.stepEstimate.effectiveKcalPerStep.toStringAsFixed(5)} · ${estimate.stepEstimate.coefficientSourceCode}',
+          ),
           _SettingRowData(
             'Allenamenti',
             '${profile.averageWorkoutsPerWeek}/settimana, ${profile.averageWorkoutDurationMinutes} min',
           ),
           _SettingRowData('Tipo allenamento',
               _workoutLabel(profile.workoutActivityTypeCode)),
-          _SettingRowData(
-              'Risposta peso', _weightLossResponseLabel(_weightLossResponse)),
+          const _SettingRowData('Prior peso', '7700 kcal/kg'),
           _SettingRowData(
             'Finestra adattiva',
             '${profile.adaptiveReferenceDays} giorni',
@@ -428,7 +475,10 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
           _SettingRowData('Grassi', '${estimate.fatGrams.round()} g'),
           _SettingRowData('Fibre', '${estimate.fiberGrams.round()} g'),
           _SettingRowData('Carboidrati', '${estimate.carbsGrams.round()} g'),
-          _SettingRowData('Zuccheri max', '${estimate.sugarGrams.round()} g'),
+          _SettingRowData(
+            'Zuccheri liberi',
+            'limite ${estimate.freeSugarLimitGrams.round()} g · preferibile ${estimate.freeSugarPreferredGrams.round()} g',
+          ),
         ],
       ),
       const SizedBox(height: AppSpacing.md),
@@ -557,11 +607,18 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     _adaptiveReferenceDays.text = profile.adaptiveReferenceDays.toString();
     _sedentaryBase.text =
         profile.sedentaryBaseKcal == 0 ? '' : _num(profile.sedentaryBaseKcal);
-    _stepCoeff.text = _num(profile.stepKcalCoefficient);
     _workoutsPerWeek.text = profile.averageWorkoutsPerWeek.toString();
     _workoutDuration.text = profile.averageWorkoutDurationMinutes.toString();
-    _proteinKg.text = _num(profile.proteinGramsPerKg);
-    _fatKg.text = _num(profile.fatGramsPerKg);
+    _proteinKg.text = _num(
+      profile.macroModeCode == MacroModeCodes.defaultByWeight
+          ? TargetModelConstants.proteinDefaultGramsPerKg
+          : profile.proteinGramsPerKg,
+    );
+    _fatKg.text = _num(
+      profile.macroModeCode == MacroModeCodes.defaultByWeight
+          ? TargetModelConstants.fatDefaultEnergyPercent
+          : profile.fatGramsPerKg,
+    );
     _fiberKg.text = _num(profile.fiberGramsPerKg);
     _carbsKg.text = _num(profile.carbsGramsPerKg);
     _sugarCarbsPercent.text = _num(profile.sugarCarbsPercent);
@@ -580,7 +637,10 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       WorkoutActivityTypeCodes.values,
       WorkoutActivityTypeCodes.weights,
     );
-    _activityFallbackMode = ActivityFallbackModeCodes.profileEstimate;
+    _activityFallbackMode = profile.activityFallbackModeCode ==
+            ActivityFallbackModeCodes.recordedOnly
+        ? ActivityFallbackModeCodes.recordedOnly
+        : ActivityFallbackModeCodes.recordedWithProfileFallback;
     _macroMode = _safeCode(
       profile.macroModeCode,
       MacroModeCodes.values,
@@ -593,7 +653,6 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     );
     _language =
         _safeCode(profile.languageCode, const <String>{'it', 'en'}, 'it');
-    _weightLossResponse = _weightLossResponseFromKcalPerKg(profile.kcalPerKg);
   }
 
   Future<void> _showTargetExplanationSheet({
@@ -654,11 +713,17 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               const SizedBox(height: AppSpacing.md),
               _ProfileExplanationCard(
                 title: 'Base sedentaria',
-                body: 'L’app stima il metabolismo basale con la formula '
-                    'Harris-Benedict usando sesso, eta, altezza e peso. Il '
-                    'risultato viene moltiplicato per il moltiplicatore '
-                    'sedentario configurato.',
+                body:
+                    'L’app stima il metabolismo a riposo con Mifflin–St Jeor. '
+                    'Il risultato resta in double e viene moltiplicato per la '
+                    'quota base provvisoria 1,10, parametro IN STALLO.',
                 rows: <_SettingRowData>[
+                  _SettingRowData('Modello', TargetModelConstants.modelVersion),
+                  _SettingRowData('Equazione', estimate.rmrEquationCode),
+                  _SettingRowData(
+                    'Coefficiente fisiologico',
+                    estimate.rmrPhysiologicalCoefficientCode,
+                  ),
                   _SettingRowData('RMR', '${estimate.rmrKcal.round()} kcal'),
                   _SettingRowData('Moltiplicatore',
                       'x${estimate.sedentaryMultiplier.toStringAsFixed(2)}'),
@@ -669,17 +734,25 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
               const SizedBox(height: AppSpacing.md),
               _ProfileExplanationCard(
                 title: 'Attivita e fallback',
-                body: _activityFallbackDescription(
-                    ActivityFallbackModeCodes.profileEstimate),
+                body: _activityFallbackDescription(_activityFallbackMode),
                 rows: <_SettingRowData>[
                   _SettingRowData(
                     'Modalita',
-                    _activityFallbackModeLabel(
-                        ActivityFallbackModeCodes.profileEstimate),
+                    _activityFallbackModeLabel(_activityFallbackMode),
                   ),
                   _SettingRowData(
                     'Passi target',
                     '${profile.defaultStepGoal} · ${estimate.stepDailyKcal.round()} kcal',
+                  ),
+                  _SettingRowData(
+                    'Lunghezza passo',
+                    estimate.stepEstimate.stepLengthMeters == null
+                        ? 'fallback legacy'
+                        : '${estimate.stepEstimate.stepLengthMeters!.toStringAsFixed(3)} m (${estimate.stepEstimate.stepLengthSourceCode})',
+                  ),
+                  _SettingRowData(
+                    'Coefficiente effettivo',
+                    '${estimate.stepEstimate.effectiveKcalPerStep.toStringAsFixed(5)} kcal/passo',
                   ),
                   _SettingRowData(
                     'Allenamenti',
@@ -710,9 +783,15 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
                   ),
                   _SettingRowData('Target calcolato',
                       '${estimate.targetKcal.round()} kcal'),
+                  const _SettingRowData(
+                    'Prior energetico peso',
+                    '7700 kcal/kg · euristica approvata',
+                  ),
                   _SettingRowData(
-                    'Risposta peso',
-                    _weightLossResponseLabel(_weightLossResponse),
+                    'Guardrail',
+                    estimate.guardrailApplied
+                        ? 'Applicato: ${estimate.guardrailReasonCode}'
+                        : 'Non applicato',
                   ),
                 ],
               ),
@@ -842,7 +921,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
             decoration: const InputDecoration(
               labelText: 'Metabolismo basale',
               helperText:
-                  'Harris-Benedict in base a sesso, età, peso e altezza',
+                  'Mifflin–St Jeor; fallback −78 se coefficiente non specificato',
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -850,8 +929,9 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
             initialValue: 'x${estimate.sedentaryMultiplier.toStringAsFixed(2)}',
             enabled: false,
             decoration: const InputDecoration(
-              labelText: 'Moltiplicatore sedentario',
-              helperText: 'Base fissa 1.10 per il calcolo sedentario',
+              labelText: 'Quota base provvisoria',
+              helperText:
+                  '1,10 · parametro interno IN STALLO, non fattore personale',
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -869,38 +949,38 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
             decoration: const InputDecoration(
               labelText: 'Uso dei dati di attivit\u00E0',
               helperText:
-                  'Le sorgenti registrate saranno abilitate con il motore allenamenti',
+                  'Ogni componente registrata prevale; il fallback copre solo ciò che manca',
             ),
             items: const <DropdownMenuItem<String>>[
               DropdownMenuItem<String>(
                 value: ActivityFallbackModeCodes.recordedWithProfileFallback,
-                enabled: false,
-                child: Text('Registrati, con fallback profilo - prossimamente'),
+                child: Text('Dati registrati con fallback per componente'),
               ),
               DropdownMenuItem<String>(
                 value: ActivityFallbackModeCodes.recordedOnly,
-                enabled: false,
-                child: Text('Solo dati registrati - prossimamente'),
-              ),
-              DropdownMenuItem<String>(
-                value: ActivityFallbackModeCodes.profileEstimate,
-                child: Text('Sempre stima del profilo'),
+                child: Text('Solo dati registrati'),
               ),
             ],
             onChanged: (String? value) {
-              if (value == ActivityFallbackModeCodes.profileEstimate) {
-                setSheetState(
-                  () => _activityFallbackMode =
-                      ActivityFallbackModeCodes.profileEstimate,
-                );
+              if (value != null) {
+                setSheetState(() => _activityFallbackMode = value);
               }
             },
           ),
           const SizedBox(height: AppSpacing.md),
           _field(_stepGoal, 'Target passi giornaliero',
               keyboardType: TextInputType.number),
-          _field(_stepCoeff, 'Kcal attive per passo',
-              keyboardType: TextInputType.number),
+          TextFormField(
+            initialValue:
+                estimate.stepEstimate.effectiveKcalPerStep.toStringAsFixed(5),
+            enabled: false,
+            decoration: InputDecoration(
+              labelText: 'Kcal attive effettive per passo',
+              helperText: estimate.stepEstimate.usedLegacyFallback
+                  ? 'Fallback legacy 0,020: altezza non disponibile'
+                  : 'peso × lunghezza passo × 0,50 / 1000',
+            ),
+          ),
           const TtAppCard(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -917,29 +997,12 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          DropdownButtonFormField<String>(
-            initialValue: _weightLossResponse,
-            decoration: const InputDecoration(
-                labelText: 'Quanto facilmente perdi peso'),
-            items: const <DropdownMenuItem<String>>[
-              DropdownMenuItem<String>(
-                value: _WeightLossResponseCodes.easy,
-                child: Text('Perdo peso facilmente'),
-              ),
-              DropdownMenuItem<String>(
-                value: _WeightLossResponseCodes.standard,
-                child: Text('Nella media'),
-              ),
-              DropdownMenuItem<String>(
-                value: _WeightLossResponseCodes.resistant,
-                child: Text('Perdo peso con difficoltà'),
-              ),
-            ],
-            onChanged: (String? value) {
-              if (value != null) {
-                setSheetState(() => _weightLossResponse = value);
-              }
-            },
+          const TtAppCard(
+            child: Text(
+              'Il prior della variazione di peso è fissato a 7700 kcal/kg. '
+              'La risposta percepita alla perdita di peso non modifica più '
+              'automaticamente il modello.',
+            ),
           ),
         ];
       },
@@ -959,30 +1022,81 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
                 label: Text('Default'),
               ),
               ButtonSegment<String>(
+                value: MacroModeCodes.customTheo2,
+                label: Text('Personalizzato'),
+              ),
+              ButtonSegment<String>(
                 value: MacroModeCodes.custom,
-                label: Text('Custom'),
+                label: Text('Legacy'),
               ),
             ],
             selected: <String>{_macroMode},
             onSelectionChanged: (Set<String> value) {
-              setSheetState(() => _macroMode = value.first);
+              final String nextMode = value.first;
+              setSheetState(() {
+                if (nextMode == MacroModeCodes.customTheo2 &&
+                    _macroMode != MacroModeCodes.customTheo2) {
+                  _proteinKg.text = _num(
+                    TargetModelConstants.proteinDefaultGramsPerKg,
+                  );
+                  _fatKg.text = _num(
+                    TargetModelConstants.fatDefaultEnergyPercent,
+                  );
+                }
+                _macroMode = nextMode;
+              });
             },
           ),
           const SizedBox(height: AppSpacing.md),
-          _field(_proteinKg, 'Proteine g/kg',
-              keyboardType: TextInputType.number),
-          _field(_fatKg, 'Grassi g/kg', keyboardType: TextInputType.number),
-          _field(_fiberKg, 'Fibre g/kg', keyboardType: TextInputType.number),
+          _field(
+            _proteinKg,
+            _macroMode == MacroModeCodes.custom
+                ? 'Proteine g/kg legacy'
+                : 'Proteine g/kg (1,4–2,2)',
+            keyboardType: TextInputType.number,
+            enabled: _macroMode == MacroModeCodes.customTheo2,
+          ),
+          _field(
+            _fatKg,
+            _macroMode == MacroModeCodes.custom
+                ? 'Grassi g/kg legacy'
+                : 'Grassi % energia (20–35)',
+            keyboardType: TextInputType.number,
+            enabled: _macroMode == MacroModeCodes.customTheo2,
+          ),
+          if (_macroMode == MacroModeCodes.defaultByWeight)
+            const TtAppCard(
+              child: Text(
+                'Il profilo default usa 1,8 g/kg di proteine e il 25% '
+                'dell’energia dai grassi. Seleziona Personalizzato per '
+                'modificare questi due parametri nei limiti approvati.',
+              ),
+            ),
+          if (_macroMode == MacroModeCodes.custom)
+            const TtAppCard(
+              child: Text(
+                'Configurazione legacy conservata senza conversione '
+                'silenziosa. I valori g/kg restano in sola lettura finché '
+                'non scegli Personalizzato 0.1.0.',
+              ),
+            ),
+          TextFormField(
+            initialValue: 'max(25 g, 14 g ogni 1000 kcal)',
+            enabled: false,
+            decoration: const InputDecoration(labelText: 'Fibre'),
+          ),
           const TtAppCard(
             child: Text(
               'I carboidrati vengono calcolati dalle calorie residue dopo proteine (4 kcal/g) e grassi (9 kcal/g), così la somma energetica dei macro coincide con il target calorico.',
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          _field(
-            _sugarCarbsPercent,
-            'Zuccheri % dei carboidrati',
-            keyboardType: TextInputType.number,
+          const TtAppCard(
+            child: Text(
+              'Zuccheri liberi: limite 10% dell’energia, preferibile 5%. '
+              'Gli zuccheri totali degli alimenti non vengono confrontati '
+              'automaticamente con questi limiti.',
+            ),
           ),
         ];
       },
@@ -1448,23 +1562,35 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
           (_toInt(_adaptiveReferenceDays.text) ?? 28).clamp(7, 180).toInt();
       profile.sedentaryBaseKcal = 0;
       profile.rmrActivityFactor = 1.10;
-      profile.stepKcalCoefficient = _toDouble(_stepCoeff.text) ?? 0.020;
+      profile.stepKcalCoefficient =
+          TargetModelConstants.legacyStepKcalCoefficient;
       profile.averageWorkoutsPerWeek = _toInt(_workoutsPerWeek.text) ?? 0;
       profile.averageWorkoutDurationMinutes =
           _toInt(_workoutDuration.text) ?? 0;
       profile.workoutActivityTypeCode = _workoutType;
-      profile.activityFallbackModeCode =
-          ActivityFallbackModeCodes.profileEstimate;
+      profile.activityFallbackModeCode = _activityFallbackMode;
       profile.macroModeCode = _macroMode;
-      profile.proteinGramsPerKg = _toDouble(_proteinKg.text) ?? 2.2;
-      profile.fatGramsPerKg = _toDouble(_fatKg.text) ?? 1;
-      profile.fiberGramsPerKg = _toDouble(_fiberKg.text) ?? 0.5;
-      profile.carbsGramsPerKg = _toDouble(_carbsKg.text) ?? 3;
-      profile.sugarCarbsPercent =
-          (_toDouble(_sugarCarbsPercent.text) ?? 25).clamp(0, 100).toDouble();
+      if (_macroMode == MacroModeCodes.customTheo2) {
+        profile.proteinGramsPerKg = _toDouble(_proteinKg.text) ??
+            TargetModelConstants.proteinDefaultGramsPerKg;
+        profile.fatGramsPerKg = _toDouble(_fatKg.text) ??
+            TargetModelConstants.fatDefaultEnergyPercent;
+      } else if (_macroMode == MacroModeCodes.defaultByWeight) {
+        profile.proteinGramsPerKg =
+            TargetModelConstants.proteinDefaultGramsPerKg;
+        profile.fatGramsPerKg = TargetModelConstants.fatDefaultEnergyPercent;
+      }
+      // I campi legacy restano memorizzati per compatibilità, ma fibre,
+      // carboidrati e zuccheri del nuovo modello non li usano.
+      if (_macroMode != MacroModeCodes.custom) {
+        profile.fiberGramsPerKg = _toDouble(_fiberKg.text) ?? 0.5;
+        profile.carbsGramsPerKg = _toDouble(_carbsKg.text) ?? 3;
+        profile.sugarCarbsPercent =
+            (_toDouble(_sugarCarbsPercent.text) ?? 25).clamp(0, 100).toDouble();
+      }
       profile.themeModeCode = _themeMode;
       profile.languageCode = _language;
-      profile.kcalPerKg = _kcalPerKgForWeightLossResponse(_weightLossResponse);
+      profile.kcalPerKg = TargetModelConstants.energyDensityPriorKcalPerKg;
 
       final List<DailyRecordEntity> recalculatedDays =
           await _buildRecalculatedDayTargets(profile);
@@ -1526,13 +1652,21 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
   ) async {
     final dailyRepository = ref.read(dailyRecordRepositoryProvider);
     final analytics = ref.read(foodAnalyticsServiceProvider);
-    final List<DailyRecordEntity> days = dailyRepository.getAllActive();
+    final List<DailyRecordEntity> allDays = dailyRepository.getAllActive();
+    final DateTime today = DateTime.now();
+    final String todayKey = '${today.year.toString().padLeft(4, '0')}-'
+        '${today.month.toString().padLeft(2, '0')}-'
+        '${today.day.toString().padLeft(2, '0')}';
+    final List<DailyRecordEntity> days = allDays
+        .where((DailyRecordEntity day) => day.dateKey.compareTo(todayKey) >= 0)
+        .toList(growable: false);
 
     if (days.isEmpty) {
       if (mounted) {
         setState(() {
           _applyProgress = 0.88;
-          _applyMessage = 'Nessun giorno storico da ricalcolare.';
+          _applyMessage =
+              'Snapshot storici conservati; nessun giorno corrente o futuro da aggiornare.';
         });
       }
       return days;
@@ -1543,7 +1677,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       day.stepGoal = profile.defaultStepGoal;
       final TargetDayResult result = analytics.targetResultForDay(
         day: day,
-        allDays: days,
+        allDays: allDays,
         profile: profile,
       );
       analytics.applyTargetSnapshot(day, result);
@@ -1554,7 +1688,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
         setState(() {
           _applyProgress = 0.08 + (ratio * 0.8);
           _applyMessage =
-              'Ricalcolo target storici: ${index + 1} di ${days.length}...';
+              'Aggiornamento target correnti/futuri: ${index + 1} di ${days.length}...';
         });
         await Future<void>.delayed(const Duration(milliseconds: 1));
       }
@@ -2133,40 +2267,6 @@ enum _DataGroup {
   final String subtitle;
 }
 
-class _WeightLossResponseCodes {
-  const _WeightLossResponseCodes._();
-
-  static const String easy = 'easy';
-  static const String standard = 'standard';
-  static const String resistant = 'resistant';
-}
-
-String _weightLossResponseFromKcalPerKg(double value) {
-  if (value <= 7200) {
-    return _WeightLossResponseCodes.easy;
-  }
-  if (value >= 8200) {
-    return _WeightLossResponseCodes.resistant;
-  }
-  return _WeightLossResponseCodes.standard;
-}
-
-double _kcalPerKgForWeightLossResponse(String code) {
-  return switch (code) {
-    _WeightLossResponseCodes.easy => 6900,
-    _WeightLossResponseCodes.resistant => 8500,
-    _ => 7700,
-  };
-}
-
-String _weightLossResponseLabel(String code) {
-  return switch (code) {
-    _WeightLossResponseCodes.easy => 'Perdo peso facilmente',
-    _WeightLossResponseCodes.resistant => 'Perdo peso con difficoltà',
-    _ => 'Nella media',
-  };
-}
-
 class _SettingRowData {
   const _SettingRowData(this.label, this.value);
 
@@ -2292,17 +2392,177 @@ class _ProfileExplanationCard extends StatelessWidget {
   }
 }
 
+class _StepsExclusionPolicyBanner extends StatelessWidget {
+  const _StepsExclusionPolicyBanner({required this.onDismiss});
+
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Avviso per evitare il doppio conteggio dei passi',
+      child: TtAppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Icon(Icons.info_outline_rounded),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    'Evita il doppio conteggio',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Chiudi avviso doppio conteggio',
+                  onPressed: onDismiss,
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            const Text(
+              'Nel totale dei passi giornalieri inserisci soltanto i passi '
+              'della normale attività quotidiana. Escludi i passi svolti '
+              'durante camminate, corse, tapis roulant o altri allenamenti '
+              'registrati separatamente, perché le calorie di queste attività '
+              'vengono calcolate a parte.',
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            TextButton.icon(
+              onPressed: onDismiss,
+              icon: const Icon(Icons.check_rounded),
+              label: const Text('Ho capito'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TargetModelSourcesCard extends StatelessWidget {
+  const _TargetModelSourcesCard({
+    required this.profile,
+    required this.targets,
+    required this.onResetWarnings,
+  });
+
+  final UserProfileEntity profile;
+  final ProfileNutritionTargets targets;
+  final VoidCallback onResetWarnings;
+
+  @override
+  Widget build(BuildContext context) {
+    final String stepLength = targets.stepEstimate.stepLengthMeters == null
+        ? 'non disponibile · fallback legacy 0,020 kcal/passo'
+        : '${targets.stepEstimate.stepLengthMeters!.toStringAsFixed(3)} m · '
+            '${targets.stepEstimate.stepLengthSourceCode}';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _ProfileExplanationCard(
+          title: 'Fonti, formule e limiti',
+          body:
+              'Dettaglio interno del modello ${TargetModelConstants.modelVersion}. '
+              'Le evidenze scientifiche, le linee guida e le euristiche sono '
+              'separate; i parametri IN STALLO restano operativi ma non sono '
+              'presentati come valori fisiologici personali.',
+          rows: <_SettingRowData>[
+            const _SettingRowData(
+              'Evidenza · RMR',
+              'Mifflin–St Jeor; stima di popolazione, non calorimetria indiretta',
+            ),
+            _SettingRowData(
+              'Dati RMR',
+              'peso ${targets.rmrWeightKg.toStringAsFixed(1)} kg · '
+                  'altezza ${targets.rmrHeightCm?.toStringAsFixed(1) ?? 'n/d'} cm · '
+                  'età ${targets.rmrAgeYears ?? 'n/d'} · '
+                  '${targets.rmrPhysiologicalCoefficientCode}',
+            ),
+            const _SettingRowData(
+              'IN STALLO · quota base',
+              'RMR × 1,10 · euristica interna legacy',
+            ),
+            _SettingRowData('Passi · lunghezza', stepLength),
+            _SettingRowData(
+              'Passi · formula',
+              'peso × distanza × 0,50 kcal/kg/km · '
+                  '${targets.stepEstimate.effectiveKcalPerStep.toStringAsFixed(5)} kcal/passo',
+            ),
+            const _SettingRowData(
+              'Fallback attività',
+              'separato per passi e allenamenti; una sola componente stimata = '
+                  'parzialmente provvisorio',
+            ),
+            const _SettingRowData(
+              'Passi degli allenamenti',
+              'esclusione manuale: il totale giornaliero deve già escludere i '
+                  'passi delle attività registrate separatamente',
+            ),
+            const _SettingRowData(
+              'Euristica · peso',
+              'mediana giornaliera + regressione Theil–Sen + prior 7700 kcal/kg',
+            ),
+            const _SettingRowData(
+              'Composizione corporea',
+              'candidato 9500 kcal/kg massa grassa + 1020 kcal/kg massa priva di '
+                  'grasso; soglia di attivazione IN STALLO, quindi fallback peso',
+            ),
+            _SettingRowData(
+              'Guardrail',
+              '${profile.minimumReasonableTdee.round()}–'
+                  '${profile.maximumReasonableTdee.round()} kcal · '
+                  '${targets.guardrailApplied ? 'applicato (${targets.guardrailReasonCode})' : 'non applicato'}',
+            ),
+            const _SettingRowData(
+              'Macro 0.1.0',
+              'proteine 1,8 g/kg; grassi 25% energia; carboidrati residui; '
+                  'fibre max(25 g, 14 g/1000 kcal); zuccheri liberi 10%/5%',
+            ),
+            const _SettingRowData(
+              'Limite',
+              'stima non clinica per adulti sani; esclusi minori, gravidanza, '
+                  'allattamento e condizioni cliniche',
+            ),
+            _SettingRowData(
+                'Policy passi', StepsExclusionPolicy.currentVersion),
+            const _SettingRowData(
+              'Data di entrata in vigore',
+              TargetModelConstants.effectiveDate,
+            ),
+            _SettingRowData(
+                'Patch logica', TargetModelConstants.logicalPatchId),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        OutlinedButton.icon(
+          onPressed: onResetWarnings,
+          icon: const Icon(Icons.restore_rounded),
+          label: const Text('Ripristina avvisi informativi'),
+        ),
+      ],
+    );
+  }
+}
+
 Widget _field(
   TextEditingController controller,
   String label, {
   TextInputType? keyboardType,
   String? helperText,
+  bool enabled = true,
 }) {
   return Padding(
     padding: const EdgeInsets.only(bottom: AppSpacing.md),
     child: TextField(
       controller: controller,
       keyboardType: keyboardType,
+      enabled: enabled,
       decoration: InputDecoration(labelText: label, helperText: helperText),
     ),
   );
@@ -2379,7 +2639,8 @@ String _targetModeLabel(String code) {
 String _activityFallbackModeLabel(String code) {
   return switch (code) {
     ActivityFallbackModeCodes.recordedOnly => 'Solo dati registrati',
-    ActivityFallbackModeCodes.profileEstimate => 'Sempre stima profilo',
+    ActivityFallbackModeCodes.profileEstimate =>
+      'Legacy: convertito in fallback per componente',
     _ => 'Registrati con fallback profilo',
   };
 }
@@ -2390,11 +2651,12 @@ String _activityFallbackDescription(String code) {
       'Il target usa esclusivamente passi reali e allenamenti completati. '
           'I dati mancanti valgono zero.',
     ActivityFallbackModeCodes.profileEstimate =>
-      'Il target usa sempre target passi e allenamenti medi del profilo, '
-          'senza sostituirli con i dati del giorno.',
-    _ => 'Per oggi e per i giorni futuri usa i dati reali quando presenti; '
-        'altrimenti usa target passi e allenamenti medi del profilo. '
-        'I giorni passati restano basati solo sui dati registrati.',
+      'Modalità legacy convertita: ogni componente registrata prevale e il '
+          'fallback viene usato soltanto per la componente mancante.',
+    _ => 'Passi e allenamenti sono valutati separatamente. I dati registrati '
+        'prevalgono sempre. Se manca solo una componente, viene stimata solo '
+        'quella e il calcolo è parzialmente provvisorio; se mancano entrambe, '
+        'il calcolo è provvisorio.',
   };
 }
 
@@ -2407,7 +2669,11 @@ String _workoutLabel(String code) {
 }
 
 String _macroModeLabel(String code) {
-  return code == MacroModeCodes.custom ? 'Custom' : 'Default per peso';
+  return switch (code) {
+    MacroModeCodes.custom => 'Legacy conservato',
+    MacroModeCodes.customTheo2 => 'Personalizzato 0.1.0',
+    _ => 'Default 0.1.0',
+  };
 }
 
 String _themeLabel(String code) {
