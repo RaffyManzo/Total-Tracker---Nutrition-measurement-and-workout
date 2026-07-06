@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import '../../../../core/diagnostics/interaction_trace.dart';
+
 import '../../../profile/data/entities/user_profile_entity.dart';
 import '../../../profile/domain/profile_codes.dart';
 import '../../../profile/domain/profile_nutrition_calculator.dart';
@@ -147,13 +149,16 @@ class FoodAnalyticsService {
     required MealRepository meals,
     required MeasurementRepository measurements,
     required WorkoutSessionRepository workoutSessions,
+    bool diagnosticsEnabled = true,
   })  : _meals = meals,
         _measurements = measurements,
-        _workoutSessions = workoutSessions;
+        _workoutSessions = workoutSessions,
+        _diagnosticsEnabled = diagnosticsEnabled;
 
   final MealRepository _meals;
   final MeasurementRepository _measurements;
   final WorkoutSessionRepository _workoutSessions;
+  final bool _diagnosticsEnabled;
   final ProfileNutritionCalculator _profileCalculator =
       const ProfileNutritionCalculator();
   final AdaptiveTargetEngine _targetEngine = const AdaptiveTargetEngine();
@@ -524,6 +529,7 @@ class FoodAnalyticsService {
     DateTime? now,
     DateTime? activityNow,
   }) {
+    final Stopwatch adaptiveDiagnosticsWatch = Stopwatch()..start();
     final DateTime resolvedNow = now ?? DateTime.now();
     final DateTime resolvedActivityNow = activityNow ?? resolvedNow;
     final DateTime sunday = monday.add(const Duration(days: 6));
@@ -578,11 +584,13 @@ class FoodAnalyticsService {
     final double profileActivity =
         profileTargets?.profileActivityDailyKcal ?? 0;
 
+    final Stopwatch activityHistoryWatch = Stopwatch()..start();
     final List<double> activeValues = reference
         .map((DailyRecordEntity day) => activityForDay(day, profile: profile))
         .map((ActivityBreakdown item) => item.actualTotalKcal)
         .where((double value) => value > 0)
         .toList();
+    activityHistoryWatch.stop();
     final bool forceProfileEstimate = profile?.activityFallbackModeCode ==
         ActivityFallbackModeCodes.profileEstimate;
     final bool allowProfileFallback = profile?.activityFallbackModeCode !=
@@ -603,6 +611,7 @@ class FoodAnalyticsService {
       activeRefSourceCode = 'unavailable';
     }
 
+    final Stopwatch currentActivityWatch = Stopwatch()..start();
     final List<ResolvedActivityBreakdown> currentActivity = currentWeek
         .map(
           (DailyRecordEntity day) => effectiveActivityForDay(
@@ -612,6 +621,7 @@ class FoodAnalyticsService {
           ),
         )
         .toList();
+    currentActivityWatch.stop();
     final double currentWeekActive = _average(
           currentActivity
               .map((ResolvedActivityBreakdown item) => item.totalKcal)
@@ -623,6 +633,7 @@ class FoodAnalyticsService {
     final double theoretical = profileTargets == null
         ? 1980
         : profileTargets.sedentaryKcal + activeRef;
+    final Stopwatch observedTdeeWatch = Stopwatch()..start();
     final ObservedTdeeResult observed = _calculateObservedTdee(
       reference,
       minimumObservedDays: profile?.adaptiveMinimumObservedDays ?? 7,
@@ -631,6 +642,7 @@ class FoodAnalyticsService {
       maxTdee: profile?.maximumReasonableTdee ?? 4600,
       allowWeightTrend: weight.allowObservedWeightTrend,
     );
+    observedTdeeWatch.stop();
     final double confidence =
         observed.tdeeObserved == null ? 0 : observed.observedConfidence;
     final double calculated = observed.tdeeObserved == null
@@ -684,6 +696,25 @@ class FoodAnalyticsService {
       );
     }
 
+    adaptiveDiagnosticsWatch.stop();
+    if (_diagnosticsEnabled) {
+      InteractionTrace.event(
+        'tdee.adaptive_summary.breakdown',
+        data: <String, Object?>{
+          'dayKey': mondayKey,
+          'referenceDayCount': reference.length,
+          'currentDayCount': currentWeek.length,
+          'activityHistoryMs': activityHistoryWatch.elapsedMilliseconds,
+          'currentActivityMs': currentActivityWatch.elapsedMilliseconds,
+          'observedTdeeMs': observedTdeeWatch.elapsedMilliseconds,
+          'totalMs': adaptiveDiagnosticsWatch.elapsedMilliseconds,
+          'validIntakeDays': observed.validIntakeDays,
+          'validWeightDays': observed.validWeightDays,
+          'observedAvailable': observed.tdeeObserved != null,
+          'activityReferenceSource': activeRefSourceCode,
+        },
+      );
+    }
     return WeekAdaptiveSummary(
       monday: monday,
       sunday: sunday,

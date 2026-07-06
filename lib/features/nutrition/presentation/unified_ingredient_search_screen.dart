@@ -7,7 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/widgets/primary_bottom_navigation.dart';
 import '../../../core/database/objectbox_providers.dart';
-import '../../../core/diagnostics/app_diagnostics.dart';
+import '../../../core/diagnostics/interaction_trace.dart';
 import '../../../core/network/open_nutrition_network_access.dart';
 import '../../../core/preferences/food_service_preferences.dart';
 import '../data/entities/ingredient_entity.dart';
@@ -34,6 +34,8 @@ class _UnifiedIngredientSearchScreenState
   final FocusNode _searchFocusNode = FocusNode();
   Timer? _debounce;
   bool _selectionReturning = false;
+  late final String _diagnosticScreenId;
+  bool _diagnosticFirstBuild = false;
 
   String _query = '';
   int _localPage = 0;
@@ -73,14 +75,41 @@ class _UnifiedIngredientSearchScreenState
   @override
   void initState() {
     super.initState();
+    _diagnosticScreenId =
+        DateTime.now().microsecondsSinceEpoch.toRadixString(36);
+    InteractionTrace.event(
+      'ingredient_search.lifecycle_initialized',
+      data: <String, Object?>{
+        'screenId': _diagnosticScreenId,
+        'selectionMode': widget.selectionMode,
+        'controllerIdentity': identityHashCode(_controller),
+        'focusIdentity': identityHashCode(_searchFocusNode),
+      },
+    );
     Future<void>.microtask(_reloadLocal);
   }
 
   @override
   void dispose() {
+    InteractionTrace.event(
+      'ingredient_search.lifecycle_dispose_started',
+      data: <String, Object?>{
+        'screenId': _diagnosticScreenId,
+        'selectionReturning': _selectionReturning,
+        'debounceActive': _debounce?.isActive ?? false,
+        'controllerIdentity': identityHashCode(_controller),
+        'focusIdentity': identityHashCode(_searchFocusNode),
+        'focusHasFocus': _searchFocusNode.hasFocus,
+        'primaryFocusPresent': FocusManager.instance.primaryFocus != null,
+      },
+    );
     _debounce?.cancel();
     _controller.dispose();
     _searchFocusNode.dispose();
+    InteractionTrace.event(
+      'ingredient_search.lifecycle_dispose_completed',
+      data: <String, Object?>{'screenId': _diagnosticScreenId},
+    );
     super.dispose();
   }
 
@@ -316,6 +345,14 @@ class _UnifiedIngredientSearchScreenState
   void _onQueryChanged(String value) {
     _debounce?.cancel();
     final String normalized = value.trim();
+    InteractionTrace.event(
+      'ingredient_search.query_changed',
+      data: <String, Object?>{
+        'screenId': _diagnosticScreenId,
+        'queryLength': normalized.runes.length,
+      },
+      sampleEvery: 4,
+    );
     ++_searchGeneration;
     setState(() {
       _query = normalized;
@@ -342,37 +379,66 @@ class _UnifiedIngredientSearchScreenState
   Future<void> _returnSelection(
     IngredientEntity ingredient,
   ) async {
-    if (_selectionReturning || !mounted) return;
+    if (_selectionReturning || !mounted) {
+      InteractionTrace.event(
+        'ingredient_search.selection_ignored',
+        data: <String, Object?>{
+          'screenId': _diagnosticScreenId,
+          'selectionReturning': _selectionReturning,
+          'mounted': mounted,
+        },
+      );
+      return;
+    }
     _selectionReturning = true;
     _debounce?.cancel();
     ++_searchGeneration;
+    InteractionTrace.event(
+      'ingredient_search.selection_started',
+      data: <String, Object?>{
+        'screenId': _diagnosticScreenId,
+        'controllerIdentity': identityHashCode(_controller),
+        'focusIdentity': identityHashCode(_searchFocusNode),
+        'focusHasFocusBeforeUnfocus': _searchFocusNode.hasFocus,
+        'primaryFocusPresentBeforeUnfocus':
+            FocusManager.instance.primaryFocus != null,
+      },
+    );
     FocusManager.instance.primaryFocus?.unfocus();
 
     final NavigatorState navigator = Navigator.of(context);
     if (!navigator.canPop()) {
       _selectionReturning = false;
-      unawaited(
-        AppDiagnostics.instance.warning(
-          'ingredient.selection_without_route',
-          data: <String, Object?>{
-            'ingredientId': ingredient.id,
-            'ingredientName': ingredient.name,
-          },
-        ),
+      InteractionTrace.event(
+        'ingredient_search.selection_without_route',
+        data: <String, Object?>{
+          'screenId': _diagnosticScreenId,
+          'mounted': mounted,
+        },
       );
       return;
     }
-
-    unawaited(
-      AppDiagnostics.instance.info(
-        'ingredient.selection_returned',
-        data: <String, Object?>{
-          'ingredientId': ingredient.id,
-          'ingredientName': ingredient.name,
-        },
-      ),
+    InteractionTrace.event(
+      'ingredient_search.selection_pop_requested',
+      data: <String, Object?>{
+        'screenId': _diagnosticScreenId,
+        'mounted': mounted,
+        'navigatorMounted': navigator.mounted,
+        'focusHasFocusAfterUnfocus': _searchFocusNode.hasFocus,
+        'primaryFocusPresentAfterUnfocus':
+            FocusManager.instance.primaryFocus != null,
+      },
     );
     navigator.pop<IngredientEntity>(ingredient);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      InteractionTrace.event(
+        'ingredient_search.selection_post_frame',
+        data: <String, Object?>{
+          'screenId': _diagnosticScreenId,
+          'mounted': mounted,
+        },
+      );
+    });
   }
 
   Future<void> _select(
@@ -619,6 +685,16 @@ class _UnifiedIngredientSearchScreenState
   @override
   @override
   Widget build(BuildContext context) {
+    if (!_diagnosticFirstBuild) {
+      _diagnosticFirstBuild = true;
+      InteractionTrace.event(
+        'ingredient_search.lifecycle_first_build',
+        data: <String, Object?>{
+          'screenId': _diagnosticScreenId,
+          'selectionMode': widget.selectionMode,
+        },
+      );
+    }
     final bool searching = _query.isNotEmpty;
     return Scaffold(
       appBar: AppBar(

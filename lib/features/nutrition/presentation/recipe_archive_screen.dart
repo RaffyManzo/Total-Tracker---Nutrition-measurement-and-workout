@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -123,42 +124,31 @@ class _RecipeArchiveScreenState extends ConsumerState<RecipeArchiveScreen> {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                Wrap(
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.sm,
+                Row(
                   children: <Widget>[
-                    _filter(
-                      label: 'Difficoltà',
-                      value: _difficulty,
-                      values: difficulties,
-                      onChanged: (String value) =>
-                          setState(() => _difficulty = value),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _openRecipeFilters(
+                          difficulties: difficulties,
+                          courses: courses,
+                          cuisines: cuisines,
+                        ),
+                        icon: const Icon(Icons.tune_rounded),
+                        label: Text(
+                          _activeFilterCount == 0
+                              ? 'Filtri'
+                              : 'Filtri ($_activeFilterCount)',
+                        ),
+                      ),
                     ),
-                    _filter(
-                      label: 'Portata',
-                      value: _course,
-                      values: courses,
-                      onChanged: (String value) =>
-                          setState(() => _course = value),
-                    ),
-                    _filter(
-                      label: 'Cucina',
-                      value: _cuisine,
-                      values: cuisines,
-                      onChanged: (String value) =>
-                          setState(() => _cuisine = value),
-                    ),
-                    _filter(
-                      label: 'Immagine',
-                      value: _imageFilter,
-                      values: const <String>['present', 'missing'],
-                      labels: const <String, String>{
-                        'present': 'Con immagine',
-                        'missing': 'Senza immagine',
-                      },
-                      onChanged: (String value) =>
-                          setState(() => _imageFilter = value),
-                    ),
+                    if (_activeFilterCount > 0) ...<Widget>[
+                      const SizedBox(width: AppSpacing.sm),
+                      IconButton.filledTonal(
+                        tooltip: 'Pulisci filtri',
+                        onPressed: _clearRecipeFilters,
+                        icon: const Icon(Icons.filter_alt_off_rounded),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: AppSpacing.sm),
@@ -180,6 +170,223 @@ class _RecipeArchiveScreenState extends ConsumerState<RecipeArchiveScreen> {
               ],
             ),
           );
+        },
+      ),
+    );
+  }
+
+  int get _activeFilterCount => <String>[
+        _difficulty,
+        _course,
+        _cuisine,
+        _imageFilter,
+      ].where((String value) => value.isNotEmpty).length;
+
+  void _clearRecipeFilters() {
+    final int previousCount = _activeFilterCount;
+    setState(() {
+      _difficulty = '';
+      _course = '';
+      _cuisine = '';
+      _imageFilter = '';
+    });
+    unawaited(
+      AppDiagnostics.instance.info(
+        'recipes.filters_cleared',
+        data: <String, Object?>{'previousActiveFilterCount': previousCount},
+      ),
+    );
+  }
+
+  Future<void> _openRecipeFilters({
+    required List<String> difficulties,
+    required List<String> courses,
+    required List<String> cuisines,
+  }) async {
+    String temporaryDifficulty = _difficulty;
+    String temporaryCourse = _course;
+    String temporaryCuisine = _cuisine;
+    String temporaryImage = _imageFilter;
+    final Stopwatch watch = Stopwatch()..start();
+    unawaited(
+      AppDiagnostics.instance.info(
+        'recipes.filter_sheet_opened',
+        data: <String, Object?>{'activeFilterCount': _activeFilterCount},
+      ),
+    );
+
+    final bool? save = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (BuildContext sheetContext) {
+        return StatefulBuilder(
+          builder: (
+            BuildContext context,
+            void Function(void Function()) setSheetState,
+          ) {
+            Widget dropdown({
+              required String label,
+              required String value,
+              required List<String> values,
+              required ValueChanged<String> onChanged,
+              Map<String, String> labels = const <String, String>{},
+            }) {
+              return DropdownButtonFormField<String>(
+                key: ValueKey<String>('recipe-filter-$label-$value'),
+                initialValue: value,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: label,
+                  border: const OutlineInputBorder(),
+                ),
+                items: <DropdownMenuItem<String>>[
+                  const DropdownMenuItem<String>(
+                    value: '',
+                    child: Text('Tutte'),
+                  ),
+                  for (final String item in values)
+                    DropdownMenuItem<String>(
+                      value: item,
+                      child: Text(labels[item] ?? item),
+                    ),
+                ],
+                onChanged: (String? selected) => onChanged(selected ?? ''),
+              );
+            }
+
+            final int temporaryCount = <String>[
+              temporaryDifficulty,
+              temporaryCourse,
+              temporaryCuisine,
+              temporaryImage,
+            ].where((String value) => value.isNotEmpty).length;
+
+            return SafeArea(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  0,
+                  AppSpacing.lg,
+                  MediaQuery.viewInsetsOf(sheetContext).bottom + AppSpacing.xl,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Text(
+                      'Filtri ricette',
+                      style: Theme.of(sheetContext).textTheme.headlineSmall,
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      temporaryCount == 0
+                          ? 'Nessun filtro selezionato.'
+                          : '$temporaryCount filtri selezionati.',
+                      style: Theme.of(sheetContext).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    dropdown(
+                      label: 'Difficoltà',
+                      value: temporaryDifficulty,
+                      values: difficulties,
+                      onChanged: (String value) => setSheetState(
+                        () => temporaryDifficulty = value,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    dropdown(
+                      label: 'Portata',
+                      value: temporaryCourse,
+                      values: courses,
+                      onChanged: (String value) => setSheetState(
+                        () => temporaryCourse = value,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    dropdown(
+                      label: 'Cucina',
+                      value: temporaryCuisine,
+                      values: cuisines,
+                      onChanged: (String value) => setSheetState(
+                        () => temporaryCuisine = value,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    dropdown(
+                      label: 'Immagine',
+                      value: temporaryImage,
+                      values: const <String>['present', 'missing'],
+                      labels: const <String, String>{
+                        'present': 'Con immagine',
+                        'missing': 'Senza immagine',
+                      },
+                      onChanged: (String value) => setSheetState(
+                        () => temporaryImage = value,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    OutlinedButton.icon(
+                      onPressed: () => setSheetState(() {
+                        temporaryDifficulty = '';
+                        temporaryCourse = '';
+                        temporaryCuisine = '';
+                        temporaryImage = '';
+                      }),
+                      icon: const Icon(Icons.filter_alt_off_rounded),
+                      label: const Text('Pulisci filtri'),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: TextButton(
+                            onPressed: () => Navigator.pop(sheetContext, false),
+                            child: const Text('Annulla'),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: () => Navigator.pop(sheetContext, true),
+                            icon: const Icon(Icons.check_rounded),
+                            label: const Text('Salva filtri'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    watch.stop();
+    if (save != true || !mounted) {
+      unawaited(
+        AppDiagnostics.instance.info(
+          'recipes.filter_sheet_closed',
+          data: <String, Object?>{
+            'saved': false,
+            'elapsedMs': watch.elapsedMilliseconds,
+          },
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _difficulty = temporaryDifficulty;
+      _course = temporaryCourse;
+      _cuisine = temporaryCuisine;
+      _imageFilter = temporaryImage;
+    });
+    unawaited(
+      AppDiagnostics.instance.info(
+        'recipes.filters_applied',
+        data: <String, Object?>{
+          'activeFilterCount': _activeFilterCount,
+          'elapsedMs': watch.elapsedMilliseconds,
         },
       ),
     );
@@ -267,40 +474,6 @@ class _RecipeArchiveScreenState extends ConsumerState<RecipeArchiveScreen> {
         .toSet()
         .toList()
       ..sort();
-  }
-
-  Widget _filter({
-    required String label,
-    required String value,
-    required List<String> values,
-    required ValueChanged<String> onChanged,
-    Map<String, String> labels = const <String, String>{},
-  }) {
-    return SizedBox(
-      width: 190,
-      child: DropdownButtonFormField<String>(
-        key: ValueKey<String>('$label:$value'),
-        initialValue: value,
-        isExpanded: true,
-        decoration: InputDecoration(
-          labelText: label,
-          border: const OutlineInputBorder(),
-          isDense: true,
-        ),
-        items: <DropdownMenuItem<String>>[
-          const DropdownMenuItem<String>(
-            value: '',
-            child: Text('Tutte'),
-          ),
-          for (final String item in values)
-            DropdownMenuItem<String>(
-              value: item,
-              child: Text(labels[item] ?? item),
-            ),
-        ],
-        onChanged: (String? selected) => onChanged(selected ?? ''),
-      ),
-    );
   }
 }
 

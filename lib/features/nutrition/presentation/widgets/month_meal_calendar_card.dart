@@ -299,13 +299,24 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
                               const SizedBox(height: 2),
                               FittedBox(
                                 fit: BoxFit.scaleDown,
-                                child: Text(
-                                  '${info.kcal.round()}',
-                                  maxLines: 1,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelSmall
-                                      ?.copyWith(fontSize: 8),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    const Icon(
+                                      Icons.local_fire_department_rounded,
+                                      size: 9,
+                                      semanticLabel: 'Calorie assunte',
+                                    ),
+                                    const SizedBox(width: 1),
+                                    Text(
+                                      '${info.kcal.round()} kcal',
+                                      maxLines: 1,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(fontSize: 7.5),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],

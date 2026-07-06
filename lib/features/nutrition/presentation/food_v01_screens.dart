@@ -14,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../core/database/objectbox_providers.dart';
 import '../../../core/diagnostics/app_diagnostics.dart';
+import '../../../core/diagnostics/interaction_trace.dart';
 import '../../../core/preferences/food_service_preferences.dart';
 import '../../../shared/widgets/tt_app_card.dart';
 import '../../../shared/widgets/tt_global_nav_fab.dart';
@@ -21,14 +22,18 @@ import '../../../shared/widgets/tt_mini_charts.dart';
 import '../../../shared/widgets/tt_primary_button.dart';
 import '../../../shared/widgets/tt_section_header.dart';
 import '../../profile/data/entities/user_profile_entity.dart';
+import '../../profile/data/repositories/user_profile_repository.dart';
 import '../../profile/domain/profile_nutrition_calculator.dart';
+import '../../workout/data/repositories/workout_session_repository.dart';
 import '../data/entities/ingredient_entity.dart';
 import '../data/entities/nutrition_tracking_entities.dart';
 import '../data/import/obsidian_food_seed.dart';
 import '../data/repositories/daily_record_repository.dart';
+import '../data/repositories/measurement_repository.dart';
 import '../data/repositories/meal_repository.dart';
 import '../data/repositories/recipe_repository.dart';
 import '../data/services/food_analytics_service.dart';
+import '../data/services/tdee_reliability_score.dart';
 import '../data/food_data_refresh_bus.dart';
 import '../data/services/food_planning_service.dart';
 import '../data/services/open_food_facts_service.dart';
@@ -542,6 +547,10 @@ class _FoodHubV01Body extends StatelessWidget {
               context.push('/food/meals/${meal.meal.id}');
             },
           ),
+          if (latestTargetResult != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.md),
+            _TdeeReliabilityCard(result: latestTargetResult),
+          ],
           if (latestTargetResult != null &&
               latestTargetResult.alerts.isNotEmpty) ...<Widget>[
             const SizedBox(height: AppSpacing.md),
@@ -561,6 +570,38 @@ class _FoodHubV01Body extends StatelessWidget {
             ),
           ],
           const SizedBox(height: AppSpacing.sectionGap),
+          TtAppCard(
+            onTap: () {
+              InteractionTrace.event('dashboard.weekly_hub_card_opened');
+              context.push('/food/week');
+            },
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  Icons.calendar_view_week_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'Riepilogo della settimana',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      Text(
+                        'Statistiche, giorni e pasti con navigazione settimanale.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
           const MonthMealCalendarCard(),
           const SizedBox(height: AppSpacing.md),
           TtAppCard(
@@ -993,193 +1034,713 @@ String _waterGlassesText(int glasses) {
   return '${List<String>.filled(capped, '🥛').join()} ${(glasses * 0.2).toStringAsFixed(1)} L';
 }
 
-class FoodWeekScreen extends ConsumerWidget {
-  const FoodWeekScreen({super.key});
+class _FoodWeekLoadRequest {
+  const _FoodWeekLoadRequest({required this.mondayKey});
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final AsyncValue<List<DailyRecordEntity>> daysValue =
-        ref.watch(foodDaysV01Provider);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Settimana')),
-      bottomNavigationBar:
-          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
-      body: daysValue.when(
-        loading: () => const _LoadingState(),
-        error: (Object error, StackTrace stackTrace) => _ErrorState(
-          error: error,
-          onRetry: () => ref.invalidate(foodDaysV01Provider),
-        ),
-        data: (List<DailyRecordEntity> days) {
-          final DateTime reference = days.isEmpty
-              ? DateTime.now()
-              : DateTime.parse(days.first.dateKey);
-          final DateTime monday =
-              reference.subtract(Duration(days: reference.weekday - 1));
-          final FoodPlanningService planning =
-              ref.read(foodPlanningServiceProvider);
-          for (int index = 0; index < 7; index += 1) {
-            planning.ensureDay(_dateKey(monday.add(Duration(days: index))));
-          }
-          final List<DailyRecordEntity> refreshed =
-              ref.read(dailyRecordRepositoryProvider).getAllActive();
-          final Map<String, DailyRecordEntity> byDate =
-              <String, DailyRecordEntity>{
-            for (final DailyRecordEntity day in refreshed) day.dateKey: day,
-          };
-          final MealRepository mealRepository =
-              ref.watch(mealRepositoryProvider);
-          final FoodAnalyticsService analytics =
-              ref.watch(foodAnalyticsServiceProvider);
-          final UserProfileEntity? profile =
-              ref.watch(userProfileRepositoryProvider).getActiveProfile();
-          final WeekAdaptiveSummary adaptive = analytics.adaptiveSummaryForWeek(
-            monday: monday,
-            allDays: refreshed,
-            profile: profile,
-          );
-          final List<DailyRecordEntity> weekDays = <DailyRecordEntity>[
-            for (int index = 0; index < 7; index += 1)
-              if (byDate[_dateKey(monday.add(Duration(days: index)))] != null)
-                byDate[_dateKey(monday.add(Duration(days: index)))]!,
-          ];
-          final List<TargetDayResult> weekTargetResults = <TargetDayResult>[
-            for (final DailyRecordEntity day in weekDays)
-              analytics.targetResultForDay(
-                day: day,
-                allDays: refreshed,
-                profile: profile,
-              ),
-          ];
-          final List<double> weekTargetValues = weekTargetResults
-              .map((TargetDayResult result) => result.targetKcal)
-              .toList(growable: false);
-          final double averageDailyTarget = weekTargetValues.isEmpty
-              ? adaptive.targetKcal
-              : weekTargetValues.reduce((double a, double b) => a + b) /
-                  weekTargetValues.length;
-          final double minimumDailyTarget = weekTargetValues.isEmpty
-              ? adaptive.targetKcal
-              : weekTargetValues.reduce((double a, double b) => a < b ? a : b);
-          final double maximumDailyTarget = weekTargetValues.isEmpty
-              ? adaptive.targetKcal
-              : weekTargetValues.reduce((double a, double b) => a > b ? a : b);
-          final int predictedDailyTargets = weekTargetResults
-              .where(
-                (TargetDayResult result) =>
-                    result.activity.usedStepGoalFallback ||
-                    result.activity.usedProfileWorkoutFallback,
-              )
-              .length;
-          final List<TtChartPoint> caloriePoints = <TtChartPoint>[
-            for (final DailyRecordEntity day in weekDays)
-              TtChartPoint(
-                label: _shortWeekdayLabel(DateTime.parse(day.dateKey)),
-                value: analytics.caloriesForDate(day.dateKey),
-              ),
-          ];
-          final List<TtChartPoint> calorieTargetPoints = <TtChartPoint>[
-            for (final DailyRecordEntity day in weekDays)
-              TtChartPoint(
-                label: _shortWeekdayLabel(DateTime.parse(day.dateKey)),
-                value: analytics.targetForDay(
-                  day: day,
-                  allDays: refreshed,
-                  profile: profile,
-                ),
-              ),
-          ];
-          final List<TtChartPoint> stepPoints = <TtChartPoint>[
-            for (final DailyRecordEntity day in weekDays)
-              TtChartPoint(
-                label: _shortWeekdayLabel(DateTime.parse(day.dateKey)),
-                value: day.steps.toDouble(),
-              ),
-          ];
-          final List<TtChartPoint> stepTargetPoints = <TtChartPoint>[
-            for (final DailyRecordEntity day in weekDays)
-              TtChartPoint(
-                label: _shortWeekdayLabel(DateTime.parse(day.dateKey)),
-                value: day.stepGoal.toDouble(),
-              ),
-          ];
-          return ListView(
-            padding: _screenPadding,
-            children: <Widget>[
-              Text(
-                '${_dateKey(monday)} - ${_dateKey(monday.add(const Duration(days: 6)))}',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              TtAppCard(
-                onTap: null,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: Text('Modello adattivo giornaliero',
-                              style: Theme.of(context).textTheme.titleLarge),
-                        ),
-                        _StatusPill(
-                          label: '$predictedDailyTargets previsti',
-                          isWarning: predictedDailyTargets > 0,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    _MetricGrid(
-                      metrics: <_Metric>[
-                        _Metric('Media target', _fmtKcal(averageDailyTarget)),
-                        _Metric('Minimo', _fmtKcal(minimumDailyTarget)),
-                        _Metric('Massimo', _fmtKcal(maximumDailyTarget)),
-                        _Metric('Previsti', predictedDailyTargets.toString()),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              if (adaptive.alerts.isNotEmpty) ...<Widget>[
-                const SizedBox(height: AppSpacing.md),
-                for (final TargetAlert alert in adaptive.alerts)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: _TargetAlertCard(alert: alert),
-                  ),
-              ],
-              const SizedBox(height: AppSpacing.md),
-              _ChartCard(
-                title: 'Calorie',
-                subtitle: 'Istogramma della settimana con target tratteggiato',
-                child: TtMiniBarChart(
-                  points: caloriePoints,
-                  targetPoints: calorieTargetPoints,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _ChartCard(
-                title: 'Passi',
-                subtitle: 'Passi giornalieri e obiettivo',
-                child: TtMiniBarChart(
-                  points: stepPoints,
-                  targetPoints: stepTargetPoints,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sectionGap),
-              _WeekCalendarStrip(
-                monday: monday,
-                daysByDate: byDate,
-                mealRepository: mealRepository,
-                analytics: analytics,
-                profile: profile,
-              ),
-            ],
-          );
-        },
+  final String mondayKey;
+}
+
+_FoodWeekSnapshot _loadFoodWeekInBackground(
+  Store store,
+  _FoodWeekLoadRequest request,
+) {
+  final Map<String, int> phases = <String, int>{};
+
+  T measure<T>(String name, T Function() operation) {
+    final Stopwatch watch = Stopwatch();
+    watch.start();
+    final T value = operation();
+    watch.stop();
+    phases[name] = watch.elapsedMilliseconds;
+    return value;
+  }
+
+  final DateTime monday = DateTime.parse(request.mondayKey);
+  final DateTime sunday = monday.add(const Duration(days: 6));
+  final DailyRecordRepository dailyRepository = DailyRecordRepository(store);
+  final MealRepository mealRepository = MealRepository(store);
+  final FoodPlanningService planning = FoodPlanningService(
+    dailyRecords: dailyRepository,
+    meals: mealRepository,
+    recipes: RecipeRepository(store),
+  );
+  final UserProfileEntity? profile =
+      UserProfileRepository(store).getActiveProfile();
+  final FoodAnalyticsService analytics = FoodAnalyticsService(
+    meals: mealRepository,
+    measurements: MeasurementRepository(store),
+    workoutSessions: WorkoutSessionRepository(store),
+    diagnosticsEnabled: false,
+  );
+
+  measure<void>('ensureDaysMs', () {
+    for (int index = 0; index < 7; index += 1) {
+      planning.ensureDay(_dateKey(monday.add(Duration(days: index))));
+    }
+  });
+
+  final int referenceDays = profile?.adaptiveReferenceDays ?? 28;
+  final DateTime historyStart = monday.subtract(Duration(days: referenceDays));
+  final List<DailyRecordEntity> history = measure<List<DailyRecordEntity>>(
+    'historyQueryMs',
+    () => dailyRepository.listBetween(
+      _dateKey(historyStart),
+      _dateKey(sunday),
+    ),
+  );
+  final List<MealWithItems> meals = measure<List<MealWithItems>>(
+    'mealQueryMs',
+    () => mealRepository.getMealsWithItemsInRange(
+      fromDateKey: _dateKey(monday),
+      toDateKey: _dateKey(sunday),
+    ),
+  );
+
+  final Map<String, DailyRecordEntity> daysByDate = <String, DailyRecordEntity>{
+    for (final DailyRecordEntity day in history) day.dateKey: day,
+  };
+  final Map<String, List<MealWithItems>> mealsByDate =
+      <String, List<MealWithItems>>{};
+  for (final MealWithItems meal in meals) {
+    mealsByDate
+        .putIfAbsent(meal.meal.dateKey, () => <MealWithItems>[])
+        .add(meal);
+  }
+
+  final Stopwatch targetWatch = Stopwatch();
+  targetWatch.start();
+  final List<_FoodWeekDaySnapshot> days = <_FoodWeekDaySnapshot>[];
+  for (int index = 0; index < 7; index += 1) {
+    final DateTime date = monday.add(Duration(days: index));
+    final String dateKey = _dateKey(date);
+    final DailyRecordEntity? day = daysByDate[dateKey];
+    if (day == null) continue;
+    final TargetDayResult target = analytics.targetResultForDay(
+      day: day,
+      allDays: history,
+      profile: profile,
+    );
+    final TdeeReliabilityScore reliability =
+        TdeeReliabilityScore.fromTarget(target);
+    final List<MealWithItems> dayMeals =
+        mealsByDate[dateKey] ?? const <MealWithItems>[];
+    final double calories = dayMeals.fold<double>(
+      0,
+      (double sum, MealWithItems meal) => sum + meal.totals.kcal,
+    );
+    days.add(
+      _FoodWeekDaySnapshot(
+        date: date,
+        dateKey: dateKey,
+        weekdayLabel: day.weekdayLabel,
+        steps: day.steps,
+        stepGoal: day.stepGoal,
+        calories: calories,
+        targetKcal: target.targetKcal,
+        reliabilityTotal: reliability.total,
+        meals: <_FoodWeekMealSnapshot>[
+          for (final MealWithItems meal in dayMeals)
+            _FoodWeekMealSnapshot(
+              id: meal.meal.id,
+              slotCode: meal.meal.mealTypeCode,
+              calories: meal.totals.kcal,
+            ),
+        ],
       ),
     );
   }
+  targetWatch.stop();
+  phases['dailyTargetsMs'] = targetWatch.elapsedMilliseconds;
+
+  return _FoodWeekSnapshot(
+    monday: monday,
+    sunday: sunday,
+    days: List<_FoodWeekDaySnapshot>.unmodifiable(days),
+    phaseTimings: Map<String, int>.unmodifiable(phases),
+  );
+}
+
+class _TdeeReliabilityCard extends StatelessWidget {
+  const _TdeeReliabilityCard({required this.result});
+
+  final TargetDayResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    final TdeeReliabilityScore score = TdeeReliabilityScore.fromTarget(result);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return TtAppCard(
+      onTap: () => _showDetails(context, score),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.verified_user_outlined, color: colors.primary),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Affidabilità TDEE osservato',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              Text(
+                '${score.total.round()}/100',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          LinearProgressIndicator(
+            value: score.total / 100,
+            minHeight: 8,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            '${score.bandLabel} · punteggio basato su copertura, peso, '
+            'alimentazione e qualità dei dati di attività.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showDetails(
+    BuildContext context,
+    TdeeReliabilityScore score,
+  ) async {
+    InteractionTrace.event(
+      'tdee_reliability.details_opened',
+      data: <String, Object?>{
+        'score': score.total.round(),
+        'band': score.bandCode,
+        'targetStatus': result.targetStatusCode,
+      },
+    );
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              0,
+              AppSpacing.lg,
+              AppSpacing.xl,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Affidabilità TDEE osservato',
+                  style: Theme.of(sheetContext).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  '${score.total.round()}/100 · ${score.bandLabel}',
+                  style: Theme.of(sheetContext).textTheme.titleMedium,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                const Text(
+                  'Indice ingegneristico di qualità delle evidenze. È distinto '
+                  'dalla confidenza matematica usata per fondere TDEE teorico '
+                  'e osservato e non rappresenta una misura clinica.',
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                for (final TdeeReliabilityComponent component
+                    in score.components) ...<Widget>[
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          component.label,
+                          style: Theme.of(sheetContext).textTheme.titleSmall,
+                        ),
+                      ),
+                      Text(
+                        '${component.earnedPoints.round()}/'
+                        '${component.maximumPoints.round()}',
+                        style: Theme.of(sheetContext).textTheme.labelLarge,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  LinearProgressIndicator(
+                    value: component.maximumPoints <= 0
+                        ? 0
+                        : component.earnedPoints / component.maximumPoints,
+                    minHeight: 6,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    component.explanation,
+                    style: Theme.of(sheetContext).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class FoodWeekScreen extends ConsumerStatefulWidget {
+  const FoodWeekScreen({super.key});
+
+  @override
+  ConsumerState<FoodWeekScreen> createState() => _FoodWeekScreenState();
+}
+
+class _FoodWeekScreenState extends ConsumerState<FoodWeekScreen> {
+  late DateTime _monday;
+  late Future<_FoodWeekSnapshot> _future;
+  int _requestGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _monday = _startOfWeek(DateTime.now());
+    _future = _loadWeek(_monday);
+    InteractionTrace.event(
+      'weekly_hub.screen_opened',
+      data: <String, Object?>{'weekStart': _dateKey(_monday)},
+    );
+  }
+
+  DateTime _startOfWeek(DateTime date) {
+    final DateTime normalized = DateTime(date.year, date.month, date.day);
+    return normalized.subtract(Duration(days: normalized.weekday - 1));
+  }
+
+  void _changeWeek(int delta, {required String source}) {
+    final DateTime next = _monday.add(Duration(days: 7 * delta));
+    InteractionTrace.event(
+      'weekly_hub.navigation_requested',
+      data: <String, Object?>{
+        'source': source,
+        'direction': delta < 0 ? 'previous' : 'next',
+        'fromWeek': _dateKey(_monday),
+        'toWeek': _dateKey(next),
+      },
+    );
+    setState(() {
+      _monday = next;
+      _future = _loadWeek(next);
+    });
+  }
+
+  Future<_FoodWeekSnapshot> _loadWeek(DateTime monday) async {
+    final int generation = ++_requestGeneration;
+    final InteractionTraceSpan trace = InteractionTrace.start(
+      'weekly_hub.load',
+      data: <String, Object?>{
+        'weekStart': _dateKey(monday),
+        'generation': generation,
+      },
+    );
+    try {
+      final Store store = ref.read(objectBoxStoreProvider);
+      final _FoodWeekSnapshot snapshot =
+          await store.runAsync<_FoodWeekLoadRequest, _FoodWeekSnapshot>(
+        _loadFoodWeekInBackground,
+        _FoodWeekLoadRequest(mondayKey: _dateKey(monday)),
+      );
+      if (generation != _requestGeneration) {
+        InteractionTrace.event(
+          'weekly_hub.load_superseded',
+          data: <String, Object?>{
+            'weekStart': _dateKey(monday),
+            'generation': generation,
+            'latestGeneration': _requestGeneration,
+          },
+        );
+      }
+      trace.complete(
+        data: <String, Object?>{
+          ...snapshot.phaseTimings,
+          'dayCount': snapshot.days.length,
+          'mealCount': snapshot.totalMeals,
+          'averageReliability': snapshot.averageReliability.round(),
+          'workerIsolate': true,
+        },
+      );
+      return snapshot;
+    } catch (error, stackTrace) {
+      trace.fail(error, stackTrace);
+      rethrow;
+    }
+  }
+
+  void _handleSwipe(DragEndDetails details) {
+    final double velocity = details.primaryVelocity ?? 0;
+    if (velocity.abs() < 250) return;
+    _changeWeek(velocity > 0 ? -1 : 1, source: 'swipe');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Riepilogo settimanale')),
+      bottomNavigationBar:
+          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragEnd: _handleSwipe,
+        child: Column(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                AppSpacing.sm,
+                AppSpacing.md,
+                0,
+              ),
+              child: Row(
+                children: <Widget>[
+                  IconButton.filledTonal(
+                    tooltip: 'Settimana precedente',
+                    onPressed: () => _changeWeek(-1, source: 'arrow'),
+                    icon: const Icon(Icons.chevron_left_rounded),
+                  ),
+                  Expanded(
+                    child: Column(
+                      children: <Widget>[
+                        Text(
+                          '${_dateKey(_monday)} – '
+                          '${_dateKey(_monday.add(const Duration(days: 6)))}',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        Text(
+                          'Scorri lateralmente oppure usa le frecce',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton.filledTonal(
+                    tooltip: 'Settimana successiva',
+                    onPressed: () => _changeWeek(1, source: 'arrow'),
+                    icon: const Icon(Icons.chevron_right_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: FutureBuilder<_FoodWeekSnapshot>(
+                future: _future,
+                builder: (
+                  BuildContext context,
+                  AsyncSnapshot<_FoodWeekSnapshot> state,
+                ) {
+                  if (state.connectionState != ConnectionState.done) {
+                    return const _WeekHubLoadingState();
+                  }
+                  if (state.hasError || !state.hasData) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(AppSpacing.lg),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            const Icon(Icons.error_outline_rounded, size: 42),
+                            const SizedBox(height: AppSpacing.md),
+                            Text(
+                              'Caricamento della settimana non riuscito: '
+                              '${state.error}',
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            FilledButton.icon(
+                              onPressed: () {
+                                setState(() => _future = _loadWeek(_monday));
+                              },
+                              icon: const Icon(Icons.refresh_rounded),
+                              label: const Text('Riprova'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                  return _WeekHubContent(snapshot: state.data!);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WeekHubLoadingState extends StatelessWidget {
+  const _WeekHubLoadingState();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          CircularProgressIndicator(),
+          SizedBox(height: AppSpacing.md),
+          Text('Caricamento completo della settimana…'),
+        ],
+      ),
+    );
+  }
+}
+
+class _WeekHubContent extends StatelessWidget {
+  const _WeekHubContent({required this.snapshot});
+
+  final _FoodWeekSnapshot snapshot;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<TtChartPoint> caloriePoints = <TtChartPoint>[
+      for (final _FoodWeekDaySnapshot item in snapshot.days)
+        TtChartPoint(
+          label: _shortWeekdayLabel(item.date),
+          value: item.calories,
+        ),
+    ];
+    final List<TtChartPoint> calorieTargets = <TtChartPoint>[
+      for (final _FoodWeekDaySnapshot item in snapshot.days)
+        TtChartPoint(
+          label: _shortWeekdayLabel(item.date),
+          value: item.targetKcal,
+        ),
+    ];
+    final List<TtChartPoint> stepPoints = <TtChartPoint>[
+      for (final _FoodWeekDaySnapshot item in snapshot.days)
+        TtChartPoint(
+          label: _shortWeekdayLabel(item.date),
+          value: item.steps.toDouble(),
+        ),
+    ];
+    final List<TtChartPoint> stepTargets = <TtChartPoint>[
+      for (final _FoodWeekDaySnapshot item in snapshot.days)
+        TtChartPoint(
+          label: _shortWeekdayLabel(item.date),
+          value: item.stepGoal.toDouble(),
+        ),
+    ];
+
+    return ListView(
+      key: ValueKey<String>(_dateKey(snapshot.monday)),
+      padding: _screenPadding,
+      children: <Widget>[
+        TtAppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                'Statistiche della settimana',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _MetricGrid(
+                metrics: <_Metric>[
+                  _Metric('Calorie assunte', _fmtKcal(snapshot.totalCalories)),
+                  _Metric('Target medio', _fmtKcal(snapshot.averageTarget)),
+                  _Metric('Passi', snapshot.totalSteps.toString()),
+                  _Metric('Pasti', snapshot.totalMeals.toString()),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Row(
+                children: <Widget>[
+                  const Icon(Icons.verified_user_outlined),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      'Affidabilità media TDEE: '
+                      '${snapshot.averageReliability.round()}/100',
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _ChartCard(
+          title: 'Calorie',
+          subtitle: 'Assunte e target giornaliero',
+          child: TtMiniBarChart(
+            points: caloriePoints,
+            targetPoints: calorieTargets,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _ChartCard(
+          title: 'Passi',
+          subtitle: 'Passi registrati e obiettivo',
+          child: TtMiniBarChart(
+            points: stepPoints,
+            targetPoints: stepTargets,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sectionGap),
+        Text('Giorni e pasti', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: AppSpacing.md),
+        for (final _FoodWeekDaySnapshot item in snapshot.days) ...<Widget>[
+          _WeekHubDayCard(item: item),
+          const SizedBox(height: AppSpacing.md),
+        ],
+      ],
+    );
+  }
+}
+
+class _WeekHubDayCard extends StatelessWidget {
+  const _WeekHubDayCard({required this.item});
+
+  final _FoodWeekDaySnapshot item;
+
+  @override
+  Widget build(BuildContext context) {
+    return TtAppCard(
+      onTap: () => context.push('/food/days/${item.dateKey}'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  '${item.weekdayLabel} ${item.dateKey}',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              Text(
+                '${item.reliabilityTotal.round()}/100',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            '${item.calories.round()} / ${item.targetKcal.round()} kcal'
+            ' · ${item.steps}/${item.stepGoal} passi',
+          ),
+          if (item.meals.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSpacing.md),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: <Widget>[
+                for (final _FoodWeekMealSnapshot meal in item.meals)
+                  ActionChip(
+                    avatar: const Icon(Icons.restaurant_rounded, size: 18),
+                    label: Text(
+                      '${_slotLabel(meal.slotCode)} '
+                      '${meal.calories.round()} kcal',
+                    ),
+                    onPressed: () => context.push('/food/meals/${meal.id}'),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FoodWeekSnapshot {
+  const _FoodWeekSnapshot({
+    required this.monday,
+    required this.sunday,
+    required this.days,
+    required this.phaseTimings,
+  });
+
+  final DateTime monday;
+  final DateTime sunday;
+  final List<_FoodWeekDaySnapshot> days;
+  final Map<String, int> phaseTimings;
+
+  double get totalCalories => days.fold<double>(
+        0,
+        (double sum, _FoodWeekDaySnapshot item) => sum + item.calories,
+      );
+  int get totalSteps => days.fold<int>(
+        0,
+        (int sum, _FoodWeekDaySnapshot item) => sum + item.steps,
+      );
+  int get totalMeals => days.fold<int>(
+        0,
+        (int sum, _FoodWeekDaySnapshot item) => sum + item.meals.length,
+      );
+  double get averageTarget => days.isEmpty
+      ? 0
+      : days.fold<double>(
+            0,
+            (double sum, _FoodWeekDaySnapshot item) => sum + item.targetKcal,
+          ) /
+          days.length;
+  double get averageReliability => days.isEmpty
+      ? 0
+      : days.fold<double>(
+            0,
+            (double sum, _FoodWeekDaySnapshot item) =>
+                sum + item.reliabilityTotal,
+          ) /
+          days.length;
+}
+
+class _FoodWeekDaySnapshot {
+  const _FoodWeekDaySnapshot({
+    required this.date,
+    required this.dateKey,
+    required this.weekdayLabel,
+    required this.steps,
+    required this.stepGoal,
+    required this.meals,
+    required this.calories,
+    required this.targetKcal,
+    required this.reliabilityTotal,
+  });
+
+  final DateTime date;
+  final String dateKey;
+  final String weekdayLabel;
+  final int steps;
+  final int stepGoal;
+  final List<_FoodWeekMealSnapshot> meals;
+  final double calories;
+  final double targetKcal;
+  final double reliabilityTotal;
+}
+
+class _FoodWeekMealSnapshot {
+  const _FoodWeekMealSnapshot({
+    required this.id,
+    required this.slotCode,
+    required this.calories,
+  });
+
+  final int id;
+  final String slotCode;
+  final double calories;
 }
 
 class FoodDaysScreen extends ConsumerWidget {
@@ -8256,6 +8817,8 @@ class _MonthCalendarCardState extends State<_MonthCalendarCard> {
   }
 }
 
+// Retained temporarily for compatibility with the legacy weekly presentation.
+// ignore: unused_element
 class _WeekCalendarStrip extends StatelessWidget {
   const _WeekCalendarStrip({
     required this.monday,
