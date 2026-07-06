@@ -346,6 +346,7 @@ ignored: true
 
       await tester.pumpWidget(
         _withProviderOverrides(
+          database: database,
           foodHubData: _foodHubData(
             database,
             latest: null,
@@ -520,6 +521,7 @@ FoodHubV01Data _foodHubData(
       allDays: resolvedDays,
     ),
     profile: null,
+    sourceRevision: 0,
   );
 }
 

@@ -41,6 +41,9 @@ class TargetDayResult {
     required this.activity,
     required this.activityDeltaKcal,
     required this.alerts,
+    this.deltaWeightKg,
+    this.avgCalories,
+    this.kcalPerKg = 7700.0,
   });
 
   final double targetKcal;
@@ -60,6 +63,9 @@ class TargetDayResult {
   final ResolvedActivityBreakdown activity;
   final double activityDeltaKcal;
   final List<TargetAlert> alerts;
+  final double? deltaWeightKg;
+  final double? avgCalories;
+  final double kcalPerKg;
 }
 
 class ObservedTdeeResult {
@@ -322,9 +328,8 @@ class FoodAnalyticsService {
     }
 
     final DateTime date = DateTime.parse(day.dateKey);
-    final DateTime monday = date.subtract(Duration(days: date.weekday - 1));
-    final WeekAdaptiveSummary summary = adaptiveSummaryForWeek(
-      monday: monday,
+    final WeekAdaptiveSummary summary = adaptiveSummaryForDay(
+      dayDate: date,
       allDays: allDays,
       profile: profile,
       now: resolvedNow,
@@ -364,6 +369,9 @@ class FoodAnalyticsService {
       activity: activity,
       activityDeltaKcal: activityDelta,
       alerts: alerts,
+      deltaWeightKg: summary.deltaWeightKg,
+      avgCalories: summary.avgCalories,
+      kcalPerKg: summary.kcalPerKg,
     );
   }
 
@@ -479,13 +487,45 @@ class FoodAnalyticsService {
     return _measurements.findScaleByDate(day.dateKey)?.weightKg ?? day.weightKg;
   }
 
+  /// Builds the adaptive baseline for one specific calendar day.
+  ///
+  /// The existing weekly routine is reused as the audited mathematical core,
+  /// but its window is pinned to [normalizedDay]. Therefore reference records
+  /// are strictly earlier than the requested day and the current period
+  /// contains only that day. The caller still resolves actual/predicted daily
+  /// activity against the real current time.
+  WeekAdaptiveSummary adaptiveSummaryForDay({
+    required DateTime dayDate,
+    required List<DailyRecordEntity> allDays,
+    UserProfileEntity? profile,
+    DateTime? now,
+  }) {
+    final DateTime normalizedDay =
+        DateTime(dayDate.year, dayDate.month, dayDate.day);
+    final String dayKey = _dateKey(normalizedDay);
+    final List<DailyRecordEntity> scopedDays = allDays
+        .where(
+          (DailyRecordEntity day) => day.dateKey.compareTo(dayKey) <= 0,
+        )
+        .toList(growable: false);
+    return adaptiveSummaryForWeek(
+      monday: normalizedDay,
+      allDays: scopedDays,
+      profile: profile,
+      now: normalizedDay,
+      activityNow: now ?? DateTime.now(),
+    );
+  }
+
   WeekAdaptiveSummary adaptiveSummaryForWeek({
     required DateTime monday,
     required List<DailyRecordEntity> allDays,
     UserProfileEntity? profile,
     DateTime? now,
+    DateTime? activityNow,
   }) {
     final DateTime resolvedNow = now ?? DateTime.now();
+    final DateTime resolvedActivityNow = activityNow ?? resolvedNow;
     final DateTime sunday = monday.add(const Duration(days: 6));
     final DateTime referenceDate =
         sunday.isAfter(resolvedNow) ? resolvedNow : sunday;
@@ -495,10 +535,16 @@ class FoodAnalyticsService {
         return a.dateKey.compareTo(b.dateKey);
       });
     final int referenceLimit = profile?.adaptiveReferenceDays ?? 28;
+    final String referenceStartKey = _dateKey(
+      monday.subtract(Duration(days: referenceLimit)),
+    );
     final List<DailyRecordEntity> reference = sorted
-        .where((DailyRecordEntity day) => day.dateKey.compareTo(mondayKey) < 0)
-        .toList()
-        .takeLast(referenceLimit);
+        .where(
+          (DailyRecordEntity day) =>
+              day.dateKey.compareTo(referenceStartKey) >= 0 &&
+              day.dateKey.compareTo(mondayKey) < 0,
+        )
+        .toList();
     final List<DailyRecordEntity> currentWeek = sorted.where(
       (DailyRecordEntity day) {
         final DateTime parsed = DateTime.parse(day.dateKey);
@@ -562,7 +608,7 @@ class FoodAnalyticsService {
           (DailyRecordEntity day) => effectiveActivityForDay(
             day,
             profile: profile,
-            now: resolvedNow,
+            now: resolvedActivityNow,
           ),
         )
         .toList();
@@ -927,13 +973,4 @@ class _WeightPoint extends _WeightedValue {
   });
 
   final String dateKey;
-}
-
-extension _TakeLast<T> on List<T> {
-  List<T> takeLast(int count) {
-    if (length <= count) {
-      return List<T>.from(this);
-    }
-    return sublist(length - count);
-  }
 }

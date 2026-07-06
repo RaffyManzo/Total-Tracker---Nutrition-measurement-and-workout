@@ -76,13 +76,29 @@ final FutureProvider<FoodHubV01Data> foodHubV01Provider =
       'todayRecordMs',
       () => dailyRepository.findByDate(todayKey) ?? todayBundle.day,
     );
-    final DateTime monday = now.subtract(Duration(days: now.weekday - 1));
-    final List<DailyRecordEntity> minimalDays = <DailyRecordEntity>[latest];
+    final int sourceRevision = FoodDataRefreshBus.revision;
+    final int adaptiveReferenceDays = profile?.adaptiveReferenceDays ?? 28;
+    final String adaptiveFromKey = _dateKey(
+      now.subtract(Duration(days: adaptiveReferenceDays)),
+    );
+    final List<DailyRecordEntity> adaptiveDays = phase<List<DailyRecordEntity>>(
+      'adaptiveHistoryMs',
+      () => List<DailyRecordEntity>.from(
+        dailyRepository.listBetween(adaptiveFromKey, todayKey),
+      ),
+    );
+    if (adaptiveDays.every((DailyRecordEntity item) => item.id != latest.id)) {
+      adaptiveDays.add(latest);
+    }
+    adaptiveDays.sort(
+      (DailyRecordEntity a, DailyRecordEntity b) =>
+          b.dateKey.compareTo(a.dateKey),
+    );
     final WeekAdaptiveSummary adaptiveSummary = phase<WeekAdaptiveSummary>(
-      'minimalAdaptiveSummaryMs',
-      () => analytics.adaptiveSummaryForWeek(
-        monday: monday,
-        allDays: minimalDays,
+      'dailyAdaptiveSummaryMs',
+      () => analytics.adaptiveSummaryForDay(
+        dayDate: now,
+        allDays: adaptiveDays,
         profile: profile,
       ),
     );
@@ -102,7 +118,7 @@ final FutureProvider<FoodHubV01Data> foodHubV01Provider =
       latest: latest,
       latestMeals: todayMeals,
       allMeals: todayMeals,
-      days: minimalDays,
+      days: adaptiveDays,
       ingredients: const <IngredientEntity>[],
       recipes: const <RecipeEntity>[],
       scaleMeasurements: const <ScaleMeasurementEntity>[],
@@ -110,6 +126,7 @@ final FutureProvider<FoodHubV01Data> foodHubV01Provider =
       analytics: analytics,
       adaptiveSummary: adaptiveSummary,
       profile: profile,
+      sourceRevision: sourceRevision,
     );
   } catch (error, stackTrace) {
     total.stop();
@@ -163,6 +180,7 @@ class FoodHubV01Data {
     required this.analytics,
     required this.adaptiveSummary,
     required this.profile,
+    required this.sourceRevision,
   });
 
   final DailyRecordEntity? latest;
@@ -176,6 +194,7 @@ class FoodHubV01Data {
   final FoodAnalyticsService analytics;
   final WeekAdaptiveSummary adaptiveSummary;
   final UserProfileEntity? profile;
+  final int sourceRevision;
 
   MealNutritionTotals get latestTotals => _totalsForMeals(latestMeals);
 
@@ -202,7 +221,11 @@ class FoodHubV01Data {
       for (final DailyRecordEntity day in recent)
         TtChartPoint(
           label: day.dateKey.substring(5),
-          value: day.targetKcal ?? adaptiveSummary.targetKcal,
+          value: analytics.targetForDay(
+            day: day,
+            allDays: days,
+            profile: profile,
+          ),
         ),
     ];
   }
@@ -239,7 +262,7 @@ class FoodHubScreen extends ConsumerStatefulWidget {
 
 class _FoodHubScreenState extends ConsumerState<FoodHubScreen>
     with WidgetsBindingObserver {
-  static FoodHubV01Data? _cachedData;
+  FoodHubV01Data? _cachedData;
   DateTime? _backgroundedAt;
   StreamSubscription<FoodDataChange>? _changeSubscription;
   FoodDataChange? _pendingChange;
@@ -269,12 +292,17 @@ class _FoodHubScreenState extends ConsumerState<FoodHubScreen>
 
   void _onFoodDataChange(FoodDataChange change) {
     if (!mounted) return;
-    final String todayKey = _dateKey(DateTime.now());
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    final DateTime? changed = DateTime.tryParse(change.dateKey);
+    final int referenceDays = _cachedData?.profile?.adaptiveReferenceDays ?? 28;
+    final DateTime earliest = today.subtract(Duration(days: referenceDays + 1));
     final String? visibleDate = _cachedData?.latest?.dateKey;
-    final bool affectsVisibleDay =
-        change.dateKey == todayKey || change.dateKey == visibleDate;
-    if (!affectsVisibleDay) return;
-
+    final bool affectsVisibleDay = change.dateKey == visibleDate;
+    final bool affectsAdaptiveWindow = changed != null &&
+        !changed.isAfter(today) &&
+        !changed.isBefore(earliest);
+    if (!affectsVisibleDay && !affectsAdaptiveWindow) return;
     setState(() => _pendingChange = change);
     ref.invalidate(foodHubV01Provider);
   }
@@ -297,14 +325,7 @@ class _FoodHubScreenState extends ConsumerState<FoodHubScreen>
 
   bool _isCacheStale(FoodHubV01Data data) {
     final FoodDataChange? change = _pendingChange;
-    if (change == null || data.latest?.dateKey != change.dateKey) return false;
-    if (change.currentCalories != null) {
-      return (data.latestTotals.kcal - change.currentCalories!).abs() > .1;
-    }
-    if (change.steps != null) {
-      return data.latest?.steps != change.steps;
-    }
-    return true;
+    return change != null && data.sourceRevision < change.revision;
   }
 
   @override
@@ -1022,6 +1043,34 @@ class FoodWeekScreen extends ConsumerWidget {
               if (byDate[_dateKey(monday.add(Duration(days: index)))] != null)
                 byDate[_dateKey(monday.add(Duration(days: index)))]!,
           ];
+          final List<TargetDayResult> weekTargetResults = <TargetDayResult>[
+            for (final DailyRecordEntity day in weekDays)
+              analytics.targetResultForDay(
+                day: day,
+                allDays: refreshed,
+                profile: profile,
+              ),
+          ];
+          final List<double> weekTargetValues = weekTargetResults
+              .map((TargetDayResult result) => result.targetKcal)
+              .toList(growable: false);
+          final double averageDailyTarget = weekTargetValues.isEmpty
+              ? adaptive.targetKcal
+              : weekTargetValues.reduce((double a, double b) => a + b) /
+                  weekTargetValues.length;
+          final double minimumDailyTarget = weekTargetValues.isEmpty
+              ? adaptive.targetKcal
+              : weekTargetValues.reduce((double a, double b) => a < b ? a : b);
+          final double maximumDailyTarget = weekTargetValues.isEmpty
+              ? adaptive.targetKcal
+              : weekTargetValues.reduce((double a, double b) => a > b ? a : b);
+          final int predictedDailyTargets = weekTargetResults
+              .where(
+                (TargetDayResult result) =>
+                    result.activity.usedStepGoalFallback ||
+                    result.activity.usedProfileWorkoutFallback,
+              )
+              .length;
           final List<TtChartPoint> caloriePoints = <TtChartPoint>[
             for (final DailyRecordEntity day in weekDays)
               TtChartPoint(
@@ -1063,31 +1112,29 @@ class FoodWeekScreen extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.md),
               TtAppCard(
-                onTap: () => _showAdaptiveDetails(context, adaptive),
+                onTap: null,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Row(
                       children: <Widget>[
                         Expanded(
-                          child: Text('Target adattivo settimanale',
+                          child: Text('Modello adattivo giornaliero',
                               style: Theme.of(context).textTheme.titleLarge),
                         ),
                         _StatusPill(
-                          label: adaptive.targetStatusCode,
-                          isWarning: adaptive.targetStatusCode == 'provisional',
+                          label: '$predictedDailyTargets previsti',
+                          isWarning: predictedDailyTargets > 0,
                         ),
                       ],
                     ),
                     const SizedBox(height: AppSpacing.md),
                     _MetricGrid(
                       metrics: <_Metric>[
-                        _Metric('Target', _fmtKcal(adaptive.targetKcal)),
-                        _Metric('TDEE ref', _fmtKcal(adaptive.tdeeRefKcal)),
-                        _Metric('Confidenza',
-                            '${(adaptive.observedConfidence * 100).round()}%'),
-                        _Metric('Giorni ref',
-                            adaptive.referenceDaysCount.toString()),
+                        _Metric('Media target', _fmtKcal(averageDailyTarget)),
+                        _Metric('Minimo', _fmtKcal(minimumDailyTarget)),
+                        _Metric('Massimo', _fmtKcal(maximumDailyTarget)),
+                        _Metric('Previsti', predictedDailyTargets.toString()),
                       ],
                     ),
                   ],
@@ -1228,6 +1275,9 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
     _loaded = true;
   }
 
+  // Retained as an internal diagnostic action; the visible info button uses
+  // the transparent adaptive calculation sheet.
+  // ignore: unused_element
   Future<void> _showDayObjectBoxDetails(
     DailyRecordEntity day,
     List<MealWithItems> meals,
@@ -1496,6 +1546,495 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
     );
   }
 
+  Future<void> _showAdaptiveTargetDetails(
+    DailyRecordEntity day,
+    List<MealWithItems> meals,
+    TargetDayResult targetResult,
+    ActivityBreakdown activity,
+    UserProfileEntity? profile,
+    List<DailyRecordEntity> allDays,
+  ) async {
+    final int mealItemCount = meals.fold<int>(
+      0,
+      (int sum, MealWithItems meal) => sum + meal.items.length,
+    );
+    final ResolvedActivityBreakdown resolved = targetResult.activity;
+    final DateTime dayDate = DateTime.parse(day.dateKey);
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    final DateTime normalizedDay =
+        DateTime(dayDate.year, dayDate.month, dayDate.day);
+    final bool isFuture = normalizedDay.isAfter(today);
+    final String dayMode = isFuture ||
+            resolved.usedStepGoalFallback ||
+            resolved.usedProfileWorkoutFallback
+        ? 'Previsionale'
+        : 'Registrato';
+    final double sedentaryBase =
+        targetResult.tdeeTheoreticalKcal - targetResult.activeRefKcal;
+    final double observedWeight = targetResult.observedConfidence;
+    final double theoreticalWeight = 1 - observedWeight;
+    final int priorRecords = allDays
+        .where(
+          (DailyRecordEntity item) => item.dateKey.compareTo(day.dateKey) < 0,
+        )
+        .length;
+
+    String fmt(double value) {
+      if (!value.isFinite) return 'n/d';
+      return value.toStringAsFixed(value.abs() >= 100 ? 0 : 1);
+    }
+
+    String fmtNullable(double? value, String unit) {
+      if (value == null || !value.isFinite) return 'n/d';
+      final String suffix = unit.trim().isEmpty ? '' : ' ${unit.trim()}';
+      return '${fmt(value)}$suffix';
+    }
+
+    Widget detailRow(String label, String value) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(
+              flex: 5,
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              flex: 6,
+              child: Text(
+                value,
+                textAlign: TextAlign.end,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget section({
+      required String title,
+      required List<Widget> children,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.md),
+        child: Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                ...children,
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final bool? clearRequested = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) {
+        return FractionallySizedBox(
+          heightFactor: 0.94,
+          child: Column(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color:
+                            Theme.of(sheetContext).colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(
+                        Icons.calculate_outlined,
+                        color: Theme.of(sheetContext)
+                            .colorScheme
+                            .onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Calcolo adattivo giornaliero',
+                            style:
+                                Theme.of(sheetContext).textTheme.headlineSmall,
+                          ),
+                          Text(
+                            'Formula, fonti, fallback e snapshot del ${day.dateKey}',
+                            style: Theme.of(sheetContext).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Chiudi',
+                      onPressed: () => Navigator.of(sheetContext).pop(false),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    0,
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                  ),
+                  children: <Widget>[
+                    section(
+                      title: 'Formula finale',
+                      children: <Widget>[
+                        detailRow(
+                          'Formula',
+                          'target = TDEE riferimento + (attività giorno - attività riferimento)',
+                        ),
+                        detailRow(
+                          'Sostituzione',
+                          '${fmt(targetResult.targetKcal)} = '
+                              '${fmt(targetResult.tdeeRefKcal)} + '
+                              '(${fmt(resolved.totalKcal)} - '
+                              '${fmt(targetResult.activeRefKcal)}) kcal',
+                        ),
+                        detailRow(
+                          'Delta attività',
+                          '${fmt(targetResult.activityDeltaKcal)} kcal',
+                        ),
+                        detailRow(
+                          'Target finale',
+                          '${fmt(targetResult.targetKcal)} kcal',
+                        ),
+                        detailRow(
+                            'Stato target', targetResult.targetStatusCode),
+                        detailRow('Modalità del giorno', dayMode),
+                      ],
+                    ),
+                    section(
+                      title: 'TDEE di riferimento',
+                      children: <Widget>[
+                        detailRow(
+                          'RMR',
+                          fmtNullable(targetResult.rmrKcal, 'kcal'),
+                        ),
+                        detailRow(
+                          'Base sedentaria',
+                          '${fmt(sedentaryBase)} kcal',
+                        ),
+                        detailRow(
+                          'Attività di riferimento',
+                          '${fmt(targetResult.activeRefKcal)} kcal',
+                        ),
+                        detailRow(
+                          'TDEE teorico',
+                          '${fmt(targetResult.tdeeTheoreticalKcal)} kcal',
+                        ),
+                        detailRow(
+                          'TDEE osservato',
+                          fmtNullable(targetResult.tdeeObservedKcal, 'kcal'),
+                        ),
+                        detailRow(
+                          'Metodo osservato',
+                          'media ponderata delle calorie assunte - '
+                              '(variazione di peso × kcal/kg ÷ giorni)',
+                        ),
+                        detailRow(
+                          'Media calorie usata',
+                          fmtNullable(targetResult.avgCalories, 'kcal'),
+                        ),
+                        detailRow(
+                          'Variazione peso usata',
+                          fmtNullable(targetResult.deltaWeightKg, 'kg'),
+                        ),
+                        detailRow(
+                          'Conversione energetica',
+                          '${fmt(targetResult.kcalPerKg)} kcal/kg',
+                        ),
+                        detailRow(
+                          'Componente osservata',
+                          '${(observedWeight * 100).round()}%',
+                        ),
+                        detailRow(
+                          'Componente teorica',
+                          '${(theoreticalWeight * 100).round()}%',
+                        ),
+                        detailRow(
+                          'TDEE combinato',
+                          '${fmt(targetResult.tdeeRefKcal)} kcal',
+                        ),
+                      ],
+                    ),
+                    section(
+                      title: 'Attività del giorno',
+                      children: <Widget>[
+                        detailRow('Passi registrati', day.steps.toString()),
+                        detailRow('Obiettivo passi', day.stepGoal.toString()),
+                        detailRow(
+                          'Kcal passi registrate',
+                          '${fmt(resolved.actualStepKcal)} kcal',
+                        ),
+                        detailRow(
+                          'Kcal passi usate',
+                          '${fmt(resolved.effectiveStepKcal)} kcal',
+                        ),
+                        detailRow(
+                          'Workout registrato',
+                          '${fmt(resolved.actualWorkoutKcal)} kcal',
+                        ),
+                        detailRow(
+                          'Workout usato',
+                          '${fmt(resolved.effectiveWorkoutKcal)} kcal',
+                        ),
+                        detailRow(
+                          'Consumo attivo usato',
+                          '${fmt(resolved.totalKcal)} kcal',
+                        ),
+                        detailRow('Stato attività', resolved.statusCode),
+                        detailRow(
+                          'Fallback passi',
+                          resolved.usedStepGoalFallback ? 'sì' : 'no',
+                        ),
+                        detailRow(
+                          'Fallback allenamento',
+                          resolved.usedProfileWorkoutFallback ? 'sì' : 'no',
+                        ),
+                      ],
+                    ),
+                    section(
+                      title: 'Finestra osservata e peso',
+                      children: <Widget>[
+                        detailRow(
+                          'Giorni di riferimento usati',
+                          targetResult.referenceDaysCount.toString(),
+                        ),
+                        detailRow(
+                          'Record precedenti disponibili',
+                          priorRecords.toString(),
+                        ),
+                        detailRow(
+                          'Introiti validi',
+                          targetResult.validIntakeDays.toString(),
+                        ),
+                        detailRow(
+                          'Pesi validi',
+                          targetResult.validWeightDays.toString(),
+                        ),
+                        detailRow(
+                          'Peso di riferimento',
+                          fmtNullable(targetResult.weightRefKg, 'kg'),
+                        ),
+                        detailRow('Stato peso', targetResult.weightStatusCode),
+                        detailRow(
+                          "Giorni dall'ultima pesata",
+                          targetResult.weightDaysSinceMeasurement?.toString() ??
+                              'n/d',
+                        ),
+                      ],
+                    ),
+                    section(
+                      title: 'Configurazione del modello',
+                      children: <Widget>[
+                        detailRow(
+                          'Finestra massima',
+                          '${profile?.adaptiveReferenceDays ?? 28} giorni',
+                        ),
+                        detailRow(
+                          'Minimo giorni osservati',
+                          '${profile?.adaptiveMinimumObservedDays ?? 7}',
+                        ),
+                        detailRow(
+                          'Coefficiente passi',
+                          '${profile?.stepKcalCoefficient ?? 0.020} kcal/passo',
+                        ),
+                        detailRow(
+                          'Kcal per kg',
+                          '${profile?.kcalPerKg ?? 7700}',
+                        ),
+                        detailRow(
+                          'Limiti TDEE',
+                          '${profile?.minimumReasonableTdee ?? 1300} - '
+                              '${profile?.maximumReasonableTdee ?? 4600} kcal',
+                        ),
+                        detailRow(
+                          'Fallback attività',
+                          profile?.activityFallbackModeCode ?? 'recorded_only',
+                        ),
+                      ],
+                    ),
+                    if (targetResult.alerts.isNotEmpty)
+                      section(
+                        title: 'Avvisi e motivazioni',
+                        children: <Widget>[
+                          for (final TargetAlert alert in targetResult.alerts)
+                            detailRow(alert.title, alert.message),
+                        ],
+                      ),
+                    section(
+                      title: 'Snapshot e persistenza',
+                      children: <Widget>[
+                        detailRow('ObjectBox id', day.id.toString()),
+                        detailRow('Target source hash', day.targetSourceHash),
+                        detailRow(
+                          'Target calcolato epoch ms',
+                          day.targetCalculatedAtEpochMs?.toString() ?? 'n/d',
+                        ),
+                        detailRow('Pasti', meals.length.toString()),
+                        detailRow('Voci nei pasti', mealItemCount.toString()),
+                        detailRow(
+                          'Calorie registrate',
+                          '${fmt(activity.actualTotalKcal)} kcal attive; '
+                              '${fmt(_totalsForMeals(meals).kcal)} kcal assunte',
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.sm,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor:
+                            Theme.of(sheetContext).colorScheme.error,
+                        side: BorderSide(
+                          color: Theme.of(sheetContext).colorScheme.error,
+                        ),
+                      ),
+                      onPressed: mealItemCount == 0
+                          ? null
+                          : () => Navigator.of(sheetContext).pop(true),
+                      icon: const Icon(Icons.delete_sweep_outlined),
+                      label: Text(
+                        mealItemCount == 0
+                            ? 'Nessuna voce da eliminare'
+                            : 'Svuota i pasti della giornata ($mealItemCount)',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (clearRequested != true || !mounted) return;
+    final bool? confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.sm,
+              AppSpacing.lg,
+              AppSpacing.lg,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Svuota i pasti della giornata',
+                  style: Theme.of(sheetContext).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'Verranno eliminate tutte le $mealItemCount voci presenti '
+                  'nei pasti del ${day.dateKey}. Gli slot resteranno disponibili.',
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(false),
+                        child: const Text('Annulla'),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor:
+                              Theme.of(sheetContext).colorScheme.error,
+                          foregroundColor:
+                              Theme.of(sheetContext).colorScheme.onError,
+                        ),
+                        onPressed: () => Navigator.of(sheetContext).pop(true),
+                        icon: const Icon(Icons.delete_sweep_outlined),
+                        label: const Text('Svuota'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+    final int removed =
+        ref.read(mealRepositoryProvider).clearItemsForDate(day.dateKey);
+    _invalidateFood(ref);
+    setState(_load);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          removed == 1
+              ? 'Eliminata 1 voce dai pasti della giornata.'
+              : 'Eliminate $removed voci dai pasti della giornata.',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_loaded) {
@@ -1540,8 +2079,15 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
         title: Text('${day.weekdayLabel} ${day.dateKey}'),
         actions: <Widget>[
           IconButton(
-            tooltip: 'Dettagli ObjectBox',
-            onPressed: () => _showDayObjectBoxDetails(day, meals),
+            tooltip: 'Come viene calcolato il target',
+            onPressed: () => _showAdaptiveTargetDetails(
+              day,
+              meals,
+              targetResult,
+              activity,
+              profile,
+              allDays,
+            ),
             icon: const Icon(Icons.info_outline_rounded),
           ),
         ],
@@ -9849,6 +10395,8 @@ void _showInsights(BuildContext context, FoodHubV01Data data) {
   );
 }
 
+// Retained for diagnostic comparison with historical weekly snapshots.
+// ignore: unused_element
 void _showAdaptiveDetails(BuildContext context, WeekAdaptiveSummary summary) {
   final double intakeFactor =
       ((summary.validIntakeDays - 4) / 10).clamp(0, 1).toDouble();

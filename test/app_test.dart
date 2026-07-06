@@ -43,6 +43,7 @@ void main() {
                 allDays: const <DailyRecordEntity>[],
               ),
               profile: null,
+              sourceRevision: 0,
             );
           }),
         ],
