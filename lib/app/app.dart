@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/database/objectbox_providers.dart';
+import '../features/nutrition/presentation/target_recalculation_gate.dart';
 import '../features/profile/domain/profile_codes.dart';
 import '../l10n/generated/app_localizations.dart';
 import 'back_navigation.dart';
@@ -49,6 +50,11 @@ class TotalTrackerApp extends ConsumerWidget {
       supportedLocales: AppLocalizations.supportedLocales,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       routerConfig: appRouter,
+      builder: (BuildContext context, Widget? child) {
+        return TargetRecalculationGate(
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 }

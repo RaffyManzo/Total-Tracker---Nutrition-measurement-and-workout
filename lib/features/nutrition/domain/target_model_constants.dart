@@ -1,10 +1,10 @@
 class TargetModelConstants {
   const TargetModelConstants._();
 
-  static const String logicalPatchId = '0.1.0_01_theo';
-  static const String modelVersion = 'target-model-0.1.0-theo.2';
-  static const String formulaSourcesVersion = 'target-sources-0.1.0-theo.2';
-  static const String effectiveDate = '2026-07-06';
+  static const String logicalPatchId = '0.1.0_02_theo';
+  static const String modelVersion = 'target-model-0.1.0-theo.3';
+  static const String formulaSourcesVersion = 'target-sources-0.1.0-theo.3';
+  static const String effectiveDate = '2026-07-07';
 
   static const String rmrEquation = 'mifflin_st_jeor';
   static const double rmrMaleConstant = 5;
@@ -26,9 +26,23 @@ class TargetModelConstants {
   static const double fatMassEnergyDensityKcalPerKg = 9500;
   static const double fatFreeMassEnergyDensityKcalPerKg = 1020;
 
+  // Conservative, non-clinical activation rules for household BIA data.
+  static const int compositionMinimumDistinctDays = 7;
+  static const int compositionMinimumCoverageDays = 14;
+  static const int compositionMaximumGapDays = 10;
+  static const double compositionMinimumConfidence = 0.55;
+  static const double compositionMaximumWaterRangePercent = 6;
+  static const double compositionMaximumWeightSlopeKgPerDay = 0.25;
+  static const double compositionMaximumFatSlopeKgPerDay = 0.15;
+  static const double compositionMaximumFatFreeSlopeKgPerDay = 0.15;
+
   static const double proteinDefaultGramsPerKg = 1.8;
   static const double proteinMinimumGramsPerKg = 1.4;
   static const double proteinMaximumGramsPerKg = 2.2;
+  static const double customProteinMaximumGramsPerKg = 5;
+  static const double customFatMaximumGramsPerKg = 5;
+  static const double customCarbohydrateMaximumGramsPerKg = 15;
+  static const double macroCalorieTolerancePercent = 1;
   static const double fatDefaultEnergyPercent = 25;
   static const double fatMinimumEnergyPercent = 20;
   static const double fatMaximumEnergyPercent = 35;

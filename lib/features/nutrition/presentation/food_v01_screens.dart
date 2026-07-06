@@ -2265,6 +2265,7 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
     ActivityBreakdown activity,
     UserProfileEntity? profile,
     List<DailyRecordEntity> allDays,
+    bool hasPartialNutrition,
   ) async {
     final int mealItemCount = meals.fold<int>(
       0,
@@ -2332,29 +2333,77 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
       );
     }
 
+    Widget metricCard({
+      required String label,
+      required String value,
+      required IconData icon,
+      Color? accent,
+    }) {
+      final Color resolved = accent ?? Theme.of(context).colorScheme.primary;
+      return SizedBox(
+        width: 158,
+        child: TtAppCard(
+          backgroundColor: resolved.withValues(alpha: 0.08),
+          borderColor: resolved.withValues(alpha: 0.35),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(icon, color: resolved),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                value,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+              ),
+              const SizedBox(height: 2),
+              Text(label, style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ),
+        ),
+      );
+    }
+
     Widget section({
       required String title,
       required List<Widget> children,
+      IconData icon = Icons.info_outline_rounded,
+      Color? accent,
     }) {
+      final Color resolved = accent ?? Theme.of(context).colorScheme.primary;
       return Padding(
         padding: const EdgeInsets.only(bottom: AppSpacing.md),
-        child: Card(
-          margin: EdgeInsets.zero,
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                ...children,
-              ],
-            ),
+        child: TtAppCard(
+          borderColor: resolved.withValues(alpha: 0.28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: resolved.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, color: resolved, size: 21),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              const Divider(),
+              ...children,
+            ],
           ),
         ),
       );
@@ -2428,8 +2477,40 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                     AppSpacing.md,
                   ),
                   children: <Widget>[
+                    Wrap(
+                      spacing: AppSpacing.sm,
+                      runSpacing: AppSpacing.sm,
+                      children: <Widget>[
+                        metricCard(
+                          label: 'Target finale',
+                          value: '${fmt(targetResult.targetKcal)} kcal',
+                          icon: Icons.flag_rounded,
+                        ),
+                        metricCard(
+                          label: 'TDEE riferimento',
+                          value: '${fmt(targetResult.tdeeRefKcal)} kcal',
+                          icon: Icons.monitor_heart_outlined,
+                        ),
+                        metricCard(
+                          label: 'Attività usata',
+                          value: '${fmt(resolved.totalKcal)} kcal',
+                          icon: Icons.directions_walk_rounded,
+                        ),
+                        metricCard(
+                          label: 'Affidabilità osservata',
+                          value:
+                              '${(targetResult.observedConfidence * 100).round()}%',
+                          icon: Icons.verified_outlined,
+                          accent: targetResult.tdeeObservedKcal == null
+                              ? Theme.of(context).colorScheme.tertiary
+                              : Theme.of(context).colorScheme.primary,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.md),
                     section(
                       title: 'Formula finale',
+                      icon: Icons.functions_rounded,
                       children: <Widget>[
                         detailRow(
                           'Formula',
@@ -2457,6 +2538,7 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                     ),
                     section(
                       title: 'TDEE di riferimento',
+                      icon: Icons.monitor_heart_outlined,
                       children: <Widget>[
                         detailRow(
                           'RMR',
@@ -2480,8 +2562,12 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                         ),
                         detailRow(
                           'Metodo osservato',
-                          'media ponderata delle calorie assunte − '
-                              '(pendenza Theil–Sen kg/giorno × 7700 kcal/kg)',
+                          targetResult.observedModelLevelCode ==
+                                  'composition_blended'
+                              ? 'introito medio − variazione energetica combinata '
+                                  'di massa grassa, massa priva di grasso e peso'
+                              : 'media ponderata delle calorie assunte − '
+                                  '(pendenza Theil–Sen kg/giorno × 7700 kcal/kg)',
                         ),
                         detailRow(
                           'Media calorie usata',
@@ -2502,13 +2588,24 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                         ),
                         detailRow(
                           'Composizione corporea',
-                          '${targetResult.compositionFallbackReasonCode} · '
-                              'confidenza ${(targetResult.compositionConfidence * 100).round()}%',
+                          targetResult.observedModelLevelCode ==
+                                  'composition_blended'
+                              ? 'attiva · confidenza '
+                                  '${(targetResult.compositionConfidence * 100).round()}%'
+                              : 'fallback al peso · '
+                                  '${targetResult.compositionFallbackReasonCode}',
                         ),
                         detailRow(
                           'Candidato energetico composizione',
                           fmtNullable(
                             targetResult.compositionEnergyChangeKcalPerDay,
+                            'kcal/giorno',
+                          ),
+                        ),
+                        detailRow(
+                          'Variazione energetica effettiva',
+                          fmtNullable(
+                            targetResult.effectiveBodyEnergyChangeKcalPerDay,
                             'kcal/giorno',
                           ),
                         ),
@@ -2532,6 +2629,7 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                     ),
                     section(
                       title: 'Attività del giorno',
+                      icon: Icons.directions_run_rounded,
                       children: <Widget>[
                         detailRow('Passi registrati', day.steps.toString()),
                         detailRow('Obiettivo passi', day.stepGoal.toString()),
@@ -2601,6 +2699,7 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                     ),
                     section(
                       title: 'Finestra osservata e peso',
+                      icon: Icons.timeline_rounded,
                       children: <Widget>[
                         detailRow(
                           'Giorni di riferimento usati',
@@ -2632,6 +2731,7 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                     ),
                     section(
                       title: 'Configurazione del modello',
+                      icon: Icons.tune_rounded,
                       children: <Widget>[
                         detailRow(
                           'Finestra massima',
@@ -2687,6 +2787,7 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                     ),
                     section(
                       title: 'Fonti, formule e limiti',
+                      icon: Icons.menu_book_outlined,
                       children: <Widget>[
                         detailRow(
                           'Evidenza scientifica',
@@ -2710,8 +2811,7 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                         ),
                         detailRow(
                           'IN STALLO',
-                          'quota base 1,10; soglie composizione; blending; '
-                              'guardrail 1300–4600',
+                          'quota base 1,10 e guardrail 1300–4600',
                         ),
                         detailRow(
                           'Limite d’uso',
@@ -2719,16 +2819,36 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                         ),
                       ],
                     ),
-                    if (targetResult.alerts.isNotEmpty)
+                    if (targetResult.alerts.isNotEmpty || hasPartialNutrition)
                       section(
-                        title: 'Avvisi e motivazioni',
+                        title: 'Avvisi del giorno',
+                        icon: Icons.warning_amber_rounded,
+                        accent: Theme.of(context).colorScheme.tertiary,
                         children: <Widget>[
                           for (final TargetAlert alert in targetResult.alerts)
-                            detailRow(alert.title, alert.message),
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: AppSpacing.sm,
+                              ),
+                              child: _TargetAlertCard(alert: alert),
+                            ),
+                          if (hasPartialNutrition)
+                            const _TargetAlertCard(
+                              alert: TargetAlert(
+                                code: 'partial_nutrition',
+                                title: 'Nutrizione parziale',
+                                message:
+                                    'Questo giorno contiene un pasto libero '
+                                    'non completamente quantificato. Il '
+                                    'bilancio usa soltanto i dati disponibili.',
+                                severityCode: TargetAlertSeverityCodes.warning,
+                              ),
+                            ),
                         ],
                       ),
                     section(
                       title: 'Snapshot e persistenza',
+                      icon: Icons.storage_rounded,
                       children: <Widget>[
                         detailRow('ObjectBox id', day.id.toString()),
                         detailRow('Target source hash', day.targetSourceHash),
@@ -2912,6 +3032,7 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
               activity,
               profile,
               allDays,
+              partial,
             ),
             icon: const Icon(Icons.info_outline_rounded),
           ),
@@ -2964,22 +3085,6 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
               weight: weight,
             ),
           ),
-          if (targetResult.alerts.isNotEmpty) ...<Widget>[
-            const SizedBox(height: AppSpacing.md),
-            for (final TargetAlert alert in targetResult.alerts)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                child: _TargetAlertCard(alert: alert),
-              ),
-          ],
-          if (partial) ...<Widget>[
-            const SizedBox(height: AppSpacing.md),
-            const TtAppCard(
-              child: Text(
-                'Questo giorno contiene un pasto libero non completamente quantificato. Il bilancio è mostrato come indicazione parziale.',
-              ),
-            ),
-          ],
           if (day.notes.trim().isNotEmpty) ...<Widget>[
             const SizedBox(height: AppSpacing.sectionGap),
             const TtSectionHeader(title: 'Note'),

@@ -16,6 +16,9 @@ void main() {
     expect(source, contains('Dati registrati con fallback per componente'));
     expect(source, contains('Mifflin–St Jeor'));
     expect(source, contains('IN STALLO'));
+    expect(source, contains('Non chiudere questa pagina'));
+    expect(source, contains('Distribuzione da riequilibrare'));
+    expect(source, contains('Personalizzato g/kg'));
   });
 
   test('day details expose approved model variables and no total sugar target',
@@ -34,5 +37,27 @@ void main() {
     expect(source, contains('Obiettivo passi configurato'));
     expect(source, contains('estimated_active_calories'));
     expect(source, contains('modello interno dell’allenamento è fuori ambito'));
+    expect(source, contains('Composizione corporea'));
+    expect(source, contains('Variazione energetica effettiva'));
+    expect(source, contains('Target finale'));
+    expect(source, contains("title: 'Avvisi del giorno'"));
+    expect(source, contains('hasPartialNutrition'));
+    expect(
+      source,
+      isNot(
+        contains(
+          'if (targetResult.alerts.isNotEmpty) ...<Widget>[',
+        ),
+      ),
+    );
+    expect(
+      source,
+      isNot(
+        contains(
+          'Questo giorno contiene un pasto libero non completamente '
+          'quantificato. Il bilancio è mostrato come indicazione parziale.',
+        ),
+      ),
+    );
   });
 }

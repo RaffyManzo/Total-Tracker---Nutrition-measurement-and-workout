@@ -135,52 +135,65 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
         MealTargetSettings.fromProfile(profile);
     final AsyncValue<AppInfoSnapshot> appInfo = ref.watch(appInfoProvider);
 
-    return Scaffold(
-      appBar: AppBar(title: Text(_settingsSectionTitle(widget.sectionCode))),
-      bottomNavigationBar:
-          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.settings),
-      body: Stack(
-        children: <Widget>[
-          ListView(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg,
-              AppSpacing.lg,
-              AppSpacing.lg,
-              AppSpacing.xxl,
+    return PopScope(
+      canPop: !_isApplying,
+      child: Scaffold(
+        appBar: AppBar(title: Text(_settingsSectionTitle(widget.sectionCode))),
+        bottomNavigationBar:
+            const TtFoodBottomNavBar(activeItem: TtFoodNavItem.settings),
+        body: Stack(
+          children: <Widget>[
+            ListView(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.xxl,
+              ),
+              children: _buildSettingsSectionChildren(
+                profile: profile,
+                estimate: estimate,
+                currentWeight: currentWeight,
+                hasScaleMeasurement: latestScale != null,
+                dataPath: dataPath,
+                mealTargetSettings: mealTargetSettings,
+                appInfo: appInfo,
+              ),
             ),
-            children: _buildSettingsSectionChildren(
-              profile: profile,
-              estimate: estimate,
-              currentWeight: currentWeight,
-              hasScaleMeasurement: latestScale != null,
-              dataPath: dataPath,
-              mealTargetSettings: mealTargetSettings,
-              appInfo: appInfo,
-            ),
-          ),
-          if (_isApplying)
-            Positioned.fill(
-              child: ColoredBox(
-                color:
-                    Theme.of(context).colorScheme.scrim.withValues(alpha: 0.42),
-                child: Center(
-                  child: TtAppCard(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        LinearProgressIndicator(value: _applyProgress),
-                        const SizedBox(height: AppSpacing.md),
-                        Text(
-                          _applyMessage,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ],
+            if (_isApplying)
+              Positioned.fill(
+                child: ColoredBox(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .scrim
+                      .withValues(alpha: 0.42),
+                  child: Center(
+                    child: TtAppCard(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          LinearProgressIndicator(value: _applyProgress),
+                          const SizedBox(height: AppSpacing.md),
+                          Text(
+                            _applyMessage,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          const Text(
+                            'Non chiudere questa pagina e non tornare indietro: '
+                            'profilo e target vengono salvati insieme soltanto '
+                            'al termine del ricalcolo.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1011,9 +1024,47 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
   }
 
   Future<void> _showMacroSheet(UserProfileEntity profile) async {
+    final double weightKg =
+        ref.read(measurementRepositoryProvider).latestScale()?.weightKg ??
+            profile.initialWeightKg ??
+            70;
+    final double targetKcal = const ProfileNutritionCalculator()
+        .calculateFixedTargets(profile, currentWeightKg: weightKg)
+        .targetKcal;
+
+    void loadSuggestedDefaults() {
+      final double proteinPerKg = TargetModelConstants.proteinDefaultGramsPerKg;
+      final double proteinKcal =
+          proteinPerKg * weightKg * TargetModelConstants.proteinKcalPerGram;
+      final double fatGrams = targetKcal *
+          TargetModelConstants.fatDefaultEnergyPercent /
+          100 /
+          TargetModelConstants.fatKcalPerGram;
+      final double carbsGrams = (targetKcal -
+                  proteinKcal -
+                  fatGrams * TargetModelConstants.fatKcalPerGram)
+              .clamp(0, double.infinity)
+              .toDouble() /
+          TargetModelConstants.carbohydrateKcalPerGram;
+      _proteinKg.text = _num(proteinPerKg);
+      _fatKg.text = _num(fatGrams / weightKg);
+      _carbsKg.text = _num(carbsGrams / weightKg);
+    }
+
     final bool saved = await _showEditorSheet(
       title: 'Macro nutrienti',
       childBuilder: (BuildContext context, StateSetter setSheetState) {
+        final bool custom = _macroMode == MacroModeCodes.customGramsPerKg;
+        final double proteinPerKg = _toDouble(_proteinKg.text) ?? 0;
+        final double fatPerKg = _toDouble(_fatKg.text) ?? 0;
+        final double carbsPerKg = _toDouble(_carbsKg.text) ?? 0;
+        final double calculatedKcal = weightKg *
+            (proteinPerKg * TargetModelConstants.proteinKcalPerGram +
+                carbsPerKg * TargetModelConstants.carbohydrateKcalPerGram +
+                fatPerKg * TargetModelConstants.fatKcalPerGram);
+        final double correction =
+            calculatedKcal <= 0 ? 1 : targetKcal / calculatedKcal;
+
         return <Widget>[
           SegmentedButton<String>(
             segments: const <ButtonSegment<String>>[
@@ -1022,26 +1073,25 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
                 label: Text('Default'),
               ),
               ButtonSegment<String>(
-                value: MacroModeCodes.customTheo2,
+                value: MacroModeCodes.customGramsPerKg,
                 label: Text('Personalizzato'),
               ),
               ButtonSegment<String>(
+                value: MacroModeCodes.customTheo2,
+                label: Text('Legacy 0.1.0'),
+              ),
+              ButtonSegment<String>(
                 value: MacroModeCodes.custom,
-                label: Text('Legacy'),
+                label: Text('Legacy storico'),
               ),
             ],
             selected: <String>{_macroMode},
             onSelectionChanged: (Set<String> value) {
               final String nextMode = value.first;
               setSheetState(() {
-                if (nextMode == MacroModeCodes.customTheo2 &&
-                    _macroMode != MacroModeCodes.customTheo2) {
-                  _proteinKg.text = _num(
-                    TargetModelConstants.proteinDefaultGramsPerKg,
-                  );
-                  _fatKg.text = _num(
-                    TargetModelConstants.fatDefaultEnergyPercent,
-                  );
+                if (nextMode == MacroModeCodes.customGramsPerKg &&
+                    _macroMode != MacroModeCodes.customGramsPerKg) {
+                  loadSuggestedDefaults();
                 }
                 _macroMode = nextMode;
               });
@@ -1050,52 +1100,73 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
           const SizedBox(height: AppSpacing.md),
           _field(
             _proteinKg,
-            _macroMode == MacroModeCodes.custom
-                ? 'Proteine g/kg legacy'
-                : 'Proteine g/kg (1,4–2,2)',
-            keyboardType: TextInputType.number,
-            enabled: _macroMode == MacroModeCodes.customTheo2,
+            custom ? 'Proteine g/kg' : 'Proteine',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            enabled: custom,
+            onChanged: (_) => setSheetState(() {}),
           ),
           _field(
             _fatKg,
-            _macroMode == MacroModeCodes.custom
-                ? 'Grassi g/kg legacy'
-                : 'Grassi % energia (20–35)',
-            keyboardType: TextInputType.number,
-            enabled: _macroMode == MacroModeCodes.customTheo2,
+            custom ? 'Grassi g/kg' : 'Grassi',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            enabled: custom,
+            onChanged: (_) => setSheetState(() {}),
+          ),
+          _field(
+            _carbsKg,
+            custom ? 'Carboidrati g/kg' : 'Carboidrati',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            enabled: custom,
+            onChanged: (_) => setSheetState(() {}),
           ),
           if (_macroMode == MacroModeCodes.defaultByWeight)
             const TtAppCard(
               child: Text(
-                'Il profilo default usa 1,8 g/kg di proteine e il 25% '
-                'dell’energia dai grassi. Seleziona Personalizzato per '
-                'modificare questi due parametri nei limiti approvati.',
+                'Il profilo default resta invariato: proteine 1,8 g/kg, '
+                'grassi al 25% dell’energia e carboidrati calcolati dalle '
+                'calorie residue.',
               ),
             ),
-          if (_macroMode == MacroModeCodes.custom)
+          if (custom)
+            _MacroCalorieBanner(
+              targetKcal: targetKcal,
+              calculatedKcal: calculatedKcal,
+              suggestedProteinPerKg: proteinPerKg * correction,
+              suggestedFatPerKg: fatPerKg * correction,
+              suggestedCarbsPerKg: carbsPerKg * correction,
+            ),
+          if (_macroMode == MacroModeCodes.customTheo2 ||
+              _macroMode == MacroModeCodes.custom)
             const TtAppCard(
               child: Text(
                 'Configurazione legacy conservata senza conversione '
-                'silenziosa. I valori g/kg restano in sola lettura finché '
-                'non scegli Personalizzato 0.1.0.',
+                'silenziosa. Seleziona Personalizzato per passare al nuovo '
+                'modello in cui proteine, grassi e carboidrati sono tutti '
+                'espressi in g/kg.',
               ),
             ),
+          const SizedBox(height: AppSpacing.md),
           TextFormField(
             initialValue: 'max(25 g, 14 g ogni 1000 kcal)',
             enabled: false,
-            decoration: const InputDecoration(labelText: 'Fibre'),
+            decoration: const InputDecoration(
+              labelText: 'Fibre — calcolo automatico',
+            ),
           ),
-          const TtAppCard(
-            child: Text(
-              'I carboidrati vengono calcolati dalle calorie residue dopo proteine (4 kcal/g) e grassi (9 kcal/g), così la somma energetica dei macro coincide con il target calorico.',
+          const SizedBox(height: AppSpacing.md),
+          TextFormField(
+            initialValue: '10% limite · 5% obiettivo prudente',
+            enabled: false,
+            decoration: const InputDecoration(
+              labelText: 'Zuccheri liberi — calcolo automatico',
             ),
           ),
           const SizedBox(height: AppSpacing.md),
           const TtAppCard(
             child: Text(
-              'Zuccheri liberi: limite 10% dell’energia, preferibile 5%. '
-              'Gli zuccheri totali degli alimenti non vengono confrontati '
-              'automaticamente con questi limiti.',
+              'Il suggerimento proporzionale mantiene la distribuzione '
+              'relativa inserita dall’utente e scala insieme i tre macro '
+              'finché le calorie 4/4/9 coincidono con il target.',
             ),
           ),
         ];
@@ -1561,7 +1632,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       profile.adaptiveReferenceDays =
           (_toInt(_adaptiveReferenceDays.text) ?? 28).clamp(7, 180).toInt();
       profile.sedentaryBaseKcal = 0;
-      profile.rmrActivityFactor = 1.10;
+      profile.rmrActivityFactor = TargetModelConstants.rmrActivityFactor;
       profile.stepKcalCoefficient =
           TargetModelConstants.legacyStepKcalCoefficient;
       profile.averageWorkoutsPerWeek = _toInt(_workoutsPerWeek.text) ?? 0;
@@ -1570,24 +1641,25 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       profile.workoutActivityTypeCode = _workoutType;
       profile.activityFallbackModeCode = _activityFallbackMode;
       profile.macroModeCode = _macroMode;
-      if (_macroMode == MacroModeCodes.customTheo2) {
-        profile.proteinGramsPerKg = _toDouble(_proteinKg.text) ??
-            TargetModelConstants.proteinDefaultGramsPerKg;
-        profile.fatGramsPerKg = _toDouble(_fatKg.text) ??
-            TargetModelConstants.fatDefaultEnergyPercent;
+      if (_macroMode == MacroModeCodes.customGramsPerKg) {
+        profile.proteinGramsPerKg = (_toDouble(_proteinKg.text) ?? 0)
+            .clamp(0, TargetModelConstants.customProteinMaximumGramsPerKg)
+            .toDouble();
+        profile.fatGramsPerKg = (_toDouble(_fatKg.text) ?? 0)
+            .clamp(0, TargetModelConstants.customFatMaximumGramsPerKg)
+            .toDouble();
+        profile.carbsGramsPerKg = (_toDouble(_carbsKg.text) ?? 0)
+            .clamp(
+              0,
+              TargetModelConstants.customCarbohydrateMaximumGramsPerKg,
+            )
+            .toDouble();
       } else if (_macroMode == MacroModeCodes.defaultByWeight) {
         profile.proteinGramsPerKg =
             TargetModelConstants.proteinDefaultGramsPerKg;
-        profile.fatGramsPerKg = TargetModelConstants.fatDefaultEnergyPercent;
       }
-      // I campi legacy restano memorizzati per compatibilità, ma fibre,
-      // carboidrati e zuccheri del nuovo modello non li usano.
-      if (_macroMode != MacroModeCodes.custom) {
-        profile.fiberGramsPerKg = _toDouble(_fiberKg.text) ?? 0.5;
-        profile.carbsGramsPerKg = _toDouble(_carbsKg.text) ?? 3;
-        profile.sugarCarbsPercent =
-            (_toDouble(_sugarCarbsPercent.text) ?? 25).clamp(0, 100).toDouble();
-      }
+      // Fibre e zuccheri restano sempre gestiti dal modello automatico.
+      // I campi legacy non vengono convertiti o cancellati silenziosamente.
       profile.themeModeCode = _themeMode;
       profile.languageCode = _language;
       profile.kcalPerKg = TargetModelConstants.energyDensityPriorKcalPerKg;
@@ -2510,8 +2582,9 @@ class _TargetModelSourcesCard extends StatelessWidget {
             ),
             const _SettingRowData(
               'Composizione corporea',
-              'candidato 9500 kcal/kg massa grassa + 1020 kcal/kg massa priva di '
-                  'grasso; soglia di attivazione IN STALLO, quindi fallback peso',
+              'modello attivo con regola conservativa: almeno 7 giorni, 14 giorni '
+                  'di copertura, stesso dispositivo, controllo acqua e buchi; '
+                  'fallback automatico al peso quando la qualità non basta',
             ),
             _SettingRowData(
               'Guardrail',
@@ -2521,8 +2594,9 @@ class _TargetModelSourcesCard extends StatelessWidget {
             ),
             const _SettingRowData(
               'Macro 0.1.0',
-              'proteine 1,8 g/kg; grassi 25% energia; carboidrati residui; '
-                  'fibre max(25 g, 14 g/1000 kcal); zuccheri liberi 10%/5%',
+              'default invariato; personalizzato in g/kg per proteine, grassi e '
+                  'carboidrati con controllo calorie 4/4/9; fibre e zuccheri '
+                  'restano automatici',
             ),
             const _SettingRowData(
               'Limite',
@@ -2550,12 +2624,103 @@ class _TargetModelSourcesCard extends StatelessWidget {
   }
 }
 
+class _MacroCalorieBanner extends StatelessWidget {
+  const _MacroCalorieBanner({
+    required this.targetKcal,
+    required this.calculatedKcal,
+    required this.suggestedProteinPerKg,
+    required this.suggestedFatPerKg,
+    required this.suggestedCarbsPerKg,
+  });
+
+  final double targetKcal;
+  final double calculatedKcal;
+  final double suggestedProteinPerKg;
+  final double suggestedFatPerKg;
+  final double suggestedCarbsPerKg;
+
+  @override
+  Widget build(BuildContext context) {
+    final double delta = calculatedKcal - targetKcal;
+    final double deltaPercent =
+        targetKcal <= 0 ? 0 : delta.abs() / targetKcal * 100;
+    final bool aligned =
+        deltaPercent <= TargetModelConstants.macroCalorieTolerancePercent;
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return TtAppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                aligned
+                    ? Icons.check_circle_outline_rounded
+                    : Icons.tune_rounded,
+                color: aligned ? colors.primary : colors.tertiary,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  aligned
+                      ? 'Calorie dei macro allineate'
+                      : 'Distribuzione da riequilibrare',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: <Widget>[
+              Chip(label: Text('Target ${targetKcal.round()} kcal')),
+              Chip(label: Text('Macro ${calculatedKcal.round()} kcal')),
+              Chip(
+                label: Text(
+                  '${delta >= 0 ? '+' : ''}${delta.round()} kcal',
+                ),
+              ),
+            ],
+          ),
+          if (!aligned) ...<Widget>[
+            const SizedBox(height: AppSpacing.md),
+            const Text(
+              'Suggerimento proporzionale basato sui valori inseriti:',
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Proteine ${_display(suggestedProteinPerKg)} g/kg · '
+              'Grassi ${_display(suggestedFatPerKg)} g/kg · '
+              'Carboidrati ${_display(suggestedCarbsPerKg)} g/kg',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static String _display(double value) {
+    return value
+        .toStringAsFixed(2)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+}
+
 Widget _field(
   TextEditingController controller,
   String label, {
   TextInputType? keyboardType,
   String? helperText,
   bool enabled = true,
+  ValueChanged<String>? onChanged,
 }) {
   return Padding(
     padding: const EdgeInsets.only(bottom: AppSpacing.md),
@@ -2563,6 +2728,7 @@ Widget _field(
       controller: controller,
       keyboardType: keyboardType,
       enabled: enabled,
+      onChanged: onChanged,
       decoration: InputDecoration(labelText: label, helperText: helperText),
     ),
   );
@@ -2670,8 +2836,9 @@ String _workoutLabel(String code) {
 
 String _macroModeLabel(String code) {
   return switch (code) {
+    MacroModeCodes.customGramsPerKg => 'Personalizzato g/kg',
     MacroModeCodes.custom => 'Legacy conservato',
-    MacroModeCodes.customTheo2 => 'Personalizzato 0.1.0',
+    MacroModeCodes.customTheo2 => 'Legacy 0.1.0',
     _ => 'Default 0.1.0',
   };
 }

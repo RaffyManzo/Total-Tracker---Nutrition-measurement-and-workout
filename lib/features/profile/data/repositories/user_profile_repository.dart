@@ -279,6 +279,21 @@ class UserProfileRepository {
         'Step coefficient cannot be negative.',
       );
     }
+    if (profile.proteinGramsPerKg < 0 ||
+        profile.fatGramsPerKg < 0 ||
+        profile.carbsGramsPerKg < 0) {
+      throw ArgumentError(
+        'Personalized macro values in g/kg cannot be negative.',
+      );
+    }
+    if (profile.macroModeCode == MacroModeCodes.customGramsPerKg &&
+        (profile.proteinGramsPerKg > 5 ||
+            profile.fatGramsPerKg > 5 ||
+            profile.carbsGramsPerKg > 15)) {
+      throw ArgumentError(
+        'Personalized macro values exceed the supported editor range.',
+      );
+    }
     if (profile.sugarCarbsPercent < 0 || profile.sugarCarbsPercent > 100) {
       throw ArgumentError.value(
         profile.sugarCarbsPercent,

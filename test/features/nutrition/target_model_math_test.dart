@@ -97,131 +97,57 @@ void main() {
     expect(slope, closeTo(-0.1, 0.0001));
   });
 
-  test('composition candidate is calculated but activation remains stalled',
-      () {
+  List<DailyBodyCompositionPoint> validCompositionPoints({
+    double waterOffset = 0,
+    String secondDevice = '',
+  }) {
+    const List<int> offsets = <int>[0, 2, 4, 6, 9, 12, 14];
+    return offsets.map((int day) {
+      final double weight = 70 - day * 0.02;
+      final double fatMass = 14 - day * 0.01;
+      return DailyBodyCompositionPoint(
+        dateKey: DateTime(2026, 7, 1 + day).toIso8601String().split('T').first,
+        weightKg: weight,
+        fatMassKg: fatMass,
+        fatFreeMassKg: weight - fatMass,
+        deviceCode:
+            secondDevice.isNotEmpty && day >= 9 ? secondDevice : 'scale-a',
+        waterPercent: 55 + (day.isEven ? waterOffset : 0),
+      );
+    }).toList(growable: false);
+  }
+
+  test('valid composition is integrated with conservative blending', () {
     final BodyCompositionAssessment result =
-        TargetModelMath.assessBodyComposition(
-      const <DailyBodyCompositionPoint>[
-        DailyBodyCompositionPoint(
-          dateKey: '2026-07-01',
-          weightKg: 70,
-          fatMassKg: 14,
-          fatFreeMassKg: 56,
-          deviceCode: 'scale-a',
-        ),
-        DailyBodyCompositionPoint(
-          dateKey: '2026-07-02',
-          weightKg: 69.9,
-          fatMassKg: 13.95,
-          fatFreeMassKg: 55.95,
-          deviceCode: 'scale-a',
-        ),
-        DailyBodyCompositionPoint(
-          dateKey: '2026-07-03',
-          weightKg: 69.8,
-          fatMassKg: 13.90,
-          fatFreeMassKg: 55.90,
-          deviceCode: 'scale-a',
-        ),
-        DailyBodyCompositionPoint(
-          dateKey: '2026-07-04',
-          weightKg: 69.7,
-          fatMassKg: 13.85,
-          fatFreeMassKg: 55.85,
-          deviceCode: 'scale-a',
-        ),
-      ],
-    );
+        TargetModelMath.assessBodyComposition(validCompositionPoints());
 
     expect(result.candidateAvailable, isTrue);
-    expect(result.compositionEnergyChangeKcalPerDay, closeTo(-526, 0.001));
-    expect(result.selectedLevelCode, 'weight_only');
-    expect(result.compositionConfidence, 0);
-    expect(result.fallbackReasonCode, 'threshold_not_approved');
+    expect(result.selectedLevelCode, 'composition_blended');
+    expect(result.fallbackReasonCode, 'none');
+    expect(result.validDays, 7);
+    expect(result.coverageDays, 14);
+    expect(result.maximumGapDays, 3);
+    expect(result.compositionConfidence, closeTo(0.725, 0.0001));
+    expect(result.compositionEnergyChangeKcalPerDay, closeTo(-105.2, 0.001));
+    expect(result.weightOnlyEnergyChangeKcalPerDay, closeTo(-154, 0.001));
+    expect(result.effectiveEnergyChangeKcalPerDay, closeTo(-118.62, 0.01));
   });
 
-  test('composition candidate supports a positive slope', () {
+  test('large water variation keeps the weight-only fallback', () {
+    final List<DailyBodyCompositionPoint> points =
+        validCompositionPoints(waterOffset: 7);
     final BodyCompositionAssessment result =
-        TargetModelMath.assessBodyComposition(
-      const <DailyBodyCompositionPoint>[
-        DailyBodyCompositionPoint(
-          dateKey: '2026-07-01',
-          weightKg: 70,
-          fatMassKg: 14,
-          fatFreeMassKg: 56,
-          deviceCode: 'scale-a',
-          waterPercent: 55,
-        ),
-        DailyBodyCompositionPoint(
-          dateKey: '2026-07-02',
-          weightKg: 70.1,
-          fatMassKg: 14.05,
-          fatFreeMassKg: 56.05,
-          deviceCode: 'scale-a',
-          waterPercent: 55.1,
-        ),
-        DailyBodyCompositionPoint(
-          dateKey: '2026-07-03',
-          weightKg: 70.2,
-          fatMassKg: 14.10,
-          fatFreeMassKg: 56.10,
-          deviceCode: 'scale-a',
-          waterPercent: 54.9,
-        ),
-        DailyBodyCompositionPoint(
-          dateKey: '2026-07-04',
-          weightKg: 70.3,
-          fatMassKg: 14.15,
-          fatFreeMassKg: 56.15,
-          deviceCode: 'scale-a',
-          waterPercent: 55,
-        ),
-      ],
-    );
+        TargetModelMath.assessBodyComposition(points);
 
     expect(result.candidateAvailable, isTrue);
-    expect(result.compositionEnergyChangeKcalPerDay, closeTo(526, 0.001));
-    expect(
-        result.qualityNotes, contains('water_used_only_as_quality_indicator'));
-    expect(
-      result.qualityNotes,
-      contains('visceral_subcutaneous_muscle_bone_not_summed'),
-    );
+    expect(result.selectedLevelCode, 'weight_only');
+    expect(result.fallbackReasonCode, 'water_variation_too_large');
   });
 
   test('device change rejects composition and records the reason', () {
     final BodyCompositionAssessment result =
         TargetModelMath.assessBodyComposition(
-      const <DailyBodyCompositionPoint>[
-        DailyBodyCompositionPoint(
-          dateKey: '2026-07-01',
-          weightKg: 70,
-          fatMassKg: 14,
-          fatFreeMassKg: 56,
-          deviceCode: 'scale-a',
-        ),
-        DailyBodyCompositionPoint(
-          dateKey: '2026-07-02',
-          weightKg: 69.9,
-          fatMassKg: 13.9,
-          fatFreeMassKg: 56,
-          deviceCode: 'scale-a',
-        ),
-        DailyBodyCompositionPoint(
-          dateKey: '2026-07-03',
-          weightKg: 69.8,
-          fatMassKg: 13.8,
-          fatFreeMassKg: 56,
-          deviceCode: 'scale-b',
-        ),
-        DailyBodyCompositionPoint(
-          dateKey: '2026-07-04',
-          weightKg: 69.7,
-          fatMassKg: 13.7,
-          fatFreeMassKg: 56,
-          deviceCode: 'scale-b',
-        ),
-      ],
+      validCompositionPoints(secondDevice: 'scale-b'),
     );
 
     expect(result.candidateAvailable, isFalse);

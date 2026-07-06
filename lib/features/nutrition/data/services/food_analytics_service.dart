@@ -65,6 +65,7 @@ class TargetDayResult {
     this.fatMassSlopeKgPerDay,
     this.fatFreeMassSlopeKgPerDay,
     this.compositionEnergyChangeKcalPerDay,
+    this.effectiveBodyEnergyChangeKcalPerDay,
     this.guardrailApplied = false,
     this.guardrailReasonCode = 'none',
     this.unclampedTargetKcal,
@@ -101,6 +102,7 @@ class TargetDayResult {
   final double? fatMassSlopeKgPerDay;
   final double? fatFreeMassSlopeKgPerDay;
   final double? compositionEnergyChangeKcalPerDay;
+  final double? effectiveBodyEnergyChangeKcalPerDay;
   final bool guardrailApplied;
   final String guardrailReasonCode;
   final double? unclampedTargetKcal;
@@ -174,6 +176,7 @@ class WeekAdaptiveSummary {
     this.fatMassSlopeKgPerDay,
     this.fatFreeMassSlopeKgPerDay,
     this.compositionEnergyChangeKcalPerDay,
+    this.effectiveBodyEnergyChangeKcalPerDay,
     this.guardrailApplied = false,
     this.guardrailReasonCode = 'none',
     this.unclampedTargetKcal,
@@ -215,6 +218,7 @@ class WeekAdaptiveSummary {
   final double? fatMassSlopeKgPerDay;
   final double? fatFreeMassSlopeKgPerDay;
   final double? compositionEnergyChangeKcalPerDay;
+  final double? effectiveBodyEnergyChangeKcalPerDay;
   final bool guardrailApplied;
   final String guardrailReasonCode;
   final double? unclampedTargetKcal;
@@ -553,6 +557,8 @@ class FoodAnalyticsService {
       fatFreeMassSlopeKgPerDay: summary.fatFreeMassSlopeKgPerDay,
       compositionEnergyChangeKcalPerDay:
           summary.compositionEnergyChangeKcalPerDay,
+      effectiveBodyEnergyChangeKcalPerDay:
+          summary.effectiveBodyEnergyChangeKcalPerDay,
       guardrailApplied: dayGuardrail.applied || summary.guardrailApplied,
       guardrailReasonCode: dayGuardrail.applied
           ? dayGuardrail.reasonCode
@@ -912,6 +918,29 @@ class FoodAnalyticsService {
         ),
       );
     }
+    if (observed.compositionAssessment.selectedLevelCode ==
+        'composition_blended') {
+      alerts.add(
+        TargetAlert(
+          code: 'body_composition_active',
+          title: 'Composizione corporea integrata',
+          message: 'Il trend energetico combina massa grassa, massa priva di '
+              'grasso e prior del peso con confidenza '
+              '${(observed.compositionAssessment.compositionConfidence * 100).round()}%.',
+          severityCode: TargetAlertSeverityCodes.info,
+        ),
+      );
+    } else if (observed.compositionAssessment.candidateAvailable) {
+      alerts.add(
+        TargetAlert(
+          code: 'body_composition_fallback',
+          title: 'Composizione corporea non utilizzata',
+          message: 'Il calcolo resta sul trend del peso: '
+              '${observed.compositionAssessment.fallbackReasonCode}.',
+          severityCode: TargetAlertSeverityCodes.info,
+        ),
+      );
+    }
 
     adaptiveDiagnosticsWatch.stop();
     if (_diagnosticsEnabled) {
@@ -975,6 +1004,8 @@ class FoodAnalyticsService {
           observed.compositionAssessment.fatFreeMassSlopeKgPerDay,
       compositionEnergyChangeKcalPerDay:
           observed.compositionAssessment.compositionEnergyChangeKcalPerDay,
+      effectiveBodyEnergyChangeKcalPerDay:
+          observed.compositionAssessment.effectiveEnergyChangeKcalPerDay,
       guardrailApplied: targetGuardrail.applied || tdeeGuardrail.applied,
       guardrailReasonCode: targetGuardrail.applied
           ? targetGuardrail.reasonCode
@@ -1110,13 +1141,13 @@ class FoodAnalyticsService {
       weightPoints.last.dayIndex - weightPoints.first.dayIndex,
     );
     final double deltaWeightKg = weightSlope * elapsedDays;
-    // The composition candidate is exposed, but threshold/blending remain
-    // IN STALLO. Production therefore uses the approved 7700 weight prior.
-    final double observed = TargetModelMath.observedTdeeFromWeightSlope(
-      meanValidEnergyIntake: averageCalories,
-      weightSlopeKgPerDay: weightSlope,
-      energyDensityPriorKcalPerKg: kcalPerKg,
-    );
+    final bool compositionActive =
+        composition.selectedLevelCode == 'composition_blended' &&
+            composition.effectiveEnergyChangeKcalPerDay != null;
+    final double bodyEnergyChange = compositionActive
+        ? composition.effectiveEnergyChangeKcalPerDay!
+        : weightSlope * kcalPerKg;
+    final double observed = averageCalories - bodyEnergyChange;
     final double dayFactor = _clamp((intakeDays.length - 4) / 10, 0, 1);
     final double weightFactor = _clamp((weightPoints.length - 3) / 8, 0, 1);
     final double intakeReliability = _average(
@@ -1141,7 +1172,7 @@ class FoodAnalyticsService {
       deltaWeightKg: deltaWeightKg,
       weightSlopeKgPerDay: weightSlope,
       avgCalories: averageCalories,
-      modelLevelCode: 'weight_only',
+      modelLevelCode: compositionActive ? 'composition_blended' : 'weight_only',
       compositionAssessment: composition,
       guardrailApplied: guardrail.applied,
       guardrailReasonCode: guardrail.reasonCode,

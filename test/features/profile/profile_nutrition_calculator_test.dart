@@ -10,6 +10,9 @@ void main() {
     String sex = BiologicalSexCodes.male,
     String macroMode = MacroModeCodes.defaultByWeight,
     int defaultTargetKcal = 2100,
+    double proteinPerKg = 1.8,
+    double fatPerKg = 1.0,
+    double carbsPerKg = 4.0,
   }) {
     return UserProfileEntity(
       uuid: 'profile-calculator-test',
@@ -23,6 +26,9 @@ void main() {
       initialWeightKg: 64,
       heightCm: 160,
       macroModeCode: macroMode,
+      proteinGramsPerKg: proteinPerKg,
+      fatGramsPerKg: fatPerKg,
+      carbsGramsPerKg: carbsPerKg,
       birthDateEpochDay: DateTime(2004, 1, 1).millisecondsSinceEpoch ~/
           Duration.millisecondsPerDay,
       createdAtEpochMs: 1,
@@ -132,5 +138,32 @@ void main() {
     expect(result.fiberGrams, 25);
     expect(result.freeSugarLimitGrams, closeTo(37.5, 0.0001));
     expect(result.freeSugarPreferredGrams, closeTo(18.75, 0.0001));
+  });
+
+  test('personalized macros use g per kg and expose calorie correction', () {
+    const ProfileNutritionCalculator calculator = ProfileNutritionCalculator();
+    final ProfileNutritionTargets result = calculator.calculateFixedTargets(
+      profile(
+        targetMode: TargetModeCodes.fixedUser,
+        macroMode: MacroModeCodes.customGramsPerKg,
+        proteinPerKg: 2,
+        fatPerKg: 1,
+        carbsPerKg: 4,
+      ),
+      now: DateTime(2026, 7, 2),
+    );
+
+    expect(result.proteinGrams, 128);
+    expect(result.fatGrams, 64);
+    expect(result.carbsGrams, 256);
+    expect(result.macroCalculatedKcal, 2112);
+    expect(result.macroTargetKcal, 2100);
+    expect(result.macroCalorieDelta, 12);
+    expect(result.macroCaloriesMatchTarget, isTrue);
+    expect(result.suggestedProteinGramsPerKg, closeTo(1.988636, 0.00001));
+    expect(result.suggestedFatGramsPerKg, closeTo(0.994318, 0.00001));
+    expect(result.suggestedCarbsGramsPerKg, closeTo(3.977273, 0.00001));
+    expect(result.fiberGrams, closeTo(29.4, 0.0001));
+    expect(result.freeSugarLimitGrams, closeTo(52.5, 0.0001));
   });
 }

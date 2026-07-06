@@ -68,9 +68,14 @@ class BodyCompositionAssessment {
     required this.compositionConfidence,
     required this.fallbackReasonCode,
     required this.validDays,
+    required this.coverageDays,
+    required this.maximumGapDays,
     required this.fatMassSlopeKgPerDay,
     required this.fatFreeMassSlopeKgPerDay,
+    required this.weightSlopeKgPerDay,
     required this.compositionEnergyChangeKcalPerDay,
+    required this.weightOnlyEnergyChangeKcalPerDay,
+    required this.effectiveEnergyChangeKcalPerDay,
     required this.qualityNotes,
   });
 
@@ -79,9 +84,14 @@ class BodyCompositionAssessment {
   final double compositionConfidence;
   final String fallbackReasonCode;
   final int validDays;
+  final int coverageDays;
+  final int maximumGapDays;
   final double? fatMassSlopeKgPerDay;
   final double? fatFreeMassSlopeKgPerDay;
+  final double? weightSlopeKgPerDay;
   final double? compositionEnergyChangeKcalPerDay;
+  final double? weightOnlyEnergyChangeKcalPerDay;
+  final double? effectiveEnergyChangeKcalPerDay;
   final List<String> qualityNotes;
 }
 
@@ -230,11 +240,18 @@ class TargetModelMath {
 
   static BodyCompositionAssessment assessBodyComposition(
     Iterable<DailyBodyCompositionPoint> rawPoints, {
-    int minimumDistinctDays = 4,
+    int minimumDistinctDays =
+        TargetModelConstants.compositionMinimumDistinctDays,
+    int minimumCoverageDays =
+        TargetModelConstants.compositionMinimumCoverageDays,
+    int maximumGapDays = TargetModelConstants.compositionMaximumGapDays,
+    double minimumConfidence =
+        TargetModelConstants.compositionMinimumConfidence,
   }) {
     final List<String> notes = <String>[];
-    final List<DailyBodyCompositionPoint> points =
-        rawPoints.where((DailyBodyCompositionPoint point) {
+    final Map<String, DailyBodyCompositionPoint> distinct =
+        <String, DailyBodyCompositionPoint>{};
+    for (final DailyBodyCompositionPoint point in rawPoints) {
       final bool valid = point.weightKg.isFinite &&
           point.weightKg > 0 &&
           point.fatMassKg.isFinite &&
@@ -249,26 +266,48 @@ class TargetModelMath {
                   point.waterPercent! <= 100));
       if (!valid) {
         notes.add('measurement_not_mathematically_consistent');
+        continue;
       }
-      return valid;
-    }).toList(growable: false)
-          ..sort(
-            (DailyBodyCompositionPoint a, DailyBodyCompositionPoint b) =>
-                a.dateKey.compareTo(b.dateKey),
-          );
+      distinct[point.dateKey] = point;
+    }
+    final List<DailyBodyCompositionPoint> points = distinct.values.toList()
+      ..sort(
+        (DailyBodyCompositionPoint a, DailyBodyCompositionPoint b) =>
+            a.dateKey.compareTo(b.dateKey),
+      );
 
-    if (points.length < minimumDistinctDays) {
+    BodyCompositionAssessment fallback({
+      required String reason,
+      bool candidateAvailable = false,
+      int coverage = 0,
+      int maxGap = 0,
+      double confidence = 0,
+      double? fatSlope,
+      double? fatFreeSlope,
+      double? weightSlope,
+      double? compositionEnergy,
+      double? weightEnergy,
+    }) {
       return BodyCompositionAssessment(
-        candidateAvailable: false,
+        candidateAvailable: candidateAvailable,
         selectedLevelCode: 'weight_only',
-        compositionConfidence: 0,
-        fallbackReasonCode: 'insufficient_composition_days',
+        compositionConfidence: confidence,
+        fallbackReasonCode: reason,
         validDays: points.length,
-        fatMassSlopeKgPerDay: null,
-        fatFreeMassSlopeKgPerDay: null,
-        compositionEnergyChangeKcalPerDay: null,
+        coverageDays: coverage,
+        maximumGapDays: maxGap,
+        fatMassSlopeKgPerDay: fatSlope,
+        fatFreeMassSlopeKgPerDay: fatFreeSlope,
+        weightSlopeKgPerDay: weightSlope,
+        compositionEnergyChangeKcalPerDay: compositionEnergy,
+        weightOnlyEnergyChangeKcalPerDay: weightEnergy,
+        effectiveEnergyChangeKcalPerDay: weightEnergy,
         qualityNotes: List<String>.unmodifiable(notes),
       );
+    }
+
+    if (points.length < minimumDistinctDays) {
+      return fallback(reason: 'insufficient_composition_days');
     }
 
     final Set<String> devices = points
@@ -277,75 +316,179 @@ class TargetModelMath {
         .toSet();
     if (devices.contains('mixed') || devices.length > 1) {
       notes.add('device_changed');
-      return BodyCompositionAssessment(
-        candidateAvailable: false,
-        selectedLevelCode: 'weight_only',
-        compositionConfidence: 0,
-        fallbackReasonCode: 'device_changed',
-        validDays: points.length,
-        fatMassSlopeKgPerDay: null,
-        fatFreeMassSlopeKgPerDay: null,
-        compositionEnergyChangeKcalPerDay: null,
-        qualityNotes: List<String>.unmodifiable(notes),
+      return fallback(reason: 'device_changed');
+    }
+
+    final List<DateTime> dates = points
+        .map((DailyBodyCompositionPoint point) => DateTime.parse(point.dateKey))
+        .toList(growable: false);
+    final int coverage = dates.last.difference(dates.first).inDays;
+    int maxGap = 0;
+    for (int index = 1; index < dates.length; index += 1) {
+      maxGap =
+          math.max(maxGap, dates[index].difference(dates[index - 1]).inDays);
+    }
+    if (coverage < minimumCoverageDays) {
+      notes.add('coverage_too_short');
+      return fallback(
+        reason: 'insufficient_temporal_coverage',
+        candidateAvailable: true,
+        coverage: coverage,
+        maxGap: maxGap,
+      );
+    }
+    if (maxGap > maximumGapDays) {
+      notes.add('measurement_gap_too_large');
+      return fallback(
+        reason: 'composition_gap_too_large',
+        candidateAvailable: true,
+        coverage: coverage,
+        maxGap: maxGap,
       );
     }
 
-    final DateTime origin = DateTime.parse(points.first.dateKey);
-    final double? fatSlope = theilSenSlope(
-      points.map(
+    final DateTime origin = dates.first;
+    Iterable<TrendPoint> trend(double Function(DailyBodyCompositionPoint) get) {
+      return points.map(
         (DailyBodyCompositionPoint point) => TrendPoint(
           dayIndex: DateTime.parse(point.dateKey)
               .difference(origin)
               .inDays
               .toDouble(),
-          value: point.fatMassKg,
+          value: get(point),
         ),
-      ),
-    );
-    final double? fatFreeSlope = theilSenSlope(
-      points.map(
-        (DailyBodyCompositionPoint point) => TrendPoint(
-          dayIndex: DateTime.parse(point.dateKey)
-              .difference(origin)
-              .inDays
-              .toDouble(),
-          value: point.fatFreeMassKg,
-        ),
-      ),
-    );
-    if (fatSlope == null || fatFreeSlope == null) {
-      return BodyCompositionAssessment(
-        candidateAvailable: false,
-        selectedLevelCode: 'weight_only',
-        compositionConfidence: 0,
-        fallbackReasonCode: 'composition_trend_unavailable',
-        validDays: points.length,
-        fatMassSlopeKgPerDay: fatSlope,
-        fatFreeMassSlopeKgPerDay: fatFreeSlope,
-        compositionEnergyChangeKcalPerDay: null,
-        qualityNotes: List<String>.unmodifiable(notes),
       );
     }
 
-    final double energyChange = fatSlope *
+    final double? fatSlope = theilSenSlope(trend((p) => p.fatMassKg));
+    final double? fatFreeSlope = theilSenSlope(trend((p) => p.fatFreeMassKg));
+    final double? weightSlope = theilSenSlope(trend((p) => p.weightKg));
+    if (fatSlope == null || fatFreeSlope == null || weightSlope == null) {
+      return fallback(
+        reason: 'composition_trend_unavailable',
+        candidateAvailable: true,
+        coverage: coverage,
+        maxGap: maxGap,
+        fatSlope: fatSlope,
+        fatFreeSlope: fatFreeSlope,
+        weightSlope: weightSlope,
+      );
+    }
+
+    final double compositionEnergy = fatSlope *
             TargetModelConstants.fatMassEnergyDensityKcalPerKg +
         fatFreeSlope * TargetModelConstants.fatFreeMassEnergyDensityKcalPerKg;
+    final double weightEnergy =
+        weightSlope * TargetModelConstants.energyDensityPriorKcalPerKg;
+
+    if (weightSlope.abs() >
+            TargetModelConstants.compositionMaximumWeightSlopeKgPerDay ||
+        fatSlope.abs() >
+            TargetModelConstants.compositionMaximumFatSlopeKgPerDay ||
+        fatFreeSlope.abs() >
+            TargetModelConstants.compositionMaximumFatFreeSlopeKgPerDay) {
+      notes.add('physiologically_implausible_slope');
+      return fallback(
+        reason: 'implausible_composition_trend',
+        candidateAvailable: true,
+        coverage: coverage,
+        maxGap: maxGap,
+        fatSlope: fatSlope,
+        fatFreeSlope: fatFreeSlope,
+        weightSlope: weightSlope,
+        compositionEnergy: compositionEnergy,
+        weightEnergy: weightEnergy,
+      );
+    }
+
+    final List<double> waters = points
+        .map((DailyBodyCompositionPoint point) => point.waterPercent)
+        .whereType<double>()
+        .toList(growable: false);
+    final double waterFactor;
+    if (waters.length < points.length ~/ 2) {
+      waterFactor = 0.65;
+      notes.add('water_data_partially_missing');
+    } else {
+      final double waterRange =
+          waters.reduce(math.max) - waters.reduce(math.min);
+      if (waterRange >
+          TargetModelConstants.compositionMaximumWaterRangePercent) {
+        notes.add('water_variation_too_large');
+        return fallback(
+          reason: 'water_variation_too_large',
+          candidateAvailable: true,
+          coverage: coverage,
+          maxGap: maxGap,
+          fatSlope: fatSlope,
+          fatFreeSlope: fatFreeSlope,
+          weightSlope: weightSlope,
+          compositionEnergy: compositionEnergy,
+          weightEnergy: weightEnergy,
+        );
+      }
+      waterFactor = waterRange <= 2
+          ? 1
+          : waterRange <= 4
+              ? 0.8
+              : 0.55;
+    }
+
+    final double dayFactor = (points.length / 14).clamp(0, 1).toDouble();
+    final double coverageFactor = (coverage / 28).clamp(0, 1).toDouble();
+    final double gapFactor = maxGap <= 3
+        ? 1
+        : maxGap <= 5
+            ? 0.85
+            : maxGap <= 7
+                ? 0.65
+                : 0.45;
+    final double deviceFactor =
+        devices.isEmpty || devices.contains('unspecified') ? 0.75 : 1;
+    final double confidence = (dayFactor * 0.30 +
+            coverageFactor * 0.25 +
+            gapFactor * 0.20 +
+            waterFactor * 0.15 +
+            deviceFactor * 0.10)
+        .clamp(0, 1)
+        .toDouble();
+
     notes.add('water_used_only_as_quality_indicator');
     notes.add('visceral_subcutaneous_muscle_bone_not_summed');
-    notes.add('composition_thresholds_stalled');
+    notes.add('conservative_household_bia_quality_rule');
 
-    // The numerical threshold and blending weights are explicitly IN STALLO.
-    // The candidate is calculated and audited, but production remains on the
-    // weight-only level until an approved threshold exists.
+    if (confidence < minimumConfidence) {
+      notes.add('composition_confidence_below_threshold');
+      return fallback(
+        reason: 'composition_confidence_too_low',
+        candidateAvailable: true,
+        coverage: coverage,
+        maxGap: maxGap,
+        confidence: confidence,
+        fatSlope: fatSlope,
+        fatFreeSlope: fatFreeSlope,
+        weightSlope: weightSlope,
+        compositionEnergy: compositionEnergy,
+        weightEnergy: weightEnergy,
+      );
+    }
+
+    final double effectiveEnergy =
+        compositionEnergy * confidence + weightEnergy * (1 - confidence);
     return BodyCompositionAssessment(
       candidateAvailable: true,
-      selectedLevelCode: 'weight_only',
-      compositionConfidence: 0,
-      fallbackReasonCode: 'threshold_not_approved',
+      selectedLevelCode: 'composition_blended',
+      compositionConfidence: confidence,
+      fallbackReasonCode: 'none',
       validDays: points.length,
+      coverageDays: coverage,
+      maximumGapDays: maxGap,
       fatMassSlopeKgPerDay: fatSlope,
       fatFreeMassSlopeKgPerDay: fatFreeSlope,
-      compositionEnergyChangeKcalPerDay: energyChange,
+      weightSlopeKgPerDay: weightSlope,
+      compositionEnergyChangeKcalPerDay: compositionEnergy,
+      weightOnlyEnergyChangeKcalPerDay: weightEnergy,
+      effectiveEnergyChangeKcalPerDay: effectiveEnergy,
       qualityNotes: List<String>.unmodifiable(notes),
     );
   }

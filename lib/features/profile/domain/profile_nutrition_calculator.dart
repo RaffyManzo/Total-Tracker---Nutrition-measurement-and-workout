@@ -26,13 +26,23 @@ class ProfileNutritionTargets {
     required this.proteinGrams,
     required this.proteinGramsPerKg,
     required this.fatGrams,
+    required this.fatGramsPerKg,
     required this.fatEnergyPercent,
     required this.fiberGrams,
     required this.carbsGrams,
+    required this.carbsGramsPerKg,
     required this.sugarGrams,
     required this.freeSugarLimitGrams,
     required this.freeSugarPreferredGrams,
     required this.macroModelCode,
+    required this.macroTargetKcal,
+    required this.macroCalculatedKcal,
+    required this.macroCalorieDelta,
+    required this.macroCalorieDeltaPercent,
+    required this.macroCaloriesMatchTarget,
+    required this.suggestedProteinGramsPerKg,
+    required this.suggestedFatGramsPerKg,
+    required this.suggestedCarbsGramsPerKg,
   });
 
   final double rmrKcal;
@@ -55,9 +65,11 @@ class ProfileNutritionTargets {
   final double proteinGrams;
   final double proteinGramsPerKg;
   final double fatGrams;
+  final double fatGramsPerKg;
   final double fatEnergyPercent;
   final double fiberGrams;
   final double carbsGrams;
+  final double carbsGramsPerKg;
 
   /// Compatibility field. It represents the WHO free-sugar limit, not total
   /// sugars present in foods. The UI must not compare total sugars to it.
@@ -65,6 +77,20 @@ class ProfileNutritionTargets {
   final double freeSugarLimitGrams;
   final double freeSugarPreferredGrams;
   final String macroModelCode;
+
+  /// Calories expected from the active daily target.
+  final double macroTargetKcal;
+
+  /// Calories implied only by protein, carbohydrates and fat (4/4/9).
+  final double macroCalculatedKcal;
+  final double macroCalorieDelta;
+  final double macroCalorieDeltaPercent;
+  final bool macroCaloriesMatchTarget;
+
+  /// Proportional correction that preserves the user's relative distribution.
+  final double suggestedProteinGramsPerKg;
+  final double suggestedFatGramsPerKg;
+  final double suggestedCarbsGramsPerKg;
 }
 
 class _RmrResult {
@@ -122,30 +148,68 @@ class ProfileNutritionCalculator {
     );
     final double targetKcal = guardrail.value;
 
+    final bool customAllGramsPerKg =
+        profile.macroModeCode == MacroModeCodes.customGramsPerKg;
     final bool legacyCustom = profile.macroModeCode == MacroModeCodes.custom;
-    final bool theo2Custom =
+    final bool legacyTheo2 =
         profile.macroModeCode == MacroModeCodes.customTheo2;
-    final double proteinPerKg = legacyCustom || theo2Custom
-        ? profile.proteinGramsPerKg
-            .clamp(
-              TargetModelConstants.proteinMinimumGramsPerKg,
-              TargetModelConstants.proteinMaximumGramsPerKg,
-            )
-            .toDouble()
-        : TargetModelConstants.proteinDefaultGramsPerKg;
-    final double proteinGrams = proteinPerKg * weightKg;
 
-    final double fatEnergyPercent;
+    final double proteinPerKg;
+    final double fatPerKg;
+    final double carbsPerKg;
+    final double proteinGrams;
     final double fatGrams;
+    final double carbsGrams;
+    final double fatEnergyPercent;
     final String macroModelCode;
-    if (legacyCustom) {
-      fatGrams = profile.fatGramsPerKg.clamp(0, 10).toDouble() * weightKg;
+
+    if (customAllGramsPerKg) {
+      proteinPerKg = profile.proteinGramsPerKg
+          .clamp(0, TargetModelConstants.customProteinMaximumGramsPerKg)
+          .toDouble();
+      fatPerKg = profile.fatGramsPerKg
+          .clamp(0, TargetModelConstants.customFatMaximumGramsPerKg)
+          .toDouble();
+      carbsPerKg = profile.carbsGramsPerKg
+          .clamp(
+            0,
+            TargetModelConstants.customCarbohydrateMaximumGramsPerKg,
+          )
+          .toDouble();
+      proteinGrams = proteinPerKg * weightKg;
+      fatGrams = fatPerKg * weightKg;
+      carbsGrams = carbsPerKg * weightKg;
       fatEnergyPercent = targetKcal <= 0
           ? 0
           : fatGrams * TargetModelConstants.fatKcalPerGram / targetKcal * 100;
+      macroModelCode = 'custom_all_g_per_kg';
+    } else if (legacyCustom) {
+      proteinPerKg = profile.proteinGramsPerKg.clamp(0, 10).toDouble();
+      fatPerKg = profile.fatGramsPerKg.clamp(0, 10).toDouble();
+      proteinGrams = proteinPerKg * weightKg;
+      fatGrams = fatPerKg * weightKg;
+      final double proteinKcal =
+          proteinGrams * TargetModelConstants.proteinKcalPerGram;
+      final double fatKcal = fatGrams * TargetModelConstants.fatKcalPerGram;
+      final double carbohydrateKcal = (targetKcal - proteinKcal - fatKcal)
+          .clamp(0, double.infinity)
+          .toDouble();
+      carbsGrams =
+          carbohydrateKcal / TargetModelConstants.carbohydrateKcalPerGram;
+      carbsPerKg = weightKg <= 0 ? 0 : carbsGrams / weightKg;
+      fatEnergyPercent = targetKcal <= 0 ? 0 : fatKcal / targetKcal * 100;
       macroModelCode = 'legacy_custom_g_per_kg';
     } else {
-      fatEnergyPercent = theo2Custom
+      proteinPerKg = legacyTheo2
+          ? profile.proteinGramsPerKg
+              .clamp(
+                TargetModelConstants.proteinMinimumGramsPerKg,
+                TargetModelConstants.proteinMaximumGramsPerKg,
+              )
+              .toDouble()
+          : TargetModelConstants.proteinDefaultGramsPerKg;
+      proteinGrams = proteinPerKg * weightKg;
+      fatEnergyPercent = legacyTheo2
           ? profile.fatGramsPerKg
               .clamp(
                 TargetModelConstants.fatMinimumEnergyPercent,
@@ -157,17 +221,19 @@ class ProfileNutritionCalculator {
           fatEnergyPercent /
           100 /
           TargetModelConstants.fatKcalPerGram;
-      macroModelCode = theo2Custom ? 'theo2_custom' : 'theo2_default';
+      fatPerKg = weightKg <= 0 ? 0 : fatGrams / weightKg;
+      final double proteinKcal =
+          proteinGrams * TargetModelConstants.proteinKcalPerGram;
+      final double fatKcal = fatGrams * TargetModelConstants.fatKcalPerGram;
+      final double carbohydrateKcal = (targetKcal - proteinKcal - fatKcal)
+          .clamp(0, double.infinity)
+          .toDouble();
+      carbsGrams =
+          carbohydrateKcal / TargetModelConstants.carbohydrateKcalPerGram;
+      carbsPerKg = weightKg <= 0 ? 0 : carbsGrams / weightKg;
+      macroModelCode = legacyTheo2 ? 'legacy_theo2_custom' : 'theo3_default';
     }
 
-    final double proteinKcal =
-        proteinGrams * TargetModelConstants.proteinKcalPerGram;
-    final double fatKcal = fatGrams * TargetModelConstants.fatKcalPerGram;
-    final double carbohydrateKcal = (targetKcal - proteinKcal - fatKcal)
-        .clamp(0, double.infinity)
-        .toDouble();
-    final double carbsGrams =
-        carbohydrateKcal / TargetModelConstants.carbohydrateKcalPerGram;
     final double fiberGrams = legacyCustom
         ? profile.fiberGramsPerKg.clamp(0, 10).toDouble() * weightKg
         : (TargetModelConstants.fiberGramsPer1000Kcal * targetKcal / 1000)
@@ -181,6 +247,18 @@ class ProfileNutritionCalculator {
         TargetModelConstants.freeSugarPreferredEnergyPercent /
         100 /
         TargetModelConstants.carbohydrateKcalPerGram;
+
+    final double macroCalculatedKcal =
+        proteinGrams * TargetModelConstants.proteinKcalPerGram +
+            carbsGrams * TargetModelConstants.carbohydrateKcalPerGram +
+            fatGrams * TargetModelConstants.fatKcalPerGram;
+    final double macroCalorieDelta = macroCalculatedKcal - targetKcal;
+    final double macroCalorieDeltaPercent =
+        targetKcal <= 0 ? 0 : macroCalorieDelta.abs() / targetKcal * 100;
+    final bool macroCaloriesMatchTarget = macroCalorieDeltaPercent <=
+        TargetModelConstants.macroCalorieTolerancePercent;
+    final double correctionFactor =
+        macroCalculatedKcal <= 0 ? 1 : targetKcal / macroCalculatedKcal;
 
     return ProfileNutritionTargets(
       rmrKcal: rmr.kcal,
@@ -203,13 +281,23 @@ class ProfileNutritionCalculator {
       proteinGrams: proteinGrams,
       proteinGramsPerKg: proteinPerKg,
       fatGrams: fatGrams,
+      fatGramsPerKg: fatPerKg,
       fatEnergyPercent: fatEnergyPercent,
       fiberGrams: fiberGrams,
       carbsGrams: carbsGrams,
+      carbsGramsPerKg: carbsPerKg,
       sugarGrams: freeSugarLimitGrams,
       freeSugarLimitGrams: freeSugarLimitGrams,
       freeSugarPreferredGrams: freeSugarPreferredGrams,
       macroModelCode: macroModelCode,
+      macroTargetKcal: targetKcal,
+      macroCalculatedKcal: macroCalculatedKcal,
+      macroCalorieDelta: macroCalorieDelta,
+      macroCalorieDeltaPercent: macroCalorieDeltaPercent,
+      macroCaloriesMatchTarget: macroCaloriesMatchTarget,
+      suggestedProteinGramsPerKg: proteinPerKg * correctionFactor,
+      suggestedFatGramsPerKg: fatPerKg * correctionFactor,
+      suggestedCarbsGramsPerKg: carbsPerKg * correctionFactor,
     );
   }
 

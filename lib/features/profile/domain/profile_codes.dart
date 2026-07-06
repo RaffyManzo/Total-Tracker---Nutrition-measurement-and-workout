@@ -62,11 +62,16 @@ class MacroModeCodes {
 
   static const String defaultByWeight = 'default_by_weight';
   static const String custom = 'custom';
+  // New explicit mode: protein, fat and carbohydrates are all stored in g/kg.
+  static const String customGramsPerKg = 'custom_g_per_kg';
+
+  // Previous 0.1.0 mode kept only to preserve already stored profiles.
   static const String customTheo2 = 'custom_theo2';
 
   static const Set<String> values = <String>{
     defaultByWeight,
     custom,
+    customGramsPerKg,
     customTheo2,
   };
 }
