@@ -29,4 +29,16 @@ void main() {
       contains('day.dateKey.compareTo(todayKey) >= 0'),
     );
   });
+
+  test('composition reads scale measurements independently from food days', () {
+    final String source = File(
+      'lib/features/nutrition/data/services/food_analytics_service.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('_scaleAggregatesInRange'));
+    expect(source, contains('measurementAggregates: measurementAggregates'));
+    expect(source, contains('for (final _DailyScaleAggregate aggregate'));
+    expect(source, contains('compositionValidDays'));
+    expect(source, contains('_compositionFallbackMessage'));
+  });
 }

@@ -1,9 +1,9 @@
 class TargetModelConstants {
   const TargetModelConstants._();
 
-  static const String logicalPatchId = '0.1.0_02_theo';
-  static const String modelVersion = 'target-model-0.1.0-theo.3';
-  static const String formulaSourcesVersion = 'target-sources-0.1.0-theo.3';
+  static const String logicalPatchId = '0.1.0_03_theo';
+  static const String modelVersion = 'target-model-0.1.0-theo.4';
+  static const String formulaSourcesVersion = 'target-sources-0.1.0-theo.4';
   static const String effectiveDate = '2026-07-07';
 
   static const String rmrEquation = 'mifflin_st_jeor';

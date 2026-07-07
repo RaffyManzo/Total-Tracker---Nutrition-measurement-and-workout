@@ -150,10 +150,12 @@ void main() {
       validCompositionPoints(secondDevice: 'scale-b'),
     );
 
-    expect(result.candidateAvailable, isFalse);
+    expect(result.candidateAvailable, isTrue);
     expect(result.selectedLevelCode, 'weight_only');
     expect(result.fallbackReasonCode, 'device_changed');
     expect(result.compositionConfidence, 0);
+    expect(result.compositionEnergyChangeKcalPerDay, isNotNull);
+    expect(result.weightOnlyEnergyChangeKcalPerDay, isNotNull);
   });
 
   test('insufficient composition falls back with an explicit reason', () {
@@ -186,5 +188,19 @@ void main() {
     expect(result.unclampedValue, 5000);
     expect(result.applied, isTrue);
     expect(result.reasonCode, 'maximum');
+  });
+
+  test('short composition coverage still exposes a diagnostic candidate', () {
+    final List<DailyBodyCompositionPoint> points =
+        validCompositionPoints().take(5).toList(growable: false);
+
+    final BodyCompositionAssessment result =
+        TargetModelMath.assessBodyComposition(points);
+
+    expect(result.selectedLevelCode, 'weight_only');
+    expect(result.fallbackReasonCode, 'insufficient_composition_days');
+    expect(result.candidateAvailable, isTrue);
+    expect(result.compositionEnergyChangeKcalPerDay, isNotNull);
+    expect(result.weightOnlyEnergyChangeKcalPerDay, isNotNull);
   });
 }

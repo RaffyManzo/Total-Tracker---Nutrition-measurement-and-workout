@@ -1,0 +1,59 @@
+{
+  "logicalPatchId": "0.1.0_03_theo",
+  "modelVersion": "target-model-0.1.0-theo.4",
+  "effectiveDate": "2026-07-07",
+  "scope": "healthy_adults_general_or_sport_non_clinical",
+  "startupRecalculationMarker": "today.targetSourceHash starts with modelVersion",
+  "bodyComposition": {
+    "status": "active_with_conservative_quality_rules",
+    "formula": "fat_mass_slope*9500 + fat_free_mass_slope*1020 blended with weight_slope*7700",
+    "minimumDistinctDays": 7,
+    "minimumCoverageDays": 14,
+    "maximumGapDays": 10,
+    "minimumConfidence": 0.55,
+    "maximumWaterRangePercentagePoints": 6,
+    "maximumAbsoluteWeightSlopeKgPerDay": 0.25,
+    "maximumAbsoluteFatSlopeKgPerDay": 0.15,
+    "maximumAbsoluteFatFreeSlopeKgPerDay": 0.15,
+    "fallback": "weight_only_7700",
+    "limitations": "Conservative engineering heuristic for comparable household BIA measurements; not a clinical model.",
+    "measurementSelection": "All scale measurements in the adaptive reference window are grouped by date independently from DailyRecord existence.",
+    "diagnosticCandidate": "With at least two valid composition dates, raw slopes and energy are calculated for diagnostics even when activation thresholds fail."
+  },
+  "macros": {
+    "default": {
+      "proteinGPerKg": 1.8,
+      "fatEnergyPercent": 25,
+      "carbohydrates": "residual_energy"
+    },
+    "personalized": {
+      "editableUnits": "g_per_kg",
+      "editable": [
+        "protein",
+        "fat",
+        "carbohydrates"
+      ],
+      "automatic": [
+        "fibre",
+        "free_sugar"
+      ],
+      "calorieFormula": "protein_g*4 + carbohydrate_g*4 + fat_g*9",
+      "suggestion": "scale all three entered g/kg values by target_kcal / calculated_macro_kcal"
+    }
+  },
+  "stalledParameters": [
+    "rmr_activity_factor_1_10",
+    "tdee_guardrails_1300_4600"
+  ],
+  "workoutCaloriesContract": {
+    "field": "estimated_active_calories",
+    "currentStorageMapping": "WorkoutSessionEntity.estimatedKcalBurned",
+    "rule": "Completed workouts expose a non-negative active-calorie value consumed by the day; nutrition does not model exercise calories internally."
+  },
+  "formulaSourcesVersion": "target-sources-0.1.0-theo.4",
+  "ui": {
+    "dashboardCalculationAlerts": "removed",
+    "dailyCalculationAlerts": "top_dismissible_for_current_sheet_opening",
+    "calculationSections": "foldable_expansion_tiles"
+  }
+}

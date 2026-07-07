@@ -40,8 +40,22 @@ void main() {
     expect(source, contains('Composizione corporea'));
     expect(source, contains('Variazione energetica effettiva'));
     expect(source, contains('Target finale'));
-    expect(source, contains("title: 'Avvisi del giorno'"));
+    expect(source, contains("'Avvisi del giorno'"));
     expect(source, contains('hasPartialNutrition'));
+    expect(source, contains('StatefulBuilder'));
+    expect(source, contains('onDismiss'));
+    expect(source, contains('ExpansionTile'));
+    expect(source, contains('PageStorageKey<String>'));
+    expect(source, contains('Giorni composizione validi'));
+    expect(source, contains('Copertura composizione'));
+    expect(
+      source,
+      isNot(contains('latestTargetResult.alerts.isNotEmpty')),
+    );
+    expect(
+      source.indexOf("'Avvisi del giorno'"),
+      lessThan(source.indexOf("label: 'Target finale'")),
+    );
     expect(
       source,
       isNot(

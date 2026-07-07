@@ -62,6 +62,11 @@ class TargetDayResult {
     this.observedModelLevelCode = 'theoretical_only',
     this.compositionConfidence = 0,
     this.compositionFallbackReasonCode = 'not_evaluated',
+    this.compositionCandidateAvailable = false,
+    this.compositionValidDays = 0,
+    this.compositionCoverageDays = 0,
+    this.compositionMaximumGapDays = 0,
+    this.compositionQualityNotes = const <String>[],
     this.fatMassSlopeKgPerDay,
     this.fatFreeMassSlopeKgPerDay,
     this.compositionEnergyChangeKcalPerDay,
@@ -99,6 +104,11 @@ class TargetDayResult {
   final String observedModelLevelCode;
   final double compositionConfidence;
   final String compositionFallbackReasonCode;
+  final bool compositionCandidateAvailable;
+  final int compositionValidDays;
+  final int compositionCoverageDays;
+  final int compositionMaximumGapDays;
+  final List<String> compositionQualityNotes;
   final double? fatMassSlopeKgPerDay;
   final double? fatFreeMassSlopeKgPerDay;
   final double? compositionEnergyChangeKcalPerDay;
@@ -173,6 +183,11 @@ class WeekAdaptiveSummary {
     this.observedModelLevelCode = 'theoretical_only',
     this.compositionConfidence = 0,
     this.compositionFallbackReasonCode = 'not_evaluated',
+    this.compositionCandidateAvailable = false,
+    this.compositionValidDays = 0,
+    this.compositionCoverageDays = 0,
+    this.compositionMaximumGapDays = 0,
+    this.compositionQualityNotes = const <String>[],
     this.fatMassSlopeKgPerDay,
     this.fatFreeMassSlopeKgPerDay,
     this.compositionEnergyChangeKcalPerDay,
@@ -215,6 +230,11 @@ class WeekAdaptiveSummary {
   final String observedModelLevelCode;
   final double compositionConfidence;
   final String compositionFallbackReasonCode;
+  final bool compositionCandidateAvailable;
+  final int compositionValidDays;
+  final int compositionCoverageDays;
+  final int compositionMaximumGapDays;
+  final List<String> compositionQualityNotes;
   final double? fatMassSlopeKgPerDay;
   final double? fatFreeMassSlopeKgPerDay;
   final double? compositionEnergyChangeKcalPerDay;
@@ -553,6 +573,11 @@ class FoodAnalyticsService {
       observedModelLevelCode: summary.observedModelLevelCode,
       compositionConfidence: summary.compositionConfidence,
       compositionFallbackReasonCode: summary.compositionFallbackReasonCode,
+      compositionCandidateAvailable: summary.compositionCandidateAvailable,
+      compositionValidDays: summary.compositionValidDays,
+      compositionCoverageDays: summary.compositionCoverageDays,
+      compositionMaximumGapDays: summary.compositionMaximumGapDays,
+      compositionQualityNotes: summary.compositionQualityNotes,
       fatMassSlopeKgPerDay: summary.fatMassSlopeKgPerDay,
       fatFreeMassSlopeKgPerDay: summary.fatFreeMassSlopeKgPerDay,
       compositionEnergyChangeKcalPerDay:
@@ -839,9 +864,15 @@ class FoodAnalyticsService {
     final double theoretical = profileTargets == null
         ? 1980
         : profileTargets.sedentaryKcal + activeRef;
+    final List<_DailyScaleAggregate> measurementAggregates =
+        _scaleAggregatesInRange(
+      startInclusive: referenceStartKey,
+      endExclusive: mondayKey,
+    );
     final Stopwatch observedTdeeWatch = Stopwatch()..start();
     final ObservedTdeeResult observed = _calculateObservedTdee(
       reference,
+      measurementAggregates: measurementAggregates,
       minimumObservedDays: profile?.adaptiveMinimumObservedDays ?? 7,
       kcalPerKg: TargetModelConstants.energyDensityPriorKcalPerKg,
       minTdee: profile?.minimumReasonableTdee ?? 1300,
@@ -935,8 +966,9 @@ class FoodAnalyticsService {
         TargetAlert(
           code: 'body_composition_fallback',
           title: 'Composizione corporea non utilizzata',
-          message: 'Il calcolo resta sul trend del peso: '
-              '${observed.compositionAssessment.fallbackReasonCode}.',
+          message: _compositionFallbackMessage(
+            observed.compositionAssessment,
+          ),
           severityCode: TargetAlertSeverityCodes.info,
         ),
       );
@@ -956,6 +988,13 @@ class FoodAnalyticsService {
           'totalMs': adaptiveDiagnosticsWatch.elapsedMilliseconds,
           'validIntakeDays': observed.validIntakeDays,
           'validWeightDays': observed.validWeightDays,
+          'compositionValidDays': observed.compositionAssessment.validDays,
+          'compositionCoverageDays':
+              observed.compositionAssessment.coverageDays,
+          'compositionMaximumGapDays':
+              observed.compositionAssessment.maximumGapDays,
+          'compositionFallbackReason':
+              observed.compositionAssessment.fallbackReasonCode,
           'observedAvailable': observed.tdeeObserved != null,
           'activityReferenceSource': activeRefSourceCode,
         },
@@ -999,6 +1038,12 @@ class FoodAnalyticsService {
           observed.compositionAssessment.compositionConfidence,
       compositionFallbackReasonCode:
           observed.compositionAssessment.fallbackReasonCode,
+      compositionCandidateAvailable:
+          observed.compositionAssessment.candidateAvailable,
+      compositionValidDays: observed.compositionAssessment.validDays,
+      compositionCoverageDays: observed.compositionAssessment.coverageDays,
+      compositionMaximumGapDays: observed.compositionAssessment.maximumGapDays,
+      compositionQualityNotes: observed.compositionAssessment.qualityNotes,
       fatMassSlopeKgPerDay: observed.compositionAssessment.fatMassSlopeKgPerDay,
       fatFreeMassSlopeKgPerDay:
           observed.compositionAssessment.fatFreeMassSlopeKgPerDay,
@@ -1016,38 +1061,17 @@ class FoodAnalyticsService {
 
   ObservedTdeeResult _calculateObservedTdee(
     List<DailyRecordEntity> referenceDays, {
+    required List<_DailyScaleAggregate> measurementAggregates,
     required int minimumObservedDays,
     required double kcalPerKg,
     required double minTdee,
     required double maxTdee,
     required bool allowWeightTrend,
   }) {
-    final BodyCompositionAssessment emptyComposition =
-        TargetModelMath.assessBodyComposition(
-      const <DailyBodyCompositionPoint>[],
-    );
-    if (referenceDays.length < minimumObservedDays) {
-      return ObservedTdeeResult(
-        tdeeObserved: null,
-        observedConfidence: 0,
-        validIntakeDays: 0,
-        validWeightDays: 0,
-        deltaWeightKg: null,
-        weightSlopeKgPerDay: null,
-        avgCalories: null,
-        modelLevelCode: 'theoretical_only',
-        compositionAssessment: emptyComposition,
-        guardrailApplied: false,
-        guardrailReasonCode: 'none',
-        unclampedTdeeObserved: null,
-      );
-    }
-
     final List<_WeightedValue> intakeDays = <_WeightedValue>[];
     final List<_WeightPoint> weightPoints = <_WeightPoint>[];
     final List<DailyBodyCompositionPoint> compositionPoints =
         <DailyBodyCompositionPoint>[];
-    DateTime? trendOrigin;
 
     for (final DailyRecordEntity day in referenceDays) {
       final String freeMode = freeMealModeForDate(day.dateKey);
@@ -1056,33 +1080,56 @@ class FoodAnalyticsService {
       if (kcal > 0 && intakeReliability > 0) {
         intakeDays.add(_WeightedValue(value: kcal, weight: intakeReliability));
       }
-      if (!allowWeightTrend) {
-        continue;
-      }
-      final _DailyScaleAggregate? aggregate =
-          _scaleAggregateForDate(day.dateKey);
-      final double? weight = aggregate?.weightKg ?? day.weightKg;
-      final double reliability = aggregate == null
-          ? (weight == null ? 0 : 0.75)
-          : aggregate.reliabilityWeight;
-      if (weight != null && weight > 0 && reliability > 0.25) {
-        trendOrigin ??= DateTime.parse(day.dateKey);
-        weightPoints.add(
-          _WeightPoint(
-            dateKey: day.dateKey,
-            dayIndex: DateTime.parse(day.dateKey)
-                .difference(trendOrigin)
-                .inDays
-                .toDouble(),
-            value: weight,
-            weight: reliability,
-          ),
-        );
-      }
-      final DailyBodyCompositionPoint? composition =
-          aggregate?.compositionPoint;
+    }
+
+    for (final _DailyScaleAggregate aggregate in measurementAggregates) {
+      final DailyBodyCompositionPoint? composition = aggregate.compositionPoint;
       if (composition != null) {
         compositionPoints.add(composition);
+      }
+    }
+
+    if (allowWeightTrend) {
+      final Map<String, _WeightedValue> weightsByDate =
+          <String, _WeightedValue>{};
+      for (final _DailyScaleAggregate aggregate in measurementAggregates) {
+        if (aggregate.weightKg > 0 && aggregate.reliabilityWeight > 0.25) {
+          weightsByDate[aggregate.dateKey] = _WeightedValue(
+            value: aggregate.weightKg,
+            weight: aggregate.reliabilityWeight,
+          );
+        }
+      }
+
+      for (final DailyRecordEntity day in referenceDays) {
+        final double? fallbackWeight = day.weightKg;
+        if (!weightsByDate.containsKey(day.dateKey) &&
+            fallbackWeight != null &&
+            fallbackWeight > 0) {
+          weightsByDate[day.dateKey] = _WeightedValue(
+            value: fallbackWeight,
+            weight: 0.75,
+          );
+        }
+      }
+
+      final List<String> weightDates = weightsByDate.keys.toList()..sort();
+      if (weightDates.isNotEmpty) {
+        final DateTime trendOrigin = DateTime.parse(weightDates.first);
+        for (final String dateKey in weightDates) {
+          final _WeightedValue candidate = weightsByDate[dateKey]!;
+          weightPoints.add(
+            _WeightPoint(
+              dateKey: dateKey,
+              dayIndex: DateTime.parse(dateKey)
+                  .difference(trendOrigin)
+                  .inDays
+                  .toDouble(),
+              value: candidate.value,
+              weight: candidate.weight,
+            ),
+          );
+        }
       }
     }
 
@@ -1195,6 +1242,34 @@ class FoodAnalyticsService {
       initialProfileWeightKg: profile.initialWeightKg,
       referenceDate: referenceDate,
     );
+  }
+
+  List<_DailyScaleAggregate> _scaleAggregatesInRange({
+    required String startInclusive,
+    required String endExclusive,
+  }) {
+    final Map<String, List<ScaleMeasurementEntity>> grouped =
+        <String, List<ScaleMeasurementEntity>>{};
+    for (final ScaleMeasurementEntity item
+        in _measurements.getScaleMeasurements()) {
+      if (item.dateKey.compareTo(startInclusive) < 0 ||
+          item.dateKey.compareTo(endExclusive) >= 0 ||
+          item.weightKg == null ||
+          item.weightKg! <= 0) {
+        continue;
+      }
+      grouped
+          .putIfAbsent(item.dateKey, () => <ScaleMeasurementEntity>[])
+          .add(item);
+    }
+    final List<String> keys = grouped.keys.toList()..sort();
+    return keys
+        .map(
+          (String dateKey) =>
+              _aggregateScaleMeasurements(dateKey, grouped[dateKey]!),
+        )
+        .whereType<_DailyScaleAggregate>()
+        .toList(growable: false);
   }
 
   _DailyScaleAggregate? _scaleAggregateForDate(String dateKey) {
@@ -1335,6 +1410,37 @@ class FoodAnalyticsService {
     }
     return 'Non risultano allenamenti completati: viene usata la quota media '
         'giornaliera configurata nel profilo.';
+  }
+
+  String _compositionFallbackMessage(
+    BodyCompositionAssessment assessment,
+  ) {
+    final String evidence = 'Dati validi: ${assessment.validDays} giorni, '
+        'copertura ${assessment.coverageDays} giorni, intervallo massimo '
+        '${assessment.maximumGapDays} giorni.';
+    final String reason = switch (assessment.fallbackReasonCode) {
+      'insufficient_composition_days' =>
+        'Servono almeno ${TargetModelConstants.compositionMinimumDistinctDays} '
+            'giorni distinti con peso e percentuale di grasso.',
+      'device_changed' =>
+        'Le misurazioni risultano associate a dispositivi differenti.',
+      'insufficient_temporal_coverage' =>
+        'Servono almeno ${TargetModelConstants.compositionMinimumCoverageDays} '
+            'giorni tra la prima e l’ultima misurazione.',
+      'composition_gap_too_large' => 'Tra due misurazioni intercorrono più di '
+          '${TargetModelConstants.compositionMaximumGapDays} giorni.',
+      'composition_trend_unavailable' =>
+        'Non è possibile stimare un trend robusto dai dati disponibili.',
+      'implausible_composition_trend' =>
+        'Il trend supera i limiti di plausibilità configurati.',
+      'water_variation_too_large' =>
+        'La variazione dell’acqua corporea è troppo ampia per usare la BIA.',
+      'composition_confidence_too_low' =>
+        'La confidenza complessiva è inferiore al '
+            '${(TargetModelConstants.compositionMinimumConfidence * 100).round()}%.',
+      _ => 'La composizione non supera i controlli di qualità configurati.',
+    };
+    return '$reason $evidence Il sistema usa temporaneamente il trend del peso.';
   }
 
   String _summaryActivityStatus(

@@ -580,24 +580,6 @@ class _FoodHubV01Body extends StatelessWidget {
             const SizedBox(height: AppSpacing.md),
             _TdeeReliabilityCard(result: latestTargetResult),
           ],
-          if (latestTargetResult != null &&
-              latestTargetResult.alerts.isNotEmpty) ...<Widget>[
-            const SizedBox(height: AppSpacing.md),
-            for (final TargetAlert alert in latestTargetResult.alerts)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                child: _TargetAlertCard(alert: alert),
-              ),
-          ],
-          if (data.hasPartialNutrition) ...<Widget>[
-            const SizedBox(height: AppSpacing.md),
-            const TtAppCard(
-              child: Text(
-                'C e almeno un pasto libero non tracciato: il riepilogo '
-                'odierno usa soltanto i dati disponibili.',
-              ),
-            ),
-          ],
           const SizedBox(height: AppSpacing.sectionGap),
           TtAppCard(
             onTap: () {
@@ -2304,6 +2286,22 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
       return '${fmt(value)}$suffix';
     }
 
+    String compositionReasonLabel(String code) {
+      return switch (code) {
+        'none' => 'Nessun fallback',
+        'insufficient_composition_days' =>
+          'Giorni con peso e grasso insufficienti',
+        'device_changed' => 'Dispositivo non uniforme',
+        'insufficient_temporal_coverage' => 'Copertura temporale insufficiente',
+        'composition_gap_too_large' => 'Intervallo tra misure troppo ampio',
+        'composition_trend_unavailable' => 'Trend robusto non disponibile',
+        'implausible_composition_trend' => 'Trend oltre i limiti configurati',
+        'water_variation_too_large' => 'Oscillazione dell’acqua troppo ampia',
+        'composition_confidence_too_low' => 'Confidenza insufficiente',
+        _ => code,
+      };
+    }
+
     Widget detailRow(String label, String value) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
@@ -2369,45 +2367,60 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
       required List<Widget> children,
       IconData icon = Icons.info_outline_rounded,
       Color? accent,
+      bool initiallyExpanded = false,
     }) {
       final Color resolved = accent ?? Theme.of(context).colorScheme.primary;
       return Padding(
         padding: const EdgeInsets.only(bottom: AppSpacing.md),
         child: TtAppCard(
           borderColor: resolved.withValues(alpha: 0.28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: resolved.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(icon, color: resolved, size: 21),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
-                    ),
-                  ),
-                ],
+          child: Theme(
+            data: Theme.of(context).copyWith(
+              dividerColor: Colors.transparent,
+            ),
+            child: ExpansionTile(
+              key: PageStorageKey<String>('adaptive-section-$title'),
+              initiallyExpanded: initiallyExpanded,
+              maintainState: true,
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(top: AppSpacing.sm),
+              leading: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: resolved.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: resolved, size: 21),
               ),
-              const SizedBox(height: AppSpacing.sm),
-              const Divider(),
-              ...children,
-            ],
+              title: Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+              ),
+              children: <Widget>[
+                const Divider(),
+                ...children,
+              ],
+            ),
           ),
         ),
       );
     }
+
+    final List<TargetAlert> sheetAlerts = <TargetAlert>[
+      ...targetResult.alerts,
+      if (hasPartialNutrition)
+        const TargetAlert(
+          code: 'partial_nutrition',
+          title: 'Nutrizione parziale',
+          message: 'Questo giorno contiene un pasto libero non completamente '
+              'quantificato. Il bilancio usa soltanto i dati disponibili.',
+          severityCode: TargetAlertSeverityCodes.warning,
+        ),
+    ];
+    final Set<String> dismissedAlertKeys = <String>{};
 
     final bool? clearRequested = await showModalBottomSheet<bool>(
       context: context,
@@ -2415,493 +2428,564 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
       isScrollControlled: true,
       useSafeArea: true,
       builder: (BuildContext sheetContext) {
-        return FractionallySizedBox(
-          heightFactor: 0.94,
-          child: Column(
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg,
-                  AppSpacing.sm,
-                  AppSpacing.sm,
-                  AppSpacing.md,
-                ),
-                child: Row(
-                  children: <Widget>[
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color:
-                            Theme.of(sheetContext).colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Icon(
-                        Icons.calculate_outlined,
-                        color: Theme.of(sheetContext)
-                            .colorScheme
-                            .onPrimaryContainer,
-                      ),
+        return StatefulBuilder(
+          builder: (BuildContext sheetContext, StateSetter setSheetState) {
+            final List<MapEntry<String, TargetAlert>> visibleAlerts =
+                sheetAlerts
+                    .asMap()
+                    .entries
+                    .map(
+                      (MapEntry<int, TargetAlert> entry) {
+                        return MapEntry<String, TargetAlert>(
+                          '${entry.key}:${entry.value.code}',
+                          entry.value,
+                        );
+                      },
+                    )
+                    .where(
+                      (MapEntry<String, TargetAlert> entry) =>
+                          !dismissedAlertKeys.contains(entry.key),
+                    )
+                    .toList(growable: false);
+            return FractionallySizedBox(
+              heightFactor: 0.94,
+              child: Column(
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.sm,
+                      AppSpacing.sm,
+                      AppSpacing.md,
                     ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            'Calcolo adattivo giornaliero',
-                            style:
-                                Theme.of(sheetContext).textTheme.headlineSmall,
+                    child: Row(
+                      children: <Widget>[
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: Theme.of(sheetContext)
+                                .colorScheme
+                                .primaryContainer,
+                            borderRadius: BorderRadius.circular(14),
                           ),
-                          Text(
-                            'Formula, fonti, fallback e snapshot del ${day.dateKey}',
-                            style: Theme.of(sheetContext).textTheme.bodySmall,
+                          child: Icon(
+                            Icons.calculate_outlined,
+                            color: Theme.of(sheetContext)
+                                .colorScheme
+                                .onPrimaryContainer,
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                'Calcolo adattivo giornaliero',
+                                style: Theme.of(sheetContext)
+                                    .textTheme
+                                    .headlineSmall,
+                              ),
+                              Text(
+                                'Formula, fonti, fallback e snapshot del ${day.dateKey}',
+                                style:
+                                    Theme.of(sheetContext).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Chiudi',
+                          onPressed: () =>
+                              Navigator.of(sheetContext).pop(false),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      tooltip: 'Chiudi',
-                      onPressed: () => Navigator.of(sheetContext).pop(false),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    0,
-                    AppSpacing.lg,
-                    AppSpacing.md,
                   ),
-                  children: <Widget>[
-                    Wrap(
-                      spacing: AppSpacing.sm,
-                      runSpacing: AppSpacing.sm,
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.lg,
+                        0,
+                        AppSpacing.lg,
+                        AppSpacing.md,
+                      ),
                       children: <Widget>[
-                        metricCard(
-                          label: 'Target finale',
-                          value: '${fmt(targetResult.targetKcal)} kcal',
-                          icon: Icons.flag_rounded,
-                        ),
-                        metricCard(
-                          label: 'TDEE riferimento',
-                          value: '${fmt(targetResult.tdeeRefKcal)} kcal',
-                          icon: Icons.monitor_heart_outlined,
-                        ),
-                        metricCard(
-                          label: 'Attività usata',
-                          value: '${fmt(resolved.totalKcal)} kcal',
-                          icon: Icons.directions_walk_rounded,
-                        ),
-                        metricCard(
-                          label: 'Affidabilità osservata',
-                          value:
-                              '${(targetResult.observedConfidence * 100).round()}%',
-                          icon: Icons.verified_outlined,
-                          accent: targetResult.tdeeObservedKcal == null
-                              ? Theme.of(context).colorScheme.tertiary
-                              : Theme.of(context).colorScheme.primary,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    section(
-                      title: 'Formula finale',
-                      icon: Icons.functions_rounded,
-                      children: <Widget>[
-                        detailRow(
-                          'Formula',
-                          'target = TDEE riferimento + (attività giorno - attività riferimento)',
-                        ),
-                        detailRow(
-                          'Sostituzione',
-                          '${fmt(targetResult.targetKcal)} = '
-                              '${fmt(targetResult.tdeeRefKcal)} + '
-                              '(${fmt(resolved.totalKcal)} - '
-                              '${fmt(targetResult.activeRefKcal)}) kcal',
-                        ),
-                        detailRow(
-                          'Delta attività',
-                          '${fmt(targetResult.activityDeltaKcal)} kcal',
-                        ),
-                        detailRow(
-                          'Target finale',
-                          '${fmt(targetResult.targetKcal)} kcal',
-                        ),
-                        detailRow(
-                            'Stato target', targetResult.targetStatusCode),
-                        detailRow('Modalità del giorno', dayMode),
-                      ],
-                    ),
-                    section(
-                      title: 'TDEE di riferimento',
-                      icon: Icons.monitor_heart_outlined,
-                      children: <Widget>[
-                        detailRow(
-                          'RMR',
-                          fmtNullable(targetResult.rmrKcal, 'kcal'),
-                        ),
-                        detailRow(
-                          'Base sedentaria',
-                          '${fmt(sedentaryBase)} kcal',
-                        ),
-                        detailRow(
-                          'Attività di riferimento',
-                          '${fmt(targetResult.activeRefKcal)} kcal',
-                        ),
-                        detailRow(
-                          'TDEE teorico',
-                          '${fmt(targetResult.tdeeTheoreticalKcal)} kcal',
-                        ),
-                        detailRow(
-                          'TDEE osservato',
-                          fmtNullable(targetResult.tdeeObservedKcal, 'kcal'),
-                        ),
-                        detailRow(
-                          'Metodo osservato',
-                          targetResult.observedModelLevelCode ==
-                                  'composition_blended'
-                              ? 'introito medio − variazione energetica combinata '
-                                  'di massa grassa, massa priva di grasso e peso'
-                              : 'media ponderata delle calorie assunte − '
-                                  '(pendenza Theil–Sen kg/giorno × 7700 kcal/kg)',
-                        ),
-                        detailRow(
-                          'Media calorie usata',
-                          fmtNullable(targetResult.avgCalories, 'kcal'),
-                        ),
-                        detailRow(
-                          'Variazione peso usata',
-                          fmtNullable(targetResult.deltaWeightKg, 'kg'),
-                        ),
-                        detailRow(
-                          'Pendenza robusta peso',
-                          fmtNullable(
-                              targetResult.weightSlopeKgPerDay, 'kg/giorno'),
-                        ),
-                        detailRow(
-                          'Livello osservato',
-                          targetResult.observedModelLevelCode,
-                        ),
-                        detailRow(
-                          'Composizione corporea',
-                          targetResult.observedModelLevelCode ==
-                                  'composition_blended'
-                              ? 'attiva · confidenza '
-                                  '${(targetResult.compositionConfidence * 100).round()}%'
-                              : 'fallback al peso · '
-                                  '${targetResult.compositionFallbackReasonCode}',
-                        ),
-                        detailRow(
-                          'Candidato energetico composizione',
-                          fmtNullable(
-                            targetResult.compositionEnergyChangeKcalPerDay,
-                            'kcal/giorno',
+                        if (visibleAlerts.isNotEmpty) ...<Widget>[
+                          Row(
+                            children: <Widget>[
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                color:
+                                    Theme.of(sheetContext).colorScheme.tertiary,
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              Text(
+                                'Avvisi del giorno',
+                                style: Theme.of(sheetContext)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w900),
+                              ),
+                            ],
                           ),
-                        ),
-                        detailRow(
-                          'Variazione energetica effettiva',
-                          fmtNullable(
-                            targetResult.effectiveBodyEnergyChangeKcalPerDay,
-                            'kcal/giorno',
-                          ),
-                        ),
-                        detailRow(
-                          'Conversione energetica',
-                          '${fmt(targetResult.kcalPerKg)} kcal/kg',
-                        ),
-                        detailRow(
-                          'Componente osservata',
-                          '${(observedWeight * 100).round()}%',
-                        ),
-                        detailRow(
-                          'Componente teorica',
-                          '${(theoreticalWeight * 100).round()}%',
-                        ),
-                        detailRow(
-                          'TDEE combinato',
-                          '${fmt(targetResult.tdeeRefKcal)} kcal',
-                        ),
-                      ],
-                    ),
-                    section(
-                      title: 'Attività del giorno',
-                      icon: Icons.directions_run_rounded,
-                      children: <Widget>[
-                        detailRow('Passi registrati', day.steps.toString()),
-                        detailRow('Obiettivo passi', day.stepGoal.toString()),
-                        detailRow(
-                          'Passi degli allenamenti',
-                          'esclusi manualmente dal totale giornaliero',
-                        ),
-                        detailRow(
-                          'Kcal passi registrate',
-                          '${fmt(resolved.actualStepKcal)} kcal',
-                        ),
-                        detailRow(
-                          'Kcal passi usate',
-                          '${fmt(resolved.effectiveStepKcal)} kcal',
-                        ),
-                        detailRow(
-                          'Calorie allenamento registrate',
-                          '${fmt(resolved.actualWorkoutKcal)} kcal',
-                        ),
-                        detailRow(
-                          'Calorie allenamento usate',
-                          '${fmt(resolved.effectiveWorkoutKcal)} kcal',
-                        ),
-                        detailRow(
-                          'Sorgente calorie allenamento',
-                          'estimated_active_calories esposto dalle sessioni completate',
-                        ),
-                        detailRow(
-                          'Consumo attivo usato',
-                          '${fmt(resolved.totalKcal)} kcal',
-                        ),
-                        detailRow(
-                          'Stato attività',
-                          resolved.statusCode == 'partially_provisional'
-                              ? 'parzialmente provvisorio'
-                              : resolved.statusCode == 'provisional'
-                                  ? 'provvisorio'
-                                  : resolved.statusCode,
-                        ),
-                        detailRow(
-                          'Lunghezza passo',
-                          resolved.stepLengthMeters == null
-                              ? 'fallback legacy'
-                              : '${resolved.stepLengthMeters!.toStringAsFixed(3)} m',
-                        ),
-                        detailRow(
-                          'Sorgente lunghezza',
-                          resolved.stepLengthSourceCode,
-                        ),
-                        detailRow(
-                          'Peso usato per i passi',
-                          resolved.stepWeightSourceCode,
-                        ),
-                        detailRow(
-                          'Coefficiente effettivo',
-                          '${resolved.effectiveStepKcalCoefficient.toStringAsFixed(5)} kcal/passo',
-                        ),
-                        detailRow(
-                          'Fallback passi',
-                          resolved.usedStepGoalFallback ? 'sì' : 'no',
-                        ),
-                        detailRow(
-                          'Fallback allenamento',
-                          resolved.usedProfileWorkoutFallback ? 'sì' : 'no',
-                        ),
-                      ],
-                    ),
-                    section(
-                      title: 'Finestra osservata e peso',
-                      icon: Icons.timeline_rounded,
-                      children: <Widget>[
-                        detailRow(
-                          'Giorni di riferimento usati',
-                          targetResult.referenceDaysCount.toString(),
-                        ),
-                        detailRow(
-                          'Record precedenti disponibili',
-                          priorRecords.toString(),
-                        ),
-                        detailRow(
-                          'Introiti validi',
-                          targetResult.validIntakeDays.toString(),
-                        ),
-                        detailRow(
-                          'Pesi validi',
-                          targetResult.validWeightDays.toString(),
-                        ),
-                        detailRow(
-                          'Peso di riferimento',
-                          fmtNullable(targetResult.weightRefKg, 'kg'),
-                        ),
-                        detailRow('Stato peso', targetResult.weightStatusCode),
-                        detailRow(
-                          "Giorni dall'ultima pesata",
-                          targetResult.weightDaysSinceMeasurement?.toString() ??
-                              'n/d',
-                        ),
-                      ],
-                    ),
-                    section(
-                      title: 'Configurazione del modello',
-                      icon: Icons.tune_rounded,
-                      children: <Widget>[
-                        detailRow(
-                          'Finestra massima',
-                          '${profile?.adaptiveReferenceDays ?? 28} giorni',
-                        ),
-                        detailRow(
-                          'Minimo giorni osservati',
-                          '${profile?.adaptiveMinimumObservedDays ?? 7}',
-                        ),
-                        detailRow(
-                          'Versione modello',
-                          targetResult.targetModelVersion,
-                        ),
-                        detailRow(
-                          'Data di entrata in vigore',
-                          TargetModelConstants.effectiveDate,
-                        ),
-                        detailRow(
-                          'RMR',
-                          '${targetResult.rmrEquationCode} · '
-                              '${targetResult.rmrPhysiologicalCoefficientCode}',
-                        ),
-                        detailRow(
-                          'Formula passi',
-                          'peso × passi × lunghezza × 0,50 / 1000',
-                        ),
-                        detailRow(
-                          'Prior variazione peso',
-                          '${TargetModelConstants.energyDensityPriorKcalPerKg.round()} kcal/kg',
-                        ),
-                        detailRow(
-                          'Limiti TDEE',
-                          '${profile?.minimumReasonableTdee ?? 1300} - '
-                              '${profile?.maximumReasonableTdee ?? 4600} kcal',
-                        ),
-                        detailRow(
-                          'Guardrail',
-                          targetResult.guardrailApplied
-                              ? 'applicato (${targetResult.guardrailReasonCode}) · '
-                                  'prima ${fmtNullable(targetResult.unclampedTargetKcal, 'kcal')}'
-                              : 'non applicato',
-                        ),
-                        detailRow(
-                          'Fallback attività',
-                          profile?.activityFallbackModeCode ?? 'recorded_only',
-                        ),
-                        detailRow(
-                          'Regola fallback',
-                          'ogni componente registrata prevale; viene stimata '
-                              'solo la componente mancante',
-                        ),
-                      ],
-                    ),
-                    section(
-                      title: 'Fonti, formule e limiti',
-                      icon: Icons.menu_book_outlined,
-                      children: <Widget>[
-                        detailRow(
-                          'Evidenza scientifica',
-                          'Mifflin–St Jeor per RMR; stima di popolazione non clinica',
-                        ),
-                        detailRow(
-                          'Linea guida passi',
-                          'escludere passi di allenamenti registrati separatamente',
-                        ),
-                        detailRow(
-                          'Obiettivo passi',
-                          'configurabile dall’utente; usato come fallback solo se i passi mancano',
-                        ),
-                        detailRow(
-                          'Contratto allenamenti',
-                          'il giorno usa estimated_active_calories; il modello interno dell’allenamento è fuori ambito',
-                        ),
-                        detailRow(
-                          'Euristiche interne',
-                          'Theil–Sen, 7700 kcal/kg, blending e confidenza',
-                        ),
-                        detailRow(
-                          'IN STALLO',
-                          'quota base 1,10 e guardrail 1300–4600',
-                        ),
-                        detailRow(
-                          'Limite d’uso',
-                          'adulti sani, uso generale/sportivo non clinico',
-                        ),
-                      ],
-                    ),
-                    if (targetResult.alerts.isNotEmpty || hasPartialNutrition)
-                      section(
-                        title: 'Avvisi del giorno',
-                        icon: Icons.warning_amber_rounded,
-                        accent: Theme.of(context).colorScheme.tertiary,
-                        children: <Widget>[
-                          for (final TargetAlert alert in targetResult.alerts)
+                          const SizedBox(height: AppSpacing.sm),
+                          for (final MapEntry<String, TargetAlert> entry
+                              in visibleAlerts)
                             Padding(
-                              padding: const EdgeInsets.only(
-                                bottom: AppSpacing.sm,
-                              ),
-                              child: _TargetAlertCard(alert: alert),
-                            ),
-                          if (hasPartialNutrition)
-                            const _TargetAlertCard(
-                              alert: TargetAlert(
-                                code: 'partial_nutrition',
-                                title: 'Nutrizione parziale',
-                                message:
-                                    'Questo giorno contiene un pasto libero '
-                                    'non completamente quantificato. Il '
-                                    'bilancio usa soltanto i dati disponibili.',
-                                severityCode: TargetAlertSeverityCodes.warning,
+                              padding:
+                                  const EdgeInsets.only(bottom: AppSpacing.sm),
+                              child: _TargetAlertCard(
+                                alert: entry.value,
+                                onDismiss: () {
+                                  setSheetState(() {
+                                    dismissedAlertKeys.add(entry.key);
+                                  });
+                                },
                               ),
                             ),
+                          const SizedBox(height: AppSpacing.sm),
                         ],
-                      ),
-                    section(
-                      title: 'Snapshot e persistenza',
-                      icon: Icons.storage_rounded,
-                      children: <Widget>[
-                        detailRow('ObjectBox id', day.id.toString()),
-                        detailRow('Target source hash', day.targetSourceHash),
-                        detailRow(
-                          'Target calcolato epoch ms',
-                          day.targetCalculatedAtEpochMs?.toString() ?? 'n/d',
+                        Wrap(
+                          spacing: AppSpacing.sm,
+                          runSpacing: AppSpacing.sm,
+                          children: <Widget>[
+                            metricCard(
+                              label: 'Target finale',
+                              value: '${fmt(targetResult.targetKcal)} kcal',
+                              icon: Icons.flag_rounded,
+                            ),
+                            metricCard(
+                              label: 'TDEE riferimento',
+                              value: '${fmt(targetResult.tdeeRefKcal)} kcal',
+                              icon: Icons.monitor_heart_outlined,
+                            ),
+                            metricCard(
+                              label: 'Attività usata',
+                              value: '${fmt(resolved.totalKcal)} kcal',
+                              icon: Icons.directions_walk_rounded,
+                            ),
+                            metricCard(
+                              label: 'Affidabilità osservata',
+                              value:
+                                  '${(targetResult.observedConfidence * 100).round()}%',
+                              icon: Icons.verified_outlined,
+                              accent: targetResult.tdeeObservedKcal == null
+                                  ? Theme.of(context).colorScheme.tertiary
+                                  : Theme.of(context).colorScheme.primary,
+                            ),
+                          ],
                         ),
-                        detailRow('Pasti', meals.length.toString()),
-                        detailRow('Voci nei pasti', mealItemCount.toString()),
-                        detailRow(
-                          'Calorie registrate',
-                          '${fmt(activity.actualTotalKcal)} kcal attive; '
-                              '${fmt(_totalsForMeals(meals).kcal)} kcal assunte',
+                        const SizedBox(height: AppSpacing.md),
+                        section(
+                          title: 'Formula finale',
+                          icon: Icons.functions_rounded,
+                          initiallyExpanded: true,
+                          children: <Widget>[
+                            detailRow(
+                              'Formula',
+                              'target = TDEE riferimento + (attività giorno - attività riferimento)',
+                            ),
+                            detailRow(
+                              'Sostituzione',
+                              '${fmt(targetResult.targetKcal)} = '
+                                  '${fmt(targetResult.tdeeRefKcal)} + '
+                                  '(${fmt(resolved.totalKcal)} - '
+                                  '${fmt(targetResult.activeRefKcal)}) kcal',
+                            ),
+                            detailRow(
+                              'Delta attività',
+                              '${fmt(targetResult.activityDeltaKcal)} kcal',
+                            ),
+                            detailRow(
+                              'Target finale',
+                              '${fmt(targetResult.targetKcal)} kcal',
+                            ),
+                            detailRow(
+                                'Stato target', targetResult.targetStatusCode),
+                            detailRow('Modalità del giorno', dayMode),
+                          ],
+                        ),
+                        section(
+                          title: 'TDEE di riferimento',
+                          icon: Icons.monitor_heart_outlined,
+                          children: <Widget>[
+                            detailRow(
+                              'RMR',
+                              fmtNullable(targetResult.rmrKcal, 'kcal'),
+                            ),
+                            detailRow(
+                              'Base sedentaria',
+                              '${fmt(sedentaryBase)} kcal',
+                            ),
+                            detailRow(
+                              'Attività di riferimento',
+                              '${fmt(targetResult.activeRefKcal)} kcal',
+                            ),
+                            detailRow(
+                              'TDEE teorico',
+                              '${fmt(targetResult.tdeeTheoreticalKcal)} kcal',
+                            ),
+                            detailRow(
+                              'TDEE osservato',
+                              fmtNullable(
+                                  targetResult.tdeeObservedKcal, 'kcal'),
+                            ),
+                            detailRow(
+                              'Metodo osservato',
+                              targetResult.observedModelLevelCode ==
+                                      'composition_blended'
+                                  ? 'introito medio − variazione energetica combinata '
+                                      'di massa grassa, massa priva di grasso e peso'
+                                  : 'media ponderata delle calorie assunte − '
+                                      '(pendenza Theil–Sen kg/giorno × 7700 kcal/kg)',
+                            ),
+                            detailRow(
+                              'Media calorie usata',
+                              fmtNullable(targetResult.avgCalories, 'kcal'),
+                            ),
+                            detailRow(
+                              'Variazione peso usata',
+                              fmtNullable(targetResult.deltaWeightKg, 'kg'),
+                            ),
+                            detailRow(
+                              'Pendenza robusta peso',
+                              fmtNullable(targetResult.weightSlopeKgPerDay,
+                                  'kg/giorno'),
+                            ),
+                            detailRow(
+                              'Livello osservato',
+                              targetResult.observedModelLevelCode,
+                            ),
+                            detailRow(
+                              'Composizione corporea',
+                              targetResult.observedModelLevelCode ==
+                                      'composition_blended'
+                                  ? 'attiva · confidenza '
+                                      '${(targetResult.compositionConfidence * 100).round()}%'
+                                  : 'fallback al peso · '
+                                      '${compositionReasonLabel(targetResult.compositionFallbackReasonCode)}',
+                            ),
+                            detailRow(
+                              'Giorni composizione validi',
+                              '${targetResult.compositionValidDays} / '
+                                  '${TargetModelConstants.compositionMinimumDistinctDays}',
+                            ),
+                            detailRow(
+                              'Copertura composizione',
+                              '${targetResult.compositionCoverageDays} / '
+                                  '${TargetModelConstants.compositionMinimumCoverageDays} giorni',
+                            ),
+                            detailRow(
+                              'Intervallo massimo composizione',
+                              '${targetResult.compositionMaximumGapDays} / '
+                                  '${TargetModelConstants.compositionMaximumGapDays} giorni',
+                            ),
+                            detailRow(
+                              'Candidato disponibile',
+                              targetResult.compositionCandidateAvailable
+                                  ? 'sì'
+                                  : 'no',
+                            ),
+                            detailRow(
+                              'Candidato energetico composizione',
+                              fmtNullable(
+                                targetResult.compositionEnergyChangeKcalPerDay,
+                                'kcal/giorno',
+                              ),
+                            ),
+                            detailRow(
+                              'Variazione energetica effettiva',
+                              fmtNullable(
+                                targetResult
+                                    .effectiveBodyEnergyChangeKcalPerDay,
+                                'kcal/giorno',
+                              ),
+                            ),
+                            detailRow(
+                              'Note qualità composizione',
+                              targetResult.compositionQualityNotes.isEmpty
+                                  ? 'nessuna'
+                                  : targetResult.compositionQualityNotes
+                                      .join(', '),
+                            ),
+                            detailRow(
+                              'Conversione energetica',
+                              '${fmt(targetResult.kcalPerKg)} kcal/kg',
+                            ),
+                            detailRow(
+                              'Componente osservata',
+                              '${(observedWeight * 100).round()}%',
+                            ),
+                            detailRow(
+                              'Componente teorica',
+                              '${(theoreticalWeight * 100).round()}%',
+                            ),
+                            detailRow(
+                              'TDEE combinato',
+                              '${fmt(targetResult.tdeeRefKcal)} kcal',
+                            ),
+                          ],
+                        ),
+                        section(
+                          title: 'Attività del giorno',
+                          icon: Icons.directions_run_rounded,
+                          children: <Widget>[
+                            detailRow('Passi registrati', day.steps.toString()),
+                            detailRow(
+                                'Obiettivo passi', day.stepGoal.toString()),
+                            detailRow(
+                              'Passi degli allenamenti',
+                              'esclusi manualmente dal totale giornaliero',
+                            ),
+                            detailRow(
+                              'Kcal passi registrate',
+                              '${fmt(resolved.actualStepKcal)} kcal',
+                            ),
+                            detailRow(
+                              'Kcal passi usate',
+                              '${fmt(resolved.effectiveStepKcal)} kcal',
+                            ),
+                            detailRow(
+                              'Calorie allenamento registrate',
+                              '${fmt(resolved.actualWorkoutKcal)} kcal',
+                            ),
+                            detailRow(
+                              'Calorie allenamento usate',
+                              '${fmt(resolved.effectiveWorkoutKcal)} kcal',
+                            ),
+                            detailRow(
+                              'Sorgente calorie allenamento',
+                              'estimated_active_calories esposto dalle sessioni completate',
+                            ),
+                            detailRow(
+                              'Consumo attivo usato',
+                              '${fmt(resolved.totalKcal)} kcal',
+                            ),
+                            detailRow(
+                              'Stato attività',
+                              resolved.statusCode == 'partially_provisional'
+                                  ? 'parzialmente provvisorio'
+                                  : resolved.statusCode == 'provisional'
+                                      ? 'provvisorio'
+                                      : resolved.statusCode,
+                            ),
+                            detailRow(
+                              'Lunghezza passo',
+                              resolved.stepLengthMeters == null
+                                  ? 'fallback legacy'
+                                  : '${resolved.stepLengthMeters!.toStringAsFixed(3)} m',
+                            ),
+                            detailRow(
+                              'Sorgente lunghezza',
+                              resolved.stepLengthSourceCode,
+                            ),
+                            detailRow(
+                              'Peso usato per i passi',
+                              resolved.stepWeightSourceCode,
+                            ),
+                            detailRow(
+                              'Coefficiente effettivo',
+                              '${resolved.effectiveStepKcalCoefficient.toStringAsFixed(5)} kcal/passo',
+                            ),
+                            detailRow(
+                              'Fallback passi',
+                              resolved.usedStepGoalFallback ? 'sì' : 'no',
+                            ),
+                            detailRow(
+                              'Fallback allenamento',
+                              resolved.usedProfileWorkoutFallback ? 'sì' : 'no',
+                            ),
+                          ],
+                        ),
+                        section(
+                          title: 'Finestra osservata e peso',
+                          icon: Icons.timeline_rounded,
+                          children: <Widget>[
+                            detailRow(
+                              'Giorni di riferimento usati',
+                              targetResult.referenceDaysCount.toString(),
+                            ),
+                            detailRow(
+                              'Record precedenti disponibili',
+                              priorRecords.toString(),
+                            ),
+                            detailRow(
+                              'Introiti validi',
+                              targetResult.validIntakeDays.toString(),
+                            ),
+                            detailRow(
+                              'Pesi validi',
+                              targetResult.validWeightDays.toString(),
+                            ),
+                            detailRow(
+                              'Peso di riferimento',
+                              fmtNullable(targetResult.weightRefKg, 'kg'),
+                            ),
+                            detailRow(
+                                'Stato peso', targetResult.weightStatusCode),
+                            detailRow(
+                              "Giorni dall'ultima pesata",
+                              targetResult.weightDaysSinceMeasurement
+                                      ?.toString() ??
+                                  'n/d',
+                            ),
+                          ],
+                        ),
+                        section(
+                          title: 'Configurazione del modello',
+                          icon: Icons.tune_rounded,
+                          children: <Widget>[
+                            detailRow(
+                              'Finestra massima',
+                              '${profile?.adaptiveReferenceDays ?? 28} giorni',
+                            ),
+                            detailRow(
+                              'Minimo giorni osservati',
+                              '${profile?.adaptiveMinimumObservedDays ?? 7}',
+                            ),
+                            detailRow(
+                              'Versione modello',
+                              targetResult.targetModelVersion,
+                            ),
+                            detailRow(
+                              'Data di entrata in vigore',
+                              TargetModelConstants.effectiveDate,
+                            ),
+                            detailRow(
+                              'RMR',
+                              '${targetResult.rmrEquationCode} · '
+                                  '${targetResult.rmrPhysiologicalCoefficientCode}',
+                            ),
+                            detailRow(
+                              'Formula passi',
+                              'peso × passi × lunghezza × 0,50 / 1000',
+                            ),
+                            detailRow(
+                              'Prior variazione peso',
+                              '${TargetModelConstants.energyDensityPriorKcalPerKg.round()} kcal/kg',
+                            ),
+                            detailRow(
+                              'Limiti TDEE',
+                              '${profile?.minimumReasonableTdee ?? 1300} - '
+                                  '${profile?.maximumReasonableTdee ?? 4600} kcal',
+                            ),
+                            detailRow(
+                              'Guardrail',
+                              targetResult.guardrailApplied
+                                  ? 'applicato (${targetResult.guardrailReasonCode}) · '
+                                      'prima ${fmtNullable(targetResult.unclampedTargetKcal, 'kcal')}'
+                                  : 'non applicato',
+                            ),
+                            detailRow(
+                              'Fallback attività',
+                              profile?.activityFallbackModeCode ??
+                                  'recorded_only',
+                            ),
+                            detailRow(
+                              'Regola fallback',
+                              'ogni componente registrata prevale; viene stimata '
+                                  'solo la componente mancante',
+                            ),
+                          ],
+                        ),
+                        section(
+                          title: 'Fonti, formule e limiti',
+                          icon: Icons.menu_book_outlined,
+                          children: <Widget>[
+                            detailRow(
+                              'Evidenza scientifica',
+                              'Mifflin–St Jeor per RMR; stima di popolazione non clinica',
+                            ),
+                            detailRow(
+                              'Linea guida passi',
+                              'escludere passi di allenamenti registrati separatamente',
+                            ),
+                            detailRow(
+                              'Obiettivo passi',
+                              'configurabile dall’utente; usato come fallback solo se i passi mancano',
+                            ),
+                            detailRow(
+                              'Contratto allenamenti',
+                              'il giorno usa estimated_active_calories; il modello interno dell’allenamento è fuori ambito',
+                            ),
+                            detailRow(
+                              'Euristiche interne',
+                              'Theil–Sen, 7700 kcal/kg, blending e confidenza',
+                            ),
+                            detailRow(
+                              'IN STALLO',
+                              'quota base 1,10 e guardrail 1300–4600',
+                            ),
+                            detailRow(
+                              'Limite d’uso',
+                              'adulti sani, uso generale/sportivo non clinico',
+                            ),
+                          ],
+                        ),
+                        section(
+                          title: 'Snapshot e persistenza',
+                          icon: Icons.storage_rounded,
+                          children: <Widget>[
+                            detailRow('ObjectBox id', day.id.toString()),
+                            detailRow(
+                                'Target source hash', day.targetSourceHash),
+                            detailRow(
+                              'Target calcolato epoch ms',
+                              day.targetCalculatedAtEpochMs?.toString() ??
+                                  'n/d',
+                            ),
+                            detailRow('Pasti', meals.length.toString()),
+                            detailRow(
+                                'Voci nei pasti', mealItemCount.toString()),
+                            detailRow(
+                              'Calorie registrate',
+                              '${fmt(activity.actualTotalKcal)} kcal attive; '
+                                  '${fmt(_totalsForMeals(meals).kcal)} kcal assunte',
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-              SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    AppSpacing.sm,
-                    AppSpacing.lg,
-                    AppSpacing.lg,
                   ),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor:
-                            Theme.of(sheetContext).colorScheme.error,
-                        side: BorderSide(
-                          color: Theme.of(sheetContext).colorScheme.error,
-                        ),
+                  SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.lg,
+                        AppSpacing.sm,
+                        AppSpacing.lg,
+                        AppSpacing.lg,
                       ),
-                      onPressed: mealItemCount == 0
-                          ? null
-                          : () => Navigator.of(sheetContext).pop(true),
-                      icon: const Icon(Icons.delete_sweep_outlined),
-                      label: Text(
-                        mealItemCount == 0
-                            ? 'Nessuna voce da eliminare'
-                            : 'Svuota i pasti della giornata ($mealItemCount)',
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor:
+                                Theme.of(sheetContext).colorScheme.error,
+                            side: BorderSide(
+                              color: Theme.of(sheetContext).colorScheme.error,
+                            ),
+                          ),
+                          onPressed: mealItemCount == 0
+                              ? null
+                              : () => Navigator.of(sheetContext).pop(true),
+                          icon: const Icon(Icons.delete_sweep_outlined),
+                          label: Text(
+                            mealItemCount == 0
+                                ? 'Nessuna voce da eliminare'
+                                : 'Svuota i pasti della giornata ($mealItemCount)',
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -10477,9 +10561,10 @@ class _MetricGrid extends StatelessWidget {
 }
 
 class _TargetAlertCard extends StatelessWidget {
-  const _TargetAlertCard({required this.alert});
+  const _TargetAlertCard({required this.alert, this.onDismiss});
 
   final TargetAlert alert;
+  final VoidCallback? onDismiss;
 
   @override
   Widget build(BuildContext context) {
@@ -10531,6 +10616,14 @@ class _TargetAlertCard extends StatelessWidget {
               ],
             ),
           ),
+          if (onDismiss != null) ...<Widget>[
+            const SizedBox(width: AppSpacing.sm),
+            IconButton(
+              tooltip: 'Nascondi per questa apertura',
+              onPressed: onDismiss,
+              icon: const Icon(Icons.close_rounded),
+            ),
+          ],
         ],
       ),
     );

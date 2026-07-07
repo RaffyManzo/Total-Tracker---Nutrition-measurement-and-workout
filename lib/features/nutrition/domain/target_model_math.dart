@@ -306,17 +306,9 @@ class TargetModelMath {
       );
     }
 
-    if (points.length < minimumDistinctDays) {
+    if (points.length < 2) {
+      notes.add('at_least_two_composition_days_required_for_trend');
       return fallback(reason: 'insufficient_composition_days');
-    }
-
-    final Set<String> devices = points
-        .map((DailyBodyCompositionPoint point) => point.deviceCode.trim())
-        .where((String value) => value.isNotEmpty)
-        .toSet();
-    if (devices.contains('mixed') || devices.length > 1) {
-      notes.add('device_changed');
-      return fallback(reason: 'device_changed');
     }
 
     final List<DateTime> dates = points
@@ -325,25 +317,9 @@ class TargetModelMath {
     final int coverage = dates.last.difference(dates.first).inDays;
     int maxGap = 0;
     for (int index = 1; index < dates.length; index += 1) {
-      maxGap =
-          math.max(maxGap, dates[index].difference(dates[index - 1]).inDays);
-    }
-    if (coverage < minimumCoverageDays) {
-      notes.add('coverage_too_short');
-      return fallback(
-        reason: 'insufficient_temporal_coverage',
-        candidateAvailable: true,
-        coverage: coverage,
-        maxGap: maxGap,
-      );
-    }
-    if (maxGap > maximumGapDays) {
-      notes.add('measurement_gap_too_large');
-      return fallback(
-        reason: 'composition_gap_too_large',
-        candidateAvailable: true,
-        coverage: coverage,
-        maxGap: maxGap,
+      maxGap = math.max(
+        maxGap,
+        dates[index].difference(dates[index - 1]).inDays,
       );
     }
 
@@ -364,6 +340,7 @@ class TargetModelMath {
     final double? fatFreeSlope = theilSenSlope(trend((p) => p.fatFreeMassKg));
     final double? weightSlope = theilSenSlope(trend((p) => p.weightKg));
     if (fatSlope == null || fatFreeSlope == null || weightSlope == null) {
+      notes.add('composition_trend_unavailable');
       return fallback(
         reason: 'composition_trend_unavailable',
         candidateAvailable: true,
@@ -380,6 +357,69 @@ class TargetModelMath {
         fatFreeSlope * TargetModelConstants.fatFreeMassEnergyDensityKcalPerKg;
     final double weightEnergy =
         weightSlope * TargetModelConstants.energyDensityPriorKcalPerKg;
+
+    if (points.length < minimumDistinctDays) {
+      notes.add('distinct_days_below_threshold');
+      return fallback(
+        reason: 'insufficient_composition_days',
+        candidateAvailable: true,
+        coverage: coverage,
+        maxGap: maxGap,
+        fatSlope: fatSlope,
+        fatFreeSlope: fatFreeSlope,
+        weightSlope: weightSlope,
+        compositionEnergy: compositionEnergy,
+        weightEnergy: weightEnergy,
+      );
+    }
+
+    final Set<String> devices = points
+        .map((DailyBodyCompositionPoint point) => point.deviceCode.trim())
+        .where((String value) => value.isNotEmpty)
+        .toSet();
+    if (devices.contains('mixed') || devices.length > 1) {
+      notes.add('device_changed');
+      return fallback(
+        reason: 'device_changed',
+        candidateAvailable: true,
+        coverage: coverage,
+        maxGap: maxGap,
+        fatSlope: fatSlope,
+        fatFreeSlope: fatFreeSlope,
+        weightSlope: weightSlope,
+        compositionEnergy: compositionEnergy,
+        weightEnergy: weightEnergy,
+      );
+    }
+
+    if (coverage < minimumCoverageDays) {
+      notes.add('coverage_too_short');
+      return fallback(
+        reason: 'insufficient_temporal_coverage',
+        candidateAvailable: true,
+        coverage: coverage,
+        maxGap: maxGap,
+        fatSlope: fatSlope,
+        fatFreeSlope: fatFreeSlope,
+        weightSlope: weightSlope,
+        compositionEnergy: compositionEnergy,
+        weightEnergy: weightEnergy,
+      );
+    }
+    if (maxGap > maximumGapDays) {
+      notes.add('measurement_gap_too_large');
+      return fallback(
+        reason: 'composition_gap_too_large',
+        candidateAvailable: true,
+        coverage: coverage,
+        maxGap: maxGap,
+        fatSlope: fatSlope,
+        fatFreeSlope: fatFreeSlope,
+        weightSlope: weightSlope,
+        compositionEnergy: compositionEnergy,
+        weightEnergy: weightEnergy,
+      );
+    }
 
     if (weightSlope.abs() >
             TargetModelConstants.compositionMaximumWeightSlopeKgPerDay ||
