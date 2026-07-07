@@ -523,10 +523,11 @@ class FoodAnalyticsService {
       now: resolvedNow,
     );
     final double activityDelta = activity.totalKcal - summary.activeRefKcal;
-    final GuardrailResult dayGuardrail = TargetModelMath.applyGuardrail(
+    final GuardrailResult dayGuardrail = GuardrailResult(
       value: summary.tdeeRefKcal + activityDelta,
-      minimum: profile.minimumReasonableTdee,
-      maximum: profile.maximumReasonableTdee,
+      unclampedValue: summary.tdeeRefKcal + activityDelta,
+      applied: false,
+      reasonCode: 'daily_target_not_pal_clamped',
     );
     final double target = dayGuardrail.value;
     final List<TargetAlert> alerts = <TargetAlert>[...summary.alerts];
@@ -869,14 +870,22 @@ class FoodAnalyticsService {
       startInclusive: referenceStartKey,
       endExclusive: mondayKey,
     );
+    final double minimumHabitualTdee = rmr == null
+        ? (profile?.minimumReasonableTdee ??
+            TargetModelConstants.minimumReasonableTdee)
+        : rmr * TargetModelConstants.habitualPalMinimum;
+    final double maximumHabitualTdee = rmr == null
+        ? (profile?.maximumReasonableTdee ??
+            TargetModelConstants.maximumReasonableTdee)
+        : rmr * TargetModelConstants.habitualPalMaximum;
     final Stopwatch observedTdeeWatch = Stopwatch()..start();
     final ObservedTdeeResult observed = _calculateObservedTdee(
       reference,
       measurementAggregates: measurementAggregates,
       minimumObservedDays: profile?.adaptiveMinimumObservedDays ?? 7,
       kcalPerKg: TargetModelConstants.energyDensityPriorKcalPerKg,
-      minTdee: profile?.minimumReasonableTdee ?? 1300,
-      maxTdee: profile?.maximumReasonableTdee ?? 4600,
+      minTdee: minimumHabitualTdee,
+      maxTdee: maximumHabitualTdee,
       allowWeightTrend: weight.allowObservedWeightTrend,
     );
     observedTdeeWatch.stop();
@@ -887,19 +896,16 @@ class FoodAnalyticsService {
         : confidence * observed.tdeeObserved! + (1 - confidence) * theoretical;
     final GuardrailResult tdeeGuardrail = TargetModelMath.applyGuardrail(
       value: calculated,
-      minimum: profile?.minimumReasonableTdee ??
-          TargetModelConstants.minimumReasonableTdee,
-      maximum: profile?.maximumReasonableTdee ??
-          TargetModelConstants.maximumReasonableTdee,
+      minimum: minimumHabitualTdee,
+      maximum: maximumHabitualTdee,
     );
     final double tdeeRef = tdeeGuardrail.value;
     final double activityDelta = currentWeekActive - activeRef;
-    final GuardrailResult targetGuardrail = TargetModelMath.applyGuardrail(
+    final GuardrailResult targetGuardrail = GuardrailResult(
       value: tdeeRef + activityDelta,
-      minimum: profile?.minimumReasonableTdee ??
-          TargetModelConstants.minimumReasonableTdee,
-      maximum: profile?.maximumReasonableTdee ??
-          TargetModelConstants.maximumReasonableTdee,
+      unclampedValue: tdeeRef + activityDelta,
+      applied: false,
+      reasonCode: 'daily_target_not_pal_clamped',
     );
     final double target = targetGuardrail.value;
     final List<TargetAlert> alerts = <TargetAlert>[...weight.alerts];

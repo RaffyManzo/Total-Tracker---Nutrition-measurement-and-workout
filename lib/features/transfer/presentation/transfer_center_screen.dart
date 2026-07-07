@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_spacing.dart';
@@ -186,6 +187,17 @@ class _TransferCenterScreenState extends ConsumerState<TransferCenterScreen> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _busy
+                      ? null
+                      : () => context.push('/settings/transfer/scale-xls'),
+                  icon: const Icon(Icons.monitor_weight_outlined),
+                  label: const Text('Importa dati bilancia XLS'),
+                ),
               ),
               const SizedBox(height: AppSpacing.sm),
               SizedBox(

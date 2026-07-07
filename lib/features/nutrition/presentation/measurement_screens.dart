@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_spacing.dart';
@@ -169,8 +170,13 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
         title: const Text('Misurazioni'),
         actions: <Widget>[
           IconButton(
+            tooltip: 'Configura nuovo dispositivo',
+            onPressed: () => context.push('/measurements/devices'),
+            icon: const Icon(Icons.settings_input_component_outlined),
+          ),
+          IconButton(
             tooltip: 'Nuova bilancia',
-            onPressed: () => _showScaleDialog(context, ref),
+            onPressed: () => _openScaleEditor(context, ref),
             icon: const Icon(Icons.monitor_weight_outlined),
           ),
           IconButton(
@@ -229,7 +235,7 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
                     child: TtPrimaryButton(
                       label: 'Nuova bilancia',
                       icon: Icons.monitor_weight_outlined,
-                      onPressed: () => _showScaleDialog(context, ref),
+                      onPressed: () => _openScaleEditor(context, ref),
                     ),
                   ),
                   const SizedBox(width: AppSpacing.sm),
@@ -613,8 +619,13 @@ class ScaleMeasurementsScreen extends ConsumerWidget {
         title: const Text('Bilancia'),
         actions: <Widget>[
           IconButton(
+            tooltip: 'Configura nuovo dispositivo',
+            onPressed: () => context.push('/measurements/devices'),
+            icon: const Icon(Icons.settings_input_component_outlined),
+          ),
+          IconButton(
             tooltip: 'Nuova bilancia',
-            onPressed: () => _showScaleDialog(context, ref),
+            onPressed: () => _openScaleEditor(context, ref),
             icon: const Icon(Icons.add_rounded),
           ),
         ],
@@ -631,7 +642,7 @@ class ScaleMeasurementsScreen extends ConsumerWidget {
           if (data.scaleMeasurements.isEmpty) {
             return _EmptyList(
               message: 'Nessuna misurazione bilancia.',
-              action: () => _showScaleDialog(context, ref),
+              action: () => _openScaleEditor(context, ref),
             );
           }
           return ListView.separated(
@@ -750,7 +761,7 @@ Widget _buildScaleTile({
   return _ScaleTile(
     item: item,
     anomalyConfirmationKey: pendingConfirmationKey,
-    onTap: () => _showScaleDialog(context, ref, existing: item),
+    onTap: () => _openScaleEditor(context, ref, existing: item),
     onConfirmAnomaly: pendingConfirmationKey == null
         ? null
         : () => _confirmWeightAnomaly(
@@ -1143,6 +1154,25 @@ class _EmptyList extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+Future<void> _openScaleEditor(
+  BuildContext context,
+  WidgetRef ref, {
+  ScaleMeasurementEntity? existing,
+}) async {
+  try {
+    await context.push(
+      existing == null ? '/measurements/scale/new' : '/measurements/scale/edit',
+      extra: existing,
+    );
+    ref.invalidate(measurementHubProvider);
+  } catch (_) {
+    if (!context.mounted) {
+      return;
+    }
+    await _showScaleDialog(context, ref, existing: existing);
   }
 }
 

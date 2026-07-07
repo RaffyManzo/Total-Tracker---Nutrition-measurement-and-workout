@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 import '../../../core/time/clock.dart';
 import '../../nutrition/data/entities/ingredient_entity.dart';
 import '../../nutrition/data/entities/nutrition_tracking_entities.dart';
+import '../../nutrition/domain/target_model_constants.dart';
 import '../../profile/data/entities/user_profile_entity.dart';
 import '../../workout/data/entities/exercise_entity.dart';
 import '../../workout/data/entities/exercise_muscle_link_entity.dart';
@@ -100,6 +101,7 @@ class TotalTrackerTransferService {
       'appVersion': packageInfo.version,
       'appBuild': packageInfo.buildNumber,
       'createdAt': now.toIso8601String(),
+      'targetModelVersion': TargetModelConstants.modelVersion,
       'areas': options.areaCodes,
       'counts': counts,
     };
@@ -286,7 +288,7 @@ class TotalTrackerTransferService {
           },
       ],
       'days': <Map<String, dynamic>>[
-        for (final DailyRecordEntity item in days) _dayToMap(item),
+        for (final DailyRecordEntity item in days) _dayToMapTheo5(item),
       ],
       'meals': <Map<String, dynamic>>[
         for (final MealEntity item in meals)
@@ -307,7 +309,8 @@ class TotalTrackerTransferService {
           },
       ],
       'scaleMeasurements': <Map<String, dynamic>>[
-        for (final ScaleMeasurementEntity item in scales) _scaleToMap(item),
+        for (final ScaleMeasurementEntity item in scales)
+          _scaleToMapTheo5(item),
       ],
       'tapeMeasurements': <Map<String, dynamic>>[
         for (final TapeMeasurementEntity item in tapes)
@@ -493,6 +496,248 @@ class TotalTrackerTransferService {
       ],
     };
   }
+
+  Map<String, dynamic> _dayToMapTheo5(DailyRecordEntity item) =>
+      <String, dynamic>{
+        ..._dayToMap(item),
+        'targetKcal': item.targetKcal,
+        'targetStatusCode': item.targetStatusCode,
+        'targetCalculatedAtEpochMs': item.targetCalculatedAtEpochMs,
+        'targetSourceHash': item.targetSourceHash,
+        'tdeeRefKcal': item.tdeeRefKcal,
+        'tdeeTheoreticalKcal': item.tdeeTheoreticalKcal,
+        'tdeeObservedKcal': item.tdeeObservedKcal,
+        'observedConfidence': item.observedConfidence,
+        'referenceDaysCount': item.referenceDaysCount,
+        'validIntakeDays': item.validIntakeDays,
+        'validWeightDays': item.validWeightDays,
+        'rmrKcal': item.rmrKcal,
+        'weightRefKg': item.weightRefKg,
+        'activeRefKcal': item.activeRefKcal,
+        'activeKcalSteps': item.activeKcalSteps,
+        'activeKcalWorkoutCompleted': item.activeKcalWorkoutCompleted,
+        'activeKcalWorkoutInProgress': item.activeKcalWorkoutInProgress,
+        'activeKcalWorkoutPlanned': item.activeKcalWorkoutPlanned,
+        'activeKcalWorkoutSkipped': item.activeKcalWorkoutSkipped,
+        'activeKcalWorkoutUnknown': item.activeKcalWorkoutUnknown,
+        'activeKcalActual': item.activeKcalActual,
+        'activeEffectiveKcal': item.activeEffectiveKcal,
+        'activityDeltaKcal': item.activityDeltaKcal,
+        'activeStatusCode': item.activeStatusCode,
+        'caloriesInKcal': item.caloriesInKcal,
+        'energyBalanceKcal': item.energyBalanceKcal,
+        'weightKg': item.weightKg,
+        'weightReliabilityCode': item.weightReliabilityCode,
+        'freeMealModeCode': item.freeMealModeCode,
+        'freeMealKcal': item.freeMealKcal,
+        'freeMealReliabilityCode': item.freeMealReliabilityCode,
+        'dataCompletenessScore': item.dataCompletenessScore,
+      };
+
+  Map<String, dynamic> _scaleToMapTheo5(ScaleMeasurementEntity item) =>
+      <String, dynamic>{
+        ..._scaleToMap(item),
+        'weightKg': item.weightKg,
+        'weightSourceCode': item.weightSourceCode,
+        'bodyFatPercent': item.bodyFatPercent,
+        'muscleMassKg': item.muscleMassKg,
+        'waterPercent': item.waterPercent,
+        'boneMassKg': item.boneMassKg,
+        'visceralFat': item.visceralFat,
+        'subcutaneousFatPercent': item.subcutaneousFatPercent,
+        'basalMetabolismKcal': item.basalMetabolismKcal,
+        'bmi': item.bmi,
+        'metabolicAge': item.metabolicAge,
+        'physiqueRating': item.physiqueRating,
+        'measurementTime': item.measurementTime,
+        'device': item.device,
+        'reliabilityCode': item.reliabilityCode,
+        'weightAnomalyConfirmationKey': item.weightAnomalyConfirmationKey,
+        'notes': item.notes,
+      };
+
+  void _applyTheo5DayFields(
+    DailyRecordEntity item,
+    Map<String, dynamic> data,
+  ) {
+    if (data.containsKey('targetKcal')) {
+      item.targetKcal = _theo5Double(data['targetKcal']) ?? item.targetKcal;
+    }
+    if (data.containsKey('targetStatusCode')) {
+      item.targetStatusCode = _theo5String(data['targetStatusCode']);
+    }
+    if (data.containsKey('targetCalculatedAtEpochMs')) {
+      item.targetCalculatedAtEpochMs =
+          _theo5Int(data['targetCalculatedAtEpochMs']);
+    }
+    if (data.containsKey('targetSourceHash')) {
+      item.targetSourceHash = _theo5String(data['targetSourceHash']);
+    }
+    if (data.containsKey('tdeeRefKcal')) {
+      item.tdeeRefKcal = _theo5Double(data['tdeeRefKcal']);
+    }
+    if (data.containsKey('tdeeTheoreticalKcal')) {
+      item.tdeeTheoreticalKcal = _theo5Double(data['tdeeTheoreticalKcal']);
+    }
+    if (data.containsKey('tdeeObservedKcal')) {
+      item.tdeeObservedKcal = _theo5Double(data['tdeeObservedKcal']);
+    }
+    if (data.containsKey('observedConfidence')) {
+      item.observedConfidence = _theo5Double(data['observedConfidence']);
+    }
+    if (data.containsKey('referenceDaysCount')) {
+      item.referenceDaysCount = _theo5Int(data['referenceDaysCount']);
+    }
+    if (data.containsKey('validIntakeDays')) {
+      item.validIntakeDays = _theo5Int(data['validIntakeDays']);
+    }
+    if (data.containsKey('validWeightDays')) {
+      item.validWeightDays = _theo5Int(data['validWeightDays']);
+    }
+    if (data.containsKey('rmrKcal')) {
+      item.rmrKcal = _theo5Double(data['rmrKcal']);
+    }
+    if (data.containsKey('weightRefKg')) {
+      item.weightRefKg = _theo5Double(data['weightRefKg']);
+    }
+    if (data.containsKey('activeRefKcal')) {
+      item.activeRefKcal = _theo5Double(data['activeRefKcal']);
+    }
+    if (data.containsKey('activeKcalSteps')) {
+      item.activeKcalSteps = _theo5Double(data['activeKcalSteps']);
+    }
+    if (data.containsKey('activeKcalWorkoutCompleted')) {
+      item.activeKcalWorkoutCompleted =
+          _theo5Double(data['activeKcalWorkoutCompleted']);
+    }
+    if (data.containsKey('activeKcalWorkoutInProgress')) {
+      item.activeKcalWorkoutInProgress =
+          _theo5Double(data['activeKcalWorkoutInProgress']);
+    }
+    if (data.containsKey('activeKcalWorkoutPlanned')) {
+      item.activeKcalWorkoutPlanned =
+          _theo5Double(data['activeKcalWorkoutPlanned']);
+    }
+    if (data.containsKey('activeKcalWorkoutSkipped')) {
+      item.activeKcalWorkoutSkipped =
+          _theo5Double(data['activeKcalWorkoutSkipped']);
+    }
+    if (data.containsKey('activeKcalWorkoutUnknown')) {
+      item.activeKcalWorkoutUnknown =
+          _theo5Double(data['activeKcalWorkoutUnknown']);
+    }
+    if (data.containsKey('activeKcalActual')) {
+      item.activeKcalActual = _theo5Double(data['activeKcalActual']);
+    }
+    if (data.containsKey('activeEffectiveKcal')) {
+      item.activeEffectiveKcal = _theo5Double(data['activeEffectiveKcal']);
+    }
+    if (data.containsKey('activityDeltaKcal')) {
+      item.activityDeltaKcal = _theo5Double(data['activityDeltaKcal']);
+    }
+    if (data.containsKey('activeStatusCode')) {
+      item.activeStatusCode = _theo5String(data['activeStatusCode']);
+    }
+    if (data.containsKey('caloriesInKcal')) {
+      item.caloriesInKcal = _theo5Double(data['caloriesInKcal']);
+    }
+    if (data.containsKey('energyBalanceKcal')) {
+      item.energyBalanceKcal = _theo5Double(data['energyBalanceKcal']);
+    }
+    if (data.containsKey('weightKg')) {
+      item.weightKg = _theo5Double(data['weightKg']);
+    }
+    if (data.containsKey('weightReliabilityCode')) {
+      item.weightReliabilityCode = _theo5String(data['weightReliabilityCode']);
+    }
+    if (data.containsKey('freeMealModeCode')) {
+      item.freeMealModeCode = _theo5String(data['freeMealModeCode']);
+    }
+    if (data.containsKey('freeMealKcal')) {
+      item.freeMealKcal = _theo5Double(data['freeMealKcal']);
+    }
+    if (data.containsKey('freeMealReliabilityCode')) {
+      item.freeMealReliabilityCode =
+          _theo5String(data['freeMealReliabilityCode']);
+    }
+    if (data.containsKey('dataCompletenessScore')) {
+      item.dataCompletenessScore = _theo5Double(data['dataCompletenessScore']);
+    }
+  }
+
+  void _applyTheo5ScaleFields(
+    ScaleMeasurementEntity item,
+    Map<String, dynamic> data,
+  ) {
+    if (data.containsKey('weightKg')) {
+      item.weightKg = _theo5Double(data['weightKg']) ?? item.weightKg;
+    }
+    if (data.containsKey('weightSourceCode')) {
+      item.weightSourceCode = _theo5String(data['weightSourceCode']);
+    }
+    if (data.containsKey('bodyFatPercent')) {
+      item.bodyFatPercent = _theo5Double(data['bodyFatPercent']);
+    }
+    if (data.containsKey('muscleMassKg')) {
+      item.muscleMassKg = _theo5Double(data['muscleMassKg']);
+    }
+    if (data.containsKey('waterPercent')) {
+      item.waterPercent = _theo5Double(data['waterPercent']);
+    }
+    if (data.containsKey('boneMassKg')) {
+      item.boneMassKg = _theo5Double(data['boneMassKg']);
+    }
+    if (data.containsKey('visceralFat')) {
+      item.visceralFat = _theo5Double(data['visceralFat']);
+    }
+    if (data.containsKey('subcutaneousFatPercent')) {
+      item.subcutaneousFatPercent =
+          _theo5Double(data['subcutaneousFatPercent']);
+    }
+    if (data.containsKey('basalMetabolismKcal')) {
+      item.basalMetabolismKcal = _theo5Double(data['basalMetabolismKcal']);
+    }
+    if (data.containsKey('bmi')) {
+      item.bmi = _theo5Double(data['bmi']);
+    }
+    if (data.containsKey('metabolicAge')) {
+      item.metabolicAge = _theo5Double(data['metabolicAge']);
+    }
+    if (data.containsKey('physiqueRating')) {
+      item.physiqueRating = _theo5String(data['physiqueRating']);
+    }
+    if (data.containsKey('measurementTime')) {
+      item.measurementTime = _theo5String(data['measurementTime']);
+    }
+    if (data.containsKey('device')) {
+      item.device = _theo5String(data['device']);
+    }
+    if (data.containsKey('reliabilityCode')) {
+      item.reliabilityCode = _theo5String(data['reliabilityCode']);
+    }
+    if (data.containsKey('weightAnomalyConfirmationKey')) {
+      item.weightAnomalyConfirmationKey =
+          _theo5String(data['weightAnomalyConfirmationKey']);
+    }
+    if (data.containsKey('notes')) {
+      item.notes = _theo5String(data['notes']);
+    }
+  }
+
+  double? _theo5Double(Object? value) {
+    if (value == null || value.toString().trim().isEmpty) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString().replaceAll(',', '.'));
+  }
+
+  int? _theo5Int(Object? value) {
+    if (value == null || value.toString().trim().isEmpty) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
+  }
+
+  String _theo5String(Object? value) => value?.toString() ?? '';
 
   Map<String, int> _countExportData(Map<String, dynamic> data) {
     final Map<String, int> counts = <String, int>{};
@@ -880,6 +1125,7 @@ class TotalTrackerTransferService {
       id: overwrite ? existing.id : 0,
       uuid: overwrite ? existing.uuid : _importUuid(item.data, item.resolution),
     );
+    _applyTheo5DayFields(entity, item.data);
     entity.id = box.put(entity);
     return overwrite;
   }
@@ -933,6 +1179,7 @@ class TotalTrackerTransferService {
       id: overwrite ? existing.id : 0,
       uuid: overwrite ? existing.uuid : _importUuid(item.data, item.resolution),
     );
+    _applyTheo5ScaleFields(entity, item.data);
     entity.id = box.put(entity);
     return overwrite;
   }

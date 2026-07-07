@@ -1,9 +1,9 @@
 class TargetModelConstants {
   const TargetModelConstants._();
 
-  static const String logicalPatchId = '0.1.0_03_theo';
-  static const String modelVersion = 'target-model-0.1.0-theo.4';
-  static const String formulaSourcesVersion = 'target-sources-0.1.0-theo.4';
+  static const String logicalPatchId = '0.1.0_04_sync_info_xls';
+  static const String modelVersion = 'target-model-0.1.0-theo.5';
+  static const String formulaSourcesVersion = 'target-sources-0.1.0-theo.5';
   static const String effectiveDate = '2026-07-07';
 
   static const String rmrEquation = 'mifflin_st_jeor';
@@ -12,8 +12,14 @@ class TargetModelConstants {
   static const double rmrUnspecifiedConstant = -78;
 
   static const double rmrActivityFactor = 1.10;
-  static const String rmrActivityFactorStatus = 'stalled';
-  static const String rmrActivityFactorSource = 'internal_legacy_heuristic';
+  static const String rmrActivityFactorStatus = 'configurable_heuristic';
+  static const String rmrActivityFactorSource =
+      'tef_informed_user_configurable_heuristic';
+
+  static const double rmrActivityFactorMinimum = 1.10;
+  static const double rmrActivityFactorMaximum = 1.20;
+  static const double habitualPalMinimum = 1.40;
+  static const double habitualPalMaximum = 2.40;
 
   static const double stepLengthHeightFactor = 0.0042;
   static const double netWalkingCostKcalPerKgKm = 0.50;

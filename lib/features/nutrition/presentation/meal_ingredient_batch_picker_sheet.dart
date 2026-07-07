@@ -43,15 +43,17 @@ class _MealIngredientBatchPickerSheetState
   List<IngredientEntity> get _selectedIngredients => widget.ingredients
       .where((IngredientEntity item) => _selectedIds.contains(item.id))
       .toList(growable: false);
-
   List<IngredientEntity> get _filteredIngredients {
     final String clean = _queryController.text.trim().toLowerCase();
-    if (clean.isEmpty) return widget.ingredients;
-    return widget.ingredients.where((IngredientEntity ingredient) {
-      return ingredient.name.toLowerCase().contains(clean) ||
-          ingredient.brand.toLowerCase().contains(clean) ||
-          ingredient.barcode.toLowerCase().contains(clean);
-    }).toList(growable: false);
+    if (clean.isEmpty) return const <IngredientEntity>[];
+    return widget.ingredients
+        .where((IngredientEntity ingredient) {
+          return ingredient.name.toLowerCase().contains(clean) ||
+              ingredient.brand.toLowerCase().contains(clean) ||
+              ingredient.barcode.toLowerCase().contains(clean);
+        })
+        .take(10)
+        .toList(growable: false);
   }
 
   void _toggle(IngredientEntity ingredient) {
@@ -211,9 +213,15 @@ class _MealIngredientBatchPickerSheetState
         ),
         const SizedBox(height: AppSpacing.md),
         if (filtered.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
-            child: Center(child: Text('Nessun alimento trovato.')),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
+            child: Center(
+              child: Text(
+                _queryController.text.trim().isEmpty
+                    ? 'Usa la barra di ricerca per caricare fino a 10 alimenti.'
+                    : 'Nessun alimento trovato.',
+              ),
+            ),
           )
         else
           for (final IngredientEntity ingredient in filtered)

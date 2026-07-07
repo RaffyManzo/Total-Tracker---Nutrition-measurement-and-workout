@@ -9,6 +9,13 @@ import '../../features/nutrition/presentation/safe_meal_ingredient_overlay.dart'
 import '../../features/nutrition/presentation/recipe_archive_screen.dart';
 import '../../features/nutrition/presentation/ingredient_create_screen.dart';
 import '../../features/nutrition/presentation/measurement_screens.dart';
+import '../../features/nutrition/data/entities/nutrition_tracking_entities.dart';
+import '../../features/nutrition/presentation/legacy_scale_xls_import_screen.dart';
+import '../../features/nutrition/presentation/scale_device_configuration_screen.dart';
+import '../../features/nutrition/presentation/scale_measurement_editor_screen.dart';
+import '../../features/nutrition/presentation/synchronized_food_day_detail_screen.dart';
+import '../../features/profile/presentation/calculation_info_screen.dart';
+import '../../features/profile/presentation/target_synchronization_screen.dart';
 import '../../features/nutrition/presentation/open_food_facts_screens.dart';
 import '../../features/nutrition/presentation/open_nutrition_settings_screen.dart';
 import '../../features/nutrition/presentation/unified_ingredient_search_screen.dart';
@@ -69,7 +76,8 @@ GoRouter _createAppRouter() {
           GoRoute(
             path: '/food/days/:date',
             builder: (BuildContext context, GoRouterState state) {
-              return FoodDayDetailScreen(date: state.pathParameters['date']!);
+              return SynchronizedFoodDayDetailScreen(
+                  date: state.pathParameters['date']!);
             },
           ),
           GoRoute(
@@ -207,6 +215,40 @@ GoRouter _createAppRouter() {
             builder: (BuildContext context, GoRouterState state) {
               return const TransferCenterScreen();
             },
+          ),
+          GoRoute(
+            path: '/settings/synchronization',
+            builder: (BuildContext context, GoRouterState state) =>
+                const TargetSynchronizationScreen(),
+          ),
+          GoRoute(
+            path: '/settings/calculation-info',
+            builder: (BuildContext context, GoRouterState state) =>
+                const CalculationInfoScreen(),
+          ),
+          GoRoute(
+            path: '/settings/transfer/scale-xls',
+            builder: (BuildContext context, GoRouterState state) =>
+                const LegacyScaleXlsImportScreen(),
+          ),
+          GoRoute(
+            path: '/measurements/devices',
+            builder: (BuildContext context, GoRouterState state) =>
+                const ScaleDeviceConfigurationScreen(),
+          ),
+          GoRoute(
+            path: '/measurements/scale/new',
+            builder: (BuildContext context, GoRouterState state) =>
+                const ScaleMeasurementEditorScreen(),
+          ),
+          GoRoute(
+            path: '/measurements/scale/edit',
+            builder: (BuildContext context, GoRouterState state) =>
+                ScaleMeasurementEditorScreen(
+              initial: state.extra is ScaleMeasurementEntity
+                  ? state.extra! as ScaleMeasurementEntity
+                  : null,
+            ),
           ),
           GoRoute(
             path: '/measurements',

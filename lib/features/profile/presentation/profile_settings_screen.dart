@@ -44,6 +44,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
   final TextEditingController _targetKcal = TextEditingController();
   final TextEditingController _adaptiveReferenceDays = TextEditingController();
   final TextEditingController _sedentaryBase = TextEditingController();
+  final TextEditingController _rmrActivityFactor = TextEditingController();
   final TextEditingController _workoutsPerWeek = TextEditingController();
   final TextEditingController _workoutDuration = TextEditingController();
   final TextEditingController _proteinKg = TextEditingController();
@@ -104,6 +105,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     _targetKcal.dispose();
     _adaptiveReferenceDays.dispose();
     _sedentaryBase.dispose();
+    _rmrActivityFactor.dispose();
     _workoutsPerWeek.dispose();
     _workoutDuration.dispose();
     _proteinKg.dispose();
@@ -620,6 +622,14 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     _adaptiveReferenceDays.text = profile.adaptiveReferenceDays.toString();
     _sedentaryBase.text =
         profile.sedentaryBaseKcal == 0 ? '' : _num(profile.sedentaryBaseKcal);
+    _rmrActivityFactor.text = _num(
+      profile.rmrActivityFactor
+          .clamp(
+            TargetModelConstants.rmrActivityFactorMinimum,
+            TargetModelConstants.rmrActivityFactorMaximum,
+          )
+          .toDouble(),
+    );
     _workoutsPerWeek.text = profile.averageWorkoutsPerWeek.toString();
     _workoutDuration.text = profile.averageWorkoutDurationMinutes.toString();
     _proteinKg.text = _num(
@@ -939,12 +949,17 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
           ),
           const SizedBox(height: AppSpacing.md),
           TextFormField(
-            initialValue: 'x${estimate.sedentaryMultiplier.toStringAsFixed(2)}',
-            enabled: false,
+            controller: _rmrActivityFactor,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: <TextInputFormatter>[
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9,.]')),
+            ],
             decoration: const InputDecoration(
-              labelText: 'Quota base provvisoria',
+              labelText: 'Coefficiente base pre-attività tracciata',
               helperText:
-                  '1,10 · parametro interno IN STALLO, non fattore personale',
+                  'Configurabile tra 1,10 e 1,20. 1,10 è una stima prudente '
+                  'informata dal TEF; la quota superiore è euristica e può '
+                  'coprire movimenti non rilevati. Non è un PAL sedentario completo.',
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -1632,7 +1647,13 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
       profile.adaptiveReferenceDays =
           (_toInt(_adaptiveReferenceDays.text) ?? 28).clamp(7, 180).toInt();
       profile.sedentaryBaseKcal = 0;
-      profile.rmrActivityFactor = TargetModelConstants.rmrActivityFactor;
+      profile.rmrActivityFactor = (_toDouble(_rmrActivityFactor.text) ??
+              TargetModelConstants.rmrActivityFactor)
+          .clamp(
+            TargetModelConstants.rmrActivityFactorMinimum,
+            TargetModelConstants.rmrActivityFactorMaximum,
+          )
+          .toDouble();
       profile.stepKcalCoefficient =
           TargetModelConstants.legacyStepKcalCoefficient;
       profile.averageWorkoutsPerWeek = _toInt(_workoutsPerWeek.text) ?? 0;

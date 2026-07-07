@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'composition_reliability.dart';
+
 import 'target_model_constants.dart';
 
 class StepEnergyEstimate {
@@ -373,11 +375,18 @@ class TargetModelMath {
       );
     }
 
-    final Set<String> devices = points
-        .map((DailyBodyCompositionPoint point) => point.deviceCode.trim())
+    final Set<String> normalizedDeviceCodes = points
+        .map((DailyBodyCompositionPoint point) =>
+            CompositionReliabilityCalculator.canonicalDeviceCode(
+              point.deviceCode,
+            ))
         .where((String value) => value.isNotEmpty)
         .toSet();
-    if (devices.contains('mixed') || devices.length > 1) {
+    final Set<String> knownDeviceCodes = normalizedDeviceCodes
+        .where((String value) => value != 'unspecified' && value != 'mixed')
+        .toSet();
+    if (normalizedDeviceCodes.contains('mixed') ||
+        knownDeviceCodes.length > 1) {
       notes.add('device_changed');
       return fallback(
         reason: 'device_changed',
@@ -441,58 +450,36 @@ class TargetModelMath {
       );
     }
 
-    final List<double> waters = points
-        .map((DailyBodyCompositionPoint point) => point.waterPercent)
-        .whereType<double>()
-        .toList(growable: false);
-    final double waterFactor;
-    if (waters.length < points.length ~/ 2) {
-      waterFactor = 0.65;
-      notes.add('water_data_partially_missing');
-    } else {
-      final double waterRange =
-          waters.reduce(math.max) - waters.reduce(math.min);
-      if (waterRange >
-          TargetModelConstants.compositionMaximumWaterRangePercent) {
-        notes.add('water_variation_too_large');
-        return fallback(
-          reason: 'water_variation_too_large',
-          candidateAvailable: true,
-          coverage: coverage,
-          maxGap: maxGap,
-          fatSlope: fatSlope,
-          fatFreeSlope: fatFreeSlope,
-          weightSlope: weightSlope,
-          compositionEnergy: compositionEnergy,
-          weightEnergy: weightEnergy,
-        );
-      }
-      waterFactor = waterRange <= 2
-          ? 1
-          : waterRange <= 4
-              ? 0.8
-              : 0.55;
+    final CompositionReliabilityBreakdown reliability =
+        CompositionReliabilityCalculator.calculate(
+      validDays: points.length,
+      coverageDays: coverage,
+      maximumGapDays: maxGap,
+      maximumWaterRangePercent:
+          TargetModelConstants.compositionMaximumWaterRangePercent,
+      waterPercentages:
+          points.map((DailyBodyCompositionPoint point) => point.waterPercent),
+      deviceCodes:
+          points.map((DailyBodyCompositionPoint point) => point.deviceCode),
+      minimumRequired: minimumConfidence,
+    );
+    notes.addAll(reliability.toDiagnosticNotes());
+    final double confidence = reliability.score;
+    if (reliability.hardFailureReasonCode != 'none') {
+      notes.add(reliability.hardFailureReasonCode);
+      return fallback(
+        reason: reliability.hardFailureReasonCode,
+        candidateAvailable: true,
+        coverage: coverage,
+        maxGap: maxGap,
+        confidence: confidence,
+        fatSlope: fatSlope,
+        fatFreeSlope: fatFreeSlope,
+        weightSlope: weightSlope,
+        compositionEnergy: compositionEnergy,
+        weightEnergy: weightEnergy,
+      );
     }
-
-    final double dayFactor = (points.length / 14).clamp(0, 1).toDouble();
-    final double coverageFactor = (coverage / 28).clamp(0, 1).toDouble();
-    final double gapFactor = maxGap <= 3
-        ? 1
-        : maxGap <= 5
-            ? 0.85
-            : maxGap <= 7
-                ? 0.65
-                : 0.45;
-    final double deviceFactor =
-        devices.isEmpty || devices.contains('unspecified') ? 0.75 : 1;
-    final double confidence = (dayFactor * 0.30 +
-            coverageFactor * 0.25 +
-            gapFactor * 0.20 +
-            waterFactor * 0.15 +
-            deviceFactor * 0.10)
-        .clamp(0, 1)
-        .toDouble();
-
     notes.add('water_used_only_as_quality_indicator');
     notes.add('visceral_subcutaneous_muscle_bone_not_summed');
     notes.add('conservative_household_bia_quality_rule');

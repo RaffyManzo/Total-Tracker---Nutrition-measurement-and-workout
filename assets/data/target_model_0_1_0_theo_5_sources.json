@@ -1,0 +1,42 @@
+{
+  "modelVersion": "target-model-0.1.0-theo.5",
+  "generated": "2026-07-07",
+  "sources": [
+    {
+      "id": "mifflin1990",
+      "title": "A new predictive equation for resting energy expenditure in healthy individuals",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/2305711/",
+      "use": "RMR"
+    },
+    {
+      "id": "tef1996",
+      "title": "Thermic effect of food and sympathetic nervous system activity in humans",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/8878356/",
+      "use": "TEF ranges"
+    },
+    {
+      "id": "neat2004",
+      "title": "Nonexercise activity thermogenesis",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/15102614/",
+      "use": "NEAT definition"
+    },
+    {
+      "id": "standing2016",
+      "title": "Energy expenditure of deskwork when sitting, standing or alternating positions",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/27515973/",
+      "use": "untracked posture activity"
+    },
+    {
+      "id": "fao2004",
+      "title": "Human energy requirements",
+      "url": "https://www.fao.org/4/y5686e/y5686e07.htm",
+      "use": "PAL guardrails"
+    },
+    {
+      "id": "excel2003",
+      "title": "excel2003 Dart package",
+      "url": "https://pub.dev/packages/excel2003",
+      "use": "BIFF8 XLS reader"
+    }
+  ]
+}

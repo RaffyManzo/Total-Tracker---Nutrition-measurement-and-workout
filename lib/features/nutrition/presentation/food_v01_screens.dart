@@ -2302,6 +2302,20 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
       };
     }
 
+    String? compositionReliabilityRaw(String key) {
+      final String prefix = 'composition_reliability_$key=';
+      for (final String note in targetResult.compositionQualityNotes) {
+        if (note.startsWith(prefix)) return note.substring(prefix.length);
+      }
+      return null;
+    }
+
+    String compositionReliabilityPercent(String key) {
+      final double? value =
+          double.tryParse(compositionReliabilityRaw(key) ?? '');
+      return value == null ? 'n/d' : '${(value * 100).toStringAsFixed(1)}%';
+    }
+
     Widget detailRow(String label, String value) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
@@ -2514,38 +2528,48 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                       ),
                       children: <Widget>[
                         if (visibleAlerts.isNotEmpty) ...<Widget>[
-                          Row(
-                            children: <Widget>[
-                              Icon(
+                          TtAppCard(
+                            child: ExpansionTile(
+                              initiallyExpanded: true,
+                              maintainState: true,
+                              tilePadding: EdgeInsets.zero,
+                              childrenPadding: const EdgeInsets.only(
+                                top: AppSpacing.sm,
+                              ),
+                              leading: Icon(
                                 Icons.warning_amber_rounded,
                                 color:
                                     Theme.of(sheetContext).colorScheme.tertiary,
                               ),
-                              const SizedBox(width: AppSpacing.sm),
-                              Text(
+                              title: Text(
                                 'Avvisi del giorno',
                                 style: Theme.of(sheetContext)
                                     .textTheme
                                     .titleMedium
                                     ?.copyWith(fontWeight: FontWeight.w900),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          for (final MapEntry<String, TargetAlert> entry
-                              in visibleAlerts)
-                            Padding(
-                              padding:
-                                  const EdgeInsets.only(bottom: AppSpacing.sm),
-                              child: _TargetAlertCard(
-                                alert: entry.value,
-                                onDismiss: () {
-                                  setSheetState(() {
-                                    dismissedAlertKeys.add(entry.key);
-                                  });
-                                },
+                              subtitle: Text(
+                                '${visibleAlerts.length} avvisi',
                               ),
+                              children: <Widget>[
+                                for (final MapEntry<String, TargetAlert> entry
+                                    in visibleAlerts)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      bottom: AppSpacing.sm,
+                                    ),
+                                    child: _TargetAlertCard(
+                                      alert: entry.value,
+                                      onDismiss: () {
+                                        setSheetState(() {
+                                          dismissedAlertKeys.add(entry.key);
+                                        });
+                                      },
+                                    ),
+                                  ),
+                              ],
                             ),
+                          ),
                           const SizedBox(height: AppSpacing.sm),
                         ],
                         Wrap(
@@ -2667,6 +2691,64 @@ class _FoodDayDetailScreenState extends ConsumerState<FoodDayDetailScreen> {
                                       '${(targetResult.compositionConfidence * 100).round()}%'
                                   : 'fallback al peso · '
                                       '${compositionReasonLabel(targetResult.compositionFallbackReasonCode)}',
+                            ),
+                            detailRow(
+                              'Affidabilità composizione',
+                              compositionReliabilityPercent('score'),
+                            ),
+                            detailRow(
+                              'Soglia minima affidabilità',
+                              compositionReliabilityPercent('minimum'),
+                            ),
+                            detailRow(
+                              'Fattore giorni · contributo 30%',
+                              '${compositionReliabilityPercent('day_factor')} · '
+                                  '${compositionReliabilityPercent('day_contribution')}',
+                            ),
+                            detailRow(
+                              'Fattore copertura · contributo 25%',
+                              '${compositionReliabilityPercent('coverage_factor')} · '
+                                  '${compositionReliabilityPercent('coverage_contribution')}',
+                            ),
+                            detailRow(
+                              'Fattore intervallo · contributo 20%',
+                              '${compositionReliabilityPercent('gap_factor')} · '
+                                  '${compositionReliabilityPercent('gap_contribution')}',
+                            ),
+                            detailRow(
+                              'Fattore acqua · contributo 15%',
+                              '${compositionReliabilityPercent('water_factor')} · '
+                                  '${compositionReliabilityPercent('water_contribution')}',
+                            ),
+                            detailRow(
+                              'Fattore dispositivo · contributo 10%',
+                              '${compositionReliabilityPercent('device_factor')} · '
+                                  '${compositionReliabilityPercent('device_contribution')}',
+                            ),
+                            detailRow(
+                              'Stato acqua affidabilità',
+                              compositionReliabilityRaw('water_status') ??
+                                  'n/d',
+                            ),
+                            detailRow(
+                              'Stato dispositivo affidabilità',
+                              compositionReliabilityRaw('device_status') ??
+                                  'n/d',
+                            ),
+                            detailRow(
+                              'Esclusione dura affidabilità',
+                              (compositionReliabilityRaw('hard_failure') ??
+                                          'none') ==
+                                      'none'
+                                  ? 'nessuna'
+                                  : compositionReliabilityRaw('hard_failure') ??
+                                      'n/d',
+                            ),
+                            detailRow(
+                              'Esito complessivo affidabilità',
+                              compositionReliabilityRaw('passed') == 'true'
+                                  ? 'superato'
+                                  : 'non superato',
                             ),
                             detailRow(
                               'Giorni composizione validi',
@@ -8156,12 +8238,16 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setSheetState) {
             final String clean = query.text.trim().toLowerCase();
-            final List<IngredientEntity> filtered =
-                archive.where((IngredientEntity ingredient) {
-              return clean.isEmpty ||
-                  ingredient.name.toLowerCase().contains(clean) ||
-                  ingredient.brand.toLowerCase().contains(clean);
-            }).toList();
+// RECIPE_PICKER_MAX_10_SENTINEL
+            final List<IngredientEntity> filtered = clean.isEmpty
+                ? const <IngredientEntity>[]
+                : archive
+                    .where((IngredientEntity ingredient) {
+                      return ingredient.name.toLowerCase().contains(clean) ||
+                          ingredient.brand.toLowerCase().contains(clean);
+                    })
+                    .take(10)
+                    .toList(growable: false);
             final List<IngredientEntity> selected = archive
                 .where((IngredientEntity ingredient) =>
                     selectedIds.contains(ingredient.id))

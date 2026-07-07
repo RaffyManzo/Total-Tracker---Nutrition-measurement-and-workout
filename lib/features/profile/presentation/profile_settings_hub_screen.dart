@@ -64,6 +64,22 @@ class ProfileSettingsHubScreen extends StatelessWidget {
         accent: const Color(0xFF2563EB),
         directRoute: '/settings/food-services',
       ),
+      const _SettingsSectionCardData(
+        code: 'synchronization',
+        title: 'Sincronizzazione',
+        subtitle: 'Ricalcola lo storico o forza l’aggiornamento odierno.',
+        icon: Icons.sync_rounded,
+        accent: Color(0xFF0891B2),
+        directRoute: '/settings/synchronization',
+      ),
+      const _SettingsSectionCardData(
+        code: 'calculation_info',
+        title: 'Info calcolo',
+        subtitle: 'Formule, fallback, range, affidabilità e bibliografia.',
+        icon: Icons.menu_book_outlined,
+        accent: Color(0xFF6366F1),
+        directRoute: '/settings/calculation-info',
+      ),
       _SettingsSectionCardData(
         code: 'transfer',
         title: l10n.transfer,
