@@ -60,11 +60,33 @@ class _MonthMealCalendarCardState extends ConsumerState<MonthMealCalendarCard> {
   }
 
   void _onDataChange(FoodDataChange change) {
-    if (change.kind == FoodDataChangeKind.dailyRecord) return;
+    if (change.kind == FoodDataChangeKind.dailyRecord) {
+      FoodDataRefreshBus.recordSubscriberRun(
+        'MonthMealCalendarCard',
+        change,
+        skipped: true,
+      );
+      return;
+    }
     final DateTime? changedDate = DateTime.tryParse(change.dateKey);
-    if (changedDate == null) return;
+    if (changedDate == null) {
+      FoodDataRefreshBus.recordSubscriberRun(
+        'MonthMealCalendarCard',
+        change,
+        skipped: true,
+      );
+      return;
+    }
     invalidateDateKey(change.dateKey);
-    if (!mounted || _monthKey(changedDate) != _monthKey(_month)) return;
+    if (!mounted || _monthKey(changedDate) != _monthKey(_month)) {
+      FoodDataRefreshBus.recordSubscriberRun(
+        'MonthMealCalendarCard',
+        change,
+        skipped: true,
+      );
+      return;
+    }
+    FoodDataRefreshBus.recordSubscriberRun('MonthMealCalendarCard', change);
     unawaited(_loadMonth(_month, force: true));
   }
 

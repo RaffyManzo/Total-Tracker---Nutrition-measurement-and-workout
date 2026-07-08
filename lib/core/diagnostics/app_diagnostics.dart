@@ -5,7 +5,10 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../features/transfer/domain/transfer_models.dart';
 
 class AppDiagnosticLogFile {
   const AppDiagnosticLogFile({
@@ -44,6 +47,8 @@ class AppDiagnostics {
 
   static const String _customDirectoryPreference =
       'diagnostics.custom_directory.v1';
+  static const int diagnosticsSchemaVersion = 2;
+  static const int objectBoxModelVersion = 1;
   static const int _maxFileBytes = 2 * 1024 * 1024;
   static const Duration _retention = Duration(hours: 24);
 
@@ -97,19 +102,33 @@ class AppDiagnostics {
       if (!_initialization.isCompleted) {
         _initialization.complete();
       }
+      final PackageInfo packageInfo = await PackageInfo.fromPlatform();
       await _writeDirect(
         level: 'info',
         event: 'diagnostics.session_started',
         data: <String, Object?>{
           'sessionId': _sessionId,
+          'appVersion': packageInfo.version,
+          'buildNumber': packageInfo.buildNumber,
+          'diagnosticsSchemaVersion': diagnosticsSchemaVersion,
+          'transferSchemaVersion': totalTrackerArchiveVersion,
+          'objectBoxModelVersion': objectBoxModelVersion,
+          'platform': defaultTargetPlatform.name,
+          'buildMode': kReleaseMode
+              ? 'release'
+              : kProfileMode
+                  ? 'profile'
+                  : 'debug',
           'activeDirectory': _activeDirectory!.path,
           'internalDirectory': _internalDirectory!.path,
           'usingCustomDirectory': _usingCustomDirectory,
         },
       );
     } catch (error, stackTrace) {
-      debugPrint('Total Tracker diagnostics initialization failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
+      if (!_isExpectedPlatformDirectoryFailure(error)) {
+        debugPrint('Total Tracker diagnostics initialization failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
       final Directory fallback = Directory(
         p.join(Directory.systemTemp.path, 'total_tracker', 'logs'),
       );
@@ -126,6 +145,13 @@ class AppDiagnostics {
         _initialization.complete();
       }
     }
+  }
+
+  bool _isExpectedPlatformDirectoryFailure(Object error) {
+    final String message = error.toString();
+    return message.contains('Binding has not yet been initialized') ||
+        message.contains('MissingPluginException') ||
+        message.contains('getApplicationSupportDirectory');
   }
 
   Future<AppDiagnosticsStatus> status() async {

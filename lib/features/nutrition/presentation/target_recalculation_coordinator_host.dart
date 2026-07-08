@@ -65,7 +65,10 @@ class _TargetRecalculationCoordinatorHostState
     ref.invalidate(foodHubV01Provider);
     ref.invalidate(foodDaysV01Provider);
     ref.invalidate(foodMealsV01Provider);
-    FoodDataRefreshBus.publishManualRefresh(event.fromDateKey);
+    FoodDataRefreshBus.publishManualRefresh(
+      event.fromDateKey,
+      operationId: event.operationId,
+    );
   }
 
   @override

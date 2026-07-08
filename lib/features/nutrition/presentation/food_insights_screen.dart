@@ -7,6 +7,7 @@ import 'package:objectbox/objectbox.dart';
 
 import '../../../core/database/objectbox_providers.dart';
 import '../../../core/diagnostics/app_diagnostics.dart';
+import '../../../app/widgets/delayed_loading_indicator.dart';
 import '../data/entities/nutrition_tracking_entities.dart';
 import '../data/repositories/daily_record_repository.dart';
 import '../data/repositories/meal_repository.dart';
@@ -154,14 +155,16 @@ class _FoodInsightsScreenState extends ConsumerState<FoodInsightsScreen> {
                 AsyncSnapshot<_InsightsSnapshot> snapshot,
               ) {
                 if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        CircularProgressIndicator(),
-                        SizedBox(height: 16),
-                        Text('Elaborazione degli insight...'),
-                      ],
+                  return const DelayedLoadingIndicator(
+                    indicator: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          CircularProgressIndicator(),
+                          SizedBox(height: 16),
+                          Text('Elaborazione degli insight...'),
+                        ],
+                      ),
                     ),
                   );
                 }

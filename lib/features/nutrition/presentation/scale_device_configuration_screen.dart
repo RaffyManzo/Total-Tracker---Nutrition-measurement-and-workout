@@ -144,43 +144,48 @@ class _ScaleDeviceConfigurationScreenState
   Future<String?> _askName({String initial = ''}) async {
     final TextEditingController controller =
         TextEditingController(text: initial);
-    final String? result = await showDialog<String>(
-      context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: const Text('Nome dispositivo'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Nome',
-            hintText: 'Es. INSMART Health',
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (BuildContext context) => AlertDialog(
+          title: const Text('Nome dispositivo'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Nome',
+              hintText: 'Es. INSMART Health',
+            ),
+            onSubmitted: (String value) =>
+                Navigator.of(context).pop(value.trim()),
           ),
-          onSubmitted: (String value) =>
-              Navigator.of(context).pop(value.trim()),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Annulla'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(controller.text.trim()),
+              child: const Text('Salva'),
+            ),
+          ],
         ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Annulla'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Salva'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    return result;
+      );
+    } finally {
+      controller.dispose();
+    }
   }
 
   Future<void> _add() async {
     final String? name = await _askName();
-    if (name == null || name.isEmpty || _catalog == null) return;
+    if (!mounted || name == null || name.isEmpty || _catalog == null) return;
     final ScaleDeviceOption device = await _catalog!.add(name);
     if (!mounted) return;
     final bool assignUnspecified = await _confirmAssignUnspecified();
+    if (!mounted) return;
     await _migrate(device, includeUnspecified: assignUnspecified);
+    if (!mounted) return;
     _refresh('Dispositivo configurato: ${device.name}.');
   }
 
@@ -213,12 +218,14 @@ class _ScaleDeviceConfigurationScreenState
     switch (action) {
       case 'default':
         await _catalog!.makeDefault(device.id);
+        if (!mounted) return;
         _refresh('${device.name} impostato come predefinito.');
         return;
       case 'rename':
         final String? name = await _askName(initial: device.name);
-        if (name == null || name.isEmpty) return;
+        if (!mounted || name == null || name.isEmpty) return;
         await _catalog!.rename(device.id, name);
+        if (!mounted) return;
         final ScaleDeviceOption renamed = _catalog!
             .load()
             .firstWhere((ScaleDeviceOption item) => item.id == device.id);
@@ -226,18 +233,22 @@ class _ScaleDeviceConfigurationScreenState
           renamed,
           includeUnspecified: false,
         );
+        if (!mounted) return;
         _refresh('Dispositivo rinominato. Aggiornate $updated misurazioni.');
         return;
       case 'migrate':
         final bool includeUnspecified = await _confirmAssignUnspecified();
+        if (!mounted) return;
         final int updated = await _migrate(
           device,
           includeUnspecified: includeUnspecified,
         );
+        if (!mounted) return;
         _refresh('Uniformate $updated misurazioni.');
         return;
       case 'delete':
         await _catalog!.remove(device.id);
+        if (!mounted) return;
         _refresh(
             'Dispositivo rimosso dal catalogo. Le misurazioni non sono eliminate.');
         return;

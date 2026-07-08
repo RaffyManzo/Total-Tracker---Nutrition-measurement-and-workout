@@ -163,6 +163,7 @@ class _SafeMealIngredientOverlayState
         dateKey: updatedMeal.meal.dateKey,
         currentCalories: currentCalories,
         reason: 'ingredient_added_to_meal',
+        operationId: flowId,
       );
       ref
         ..invalidate(foodMealsV01Provider)

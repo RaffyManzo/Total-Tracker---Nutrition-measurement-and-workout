@@ -13,6 +13,8 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import '../../../app/theme/app_spacing.dart';
+import '../../../app/back_navigation.dart';
+import '../../../app/widgets/delayed_loading_indicator.dart';
 import '../../../core/database/objectbox_providers.dart';
 import '../../../core/diagnostics/app_diagnostics.dart';
 import '../../../core/diagnostics/interaction_trace.dart';
@@ -342,7 +344,15 @@ class _FoodHubScreenState extends ConsumerState<FoodHubScreen>
     final bool affectsAdaptiveWindow = changed != null &&
         !changed.isAfter(today) &&
         !changed.isBefore(earliest);
-    if (!affectsVisibleDay && !affectsAdaptiveWindow) return;
+    if (!affectsVisibleDay && !affectsAdaptiveWindow) {
+      FoodDataRefreshBus.recordSubscriberRun(
+        'FoodHubScreen',
+        change,
+        skipped: true,
+      );
+      return;
+    }
+    FoodDataRefreshBus.recordSubscriberRun('FoodHubScreen', change);
     setState(() => _pendingChange = change);
     ref.invalidate(foodHubV01Provider);
   }
@@ -373,21 +383,55 @@ class _FoodHubScreenState extends ConsumerState<FoodHubScreen>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       _backgroundedAt = DateTime.now();
-      unawaited(AppDiagnostics.instance.info('lifecycle.background'));
-      return;
-    }
-    if (state == AppLifecycleState.resumed) {
-      final DateTime now = DateTime.now();
+      dashboardBackController.resetExitAttempt();
       unawaited(
         AppDiagnostics.instance.info(
-          'lifecycle.resume',
+          'lifecycle.background',
           data: <String, Object?>{
-            if (_backgroundedAt != null)
-              'backgroundMs': now.difference(_backgroundedAt!).inMilliseconds,
+            'pendingOperations': _refreshing ? 1 : 0,
+            'activeSubscriptions': _changeSubscription == null ? 0 : 1,
+            'activeTimers': 0,
+            'activeOverlays': 0,
             'hasTodayCache': _cachedData != null,
           },
         ),
       );
+      return;
+    }
+    if (state == AppLifecycleState.resumed) {
+      final DateTime now = DateTime.now();
+      final Stopwatch resumeWatch = Stopwatch()..start();
+      unawaited(
+        AppDiagnostics.instance.info(
+          'lifecycle.resume.started',
+          data: <String, Object?>{
+            if (_backgroundedAt != null)
+              'backgroundMs': now.difference(_backgroundedAt!).inMilliseconds,
+            'hasTodayCache': _cachedData != null,
+            'pendingOperations': _refreshing ? 1 : 0,
+            'activeSubscriptions': _changeSubscription == null ? 0 : 1,
+            'activeTimers': 0,
+            'activeOverlays': 0,
+            'queueDepth': FoodDataRefreshBus.publishedCount,
+          },
+        ),
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        resumeWatch.stop();
+        unawaited(
+          AppDiagnostics.instance.info(
+            'lifecycle.resume.completed',
+            data: <String, Object?>{
+              'elapsedMs': resumeWatch.elapsedMilliseconds,
+              'pendingOperations': _refreshing ? 1 : 0,
+              'activeSubscriptions': _changeSubscription == null ? 0 : 1,
+              'activeTimers': 0,
+              'activeOverlays': 0,
+              'hasTodayCache': _cachedData != null,
+            },
+          ),
+        );
+      });
     }
   }
 
@@ -4598,6 +4642,11 @@ class FoodMealDetailScreen extends ConsumerStatefulWidget {
 
 class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
   late MealWithItems _details;
+  final MealIngredientBatchPickerController _ingredientPickerController =
+      MealIngredientBatchPickerController();
+  List<IngredientEntity> _ingredientPickerIngredients =
+      const <IngredientEntity>[];
+  bool _ingredientPickerOpen = false;
 
   @override
   void initState() {
@@ -4781,110 +4830,133 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
                 dailyFiberGrams: dailyTargets.fiberGrams,
                 dailySugarGrams: dailyTargets.sugarGrams,
               );
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('${_slotEmoji(meal.mealTypeCode)} ${meal.title}'),
-        actions: <Widget>[
-          IconButton(
-            tooltip: 'Dettagli ObjectBox',
-            onPressed: _showMealObjectBoxDetails,
-            icon: const Icon(Icons.info_outline_rounded),
-          ),
-        ],
-      ),
-      bottomNavigationBar:
-          const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
-      body: ListView(
-        padding: _screenPadding,
-        children: <Widget>[
-          _MealNutritionRecap(
-            meal: meal,
-            totals: totals,
-            target: mealTarget,
-          ),
-          if (_details.isNutritionPartial) ...<Widget>[
-            const SizedBox(height: AppSpacing.md),
-            const TtAppCard(
-              child: Text(
-                'Pasto libero non completamente tracciato: i totali sono parziali.',
-              ),
+    return PopScope<Object?>(
+      canPop: !_ingredientPickerOpen,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop || !_ingredientPickerOpen) return;
+        unawaited(_ingredientPickerController.handleBack());
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('${_slotEmoji(meal.mealTypeCode)} ${meal.title}'),
+          actions: <Widget>[
+            IconButton(
+              tooltip: 'Dettagli ObjectBox',
+              onPressed: _showMealObjectBoxDetails,
+              icon: const Icon(Icons.info_outline_rounded),
             ),
           ],
-          const SizedBox(height: AppSpacing.sectionGap),
-          TtAppCard(
-            onTap: _showMealSettingsDialog,
-            child: Row(
+        ),
+        bottomNavigationBar:
+            const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
+        body: Stack(
+          children: <Widget>[
+            ListView(
+              padding: _screenPadding,
               children: <Widget>[
-                Icon(
-                  Icons.tune_rounded,
-                  color: Theme.of(context).colorScheme.primary,
+                _MealNutritionRecap(
+                  meal: meal,
+                  totals: totals,
+                  target: mealTarget,
                 ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                if (_details.isNutritionPartial) ...<Widget>[
+                  const SizedBox(height: AppSpacing.md),
+                  const TtAppCard(
+                    child: Text(
+                      'Pasto libero non completamente tracciato: i totali sono parziali.',
+                    ),
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.sectionGap),
+                TtAppCard(
+                  onTap: _showMealSettingsDialog,
+                  child: Row(
                     children: <Widget>[
-                      Text(
-                        'Pasto libero e impostazioni',
-                        style: Theme.of(context).textTheme.titleMedium,
+                      Icon(
+                        Icons.tune_rounded,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
-                      Text(
-                        meal.mealModeCode == 'free'
-                            ? 'Configurazione: ${meal.freeMealTrackingCode}'
-                            : 'Standard. Tocca per impostare un pasto libero.',
-                        style: Theme.of(context).textTheme.bodySmall,
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              'Pasto libero e impostazioni',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            Text(
+                              meal.mealModeCode == 'free'
+                                  ? 'Configurazione: ${meal.freeMealTrackingCode}'
+                                  : 'Standard. Tocca per impostare un pasto libero.',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
                       ),
+                      const Icon(Icons.chevron_right_rounded),
                     ],
                   ),
                 ),
-                const Icon(Icons.chevron_right_rounded),
+                const SizedBox(height: AppSpacing.sectionGap),
+                const TtSectionHeader(title: 'Aggiungi voce'),
+                const SizedBox(height: AppSpacing.md),
+                Column(
+                  children: <Widget>[
+                    _MealAddActionCard(
+                      icon: Icons.inventory_2_outlined,
+                      title: 'Ingrediente',
+                      subtitle:
+                          'Cerca alimenti locali e inserisci la grammatura.',
+                      onTap: _showAddIngredientDialog,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    _MealAddActionCard(
+                      icon: Icons.menu_book_rounded,
+                      title: 'Ricetta',
+                      subtitle: 'Aggiungi una ricetta salvata come porzione.',
+                      onTap: _showAddRecipeDialog,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    _MealAddActionCard(
+                      icon: Icons.edit_note_rounded,
+                      title: 'Stima manuale',
+                      subtitle:
+                          'Inserisci calorie e macro quando non hai dati precisi.',
+                      onTap: _showManualEstimateDialog,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sectionGap),
+                const TtSectionHeader(title: 'Voci'),
+                const SizedBox(height: AppSpacing.md),
+                if (_details.items.isEmpty)
+                  const _EmptyInline(message: 'Nessuna voce nel pasto.')
+                else
+                  for (final MealItemEntity item in _details.items)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                      child: _MealItemCard(
+                        item: item,
+                        imageUrl: _imageForItem(item),
+                        onTap: () => _showMealItemActions(item),
+                      ),
+                    ),
               ],
             ),
-          ),
-          const SizedBox(height: AppSpacing.sectionGap),
-          const TtSectionHeader(title: 'Aggiungi voce'),
-          const SizedBox(height: AppSpacing.md),
-          Column(
-            children: <Widget>[
-              _MealAddActionCard(
-                icon: Icons.inventory_2_outlined,
-                title: 'Ingrediente',
-                subtitle: 'Cerca alimenti locali e inserisci la grammatura.',
-                onTap: _showAddIngredientDialog,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              _MealAddActionCard(
-                icon: Icons.menu_book_rounded,
-                title: 'Ricetta',
-                subtitle: 'Aggiungi una ricetta salvata come porzione.',
-                onTap: _showAddRecipeDialog,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              _MealAddActionCard(
-                icon: Icons.edit_note_rounded,
-                title: 'Stima manuale',
-                subtitle:
-                    'Inserisci calorie e macro quando non hai dati precisi.',
-                onTap: _showManualEstimateDialog,
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sectionGap),
-          const TtSectionHeader(title: 'Voci'),
-          const SizedBox(height: AppSpacing.md),
-          if (_details.items.isEmpty)
-            const _EmptyInline(message: 'Nessuna voce nel pasto.')
-          else
-            for (final MealItemEntity item in _details.items)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                child: _MealItemCard(
-                  item: item,
-                  imageUrl: _imageForItem(item),
-                  onTap: () => _showMealItemActions(item),
+            if (_ingredientPickerOpen)
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: MealIngredientBatchPickerSheet(
+                  key: const ValueKey<String>('meal-ingredient-picker-sheet'),
+                  controller: _ingredientPickerController,
+                  ingredients: _ingredientPickerIngredients,
+                  onConfirm: _confirmIngredientPicker,
+                  onDiscard: _discardIngredientPicker,
                 ),
               ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -5301,6 +5373,10 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
   }
 
   Future<void> _showAddIngredientDialog() async {
+    if (_ingredientPickerOpen) {
+      _ingredientPickerController.expand();
+      return;
+    }
     final List<IngredientEntity> ingredients =
         ref.read(ingredientRepositoryProvider).getAllActive();
     if (ingredients.isEmpty) {
@@ -5308,15 +5384,27 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
       return;
     }
 
-    final List<MealIngredientBatchSelection>? selections =
-        await showPersistentMealIngredientBatchPicker(
-      context,
-      ingredients: ingredients,
-    );
-    if (!mounted || selections == null || selections.isEmpty) {
+    setState(() {
+      _ingredientPickerIngredients = ingredients;
+      _ingredientPickerOpen = true;
+    });
+  }
+
+  void _discardIngredientPicker() {
+    if (!mounted) return;
+    setState(() {
+      _ingredientPickerOpen = false;
+      _ingredientPickerIngredients = const <IngredientEntity>[];
+    });
+  }
+
+  void _confirmIngredientPicker(
+    List<MealIngredientBatchSelection> selections,
+  ) {
+    if (!mounted || selections.isEmpty) {
+      _discardIngredientPicker();
       return;
     }
-
     MealWithItems next = _details;
     final FoodPlanningService planning = ref.read(foodPlanningServiceProvider);
     for (final MealIngredientBatchSelection selection in selections) {
@@ -5326,9 +5414,20 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
         grams: selection.grams,
       );
     }
-    if (!mounted) return;
-    setState(() => _details = next);
-    _invalidateFood(ref);
+    final String operationId =
+        'meal-picker-${DateTime.now().microsecondsSinceEpoch}';
+    setState(() {
+      _details = next;
+      _ingredientPickerOpen = false;
+      _ingredientPickerIngredients = const <IngredientEntity>[];
+    });
+    FoodDataRefreshBus.publishMeal(
+      dateKey: next.meal.dateKey,
+      currentCalories: next.totals.kcal,
+      reason: 'ingredient_batch_added_to_meal',
+      operationId: operationId,
+    );
+    ref.invalidate(foodMealsV01Provider);
   }
 
   Future<void> _showAddRecipeDialog() async {
@@ -10750,7 +10849,7 @@ class _LoadingState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(child: CircularProgressIndicator());
+    return const DelayedLoadingIndicator();
   }
 }
 

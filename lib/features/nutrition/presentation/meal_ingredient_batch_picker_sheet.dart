@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_spacing.dart';
@@ -15,48 +13,38 @@ class MealIngredientBatchSelection {
   final double grams;
 }
 
-/// Opens a persistent, non-modal sheet.
-///
-/// Unlike [showModalBottomSheet], a persistent sheet has no modal barrier. When
-/// the user collapses it, the visible page remains usable while the compact bar
-/// clearly communicates that the selection is still active.
-Future<List<MealIngredientBatchSelection>?>
-    showPersistentMealIngredientBatchPicker(
-  BuildContext context, {
-  required List<IngredientEntity> ingredients,
-}) {
-  final Completer<List<MealIngredientBatchSelection>?> completer =
-      Completer<List<MealIngredientBatchSelection>?>();
-  late final PersistentBottomSheetController controller;
+class MealIngredientBatchPickerController {
+  _MealIngredientBatchPickerSheetState? _state;
 
-  void complete(List<MealIngredientBatchSelection>? result) {
-    if (!completer.isCompleted) {
-      completer.complete(result);
+  bool get isAttached => _state != null;
+
+  void expand() => _state?._setExtent(
+        _MealIngredientBatchPickerSheetState._expandedExtent,
+      );
+
+  void collapse() => _state?._setExtent(
+        _MealIngredientBatchPickerSheetState._collapsedExtent,
+      );
+
+  Future<void> handleBack() async {
+    final _MealIngredientBatchPickerSheetState? state = _state;
+    if (state == null) return;
+    if (state._isCollapsed) {
+      await state._requestClose();
+    } else {
+      state._setExtent(_MealIngredientBatchPickerSheetState._collapsedExtent);
     }
   }
 
-  controller = showBottomSheet(
-    context: context,
-    enableDrag: false,
-    backgroundColor: Colors.transparent,
-    elevation: 0,
-    builder: (BuildContext sheetContext) {
-      return MealIngredientBatchPickerSheet(
-        ingredients: ingredients,
-        onConfirm: (List<MealIngredientBatchSelection> result) {
-          complete(result);
-          controller.close();
-        },
-        onDiscard: () {
-          complete(null);
-          controller.close();
-        },
-      );
-    },
-  );
+  void _attach(_MealIngredientBatchPickerSheetState state) {
+    _state = state;
+  }
 
-  controller.closed.whenComplete(() => complete(null));
-  return completer.future;
+  void _detach(_MealIngredientBatchPickerSheetState state) {
+    if (_state == state) {
+      _state = null;
+    }
+  }
 }
 
 class MealIngredientBatchPickerSheet extends StatefulWidget {
@@ -64,12 +52,14 @@ class MealIngredientBatchPickerSheet extends StatefulWidget {
     required this.ingredients,
     required this.onConfirm,
     required this.onDiscard,
+    this.controller,
     super.key,
   });
 
   final List<IngredientEntity> ingredients;
   final ValueChanged<List<MealIngredientBatchSelection>> onConfirm;
   final VoidCallback onDiscard;
+  final MealIngredientBatchPickerController? controller;
 
   @override
   State<MealIngredientBatchPickerSheet> createState() =>
@@ -99,7 +89,23 @@ class _MealIngredientBatchPickerSheetState
   double _dragDeltaDy = 0;
 
   @override
+  void initState() {
+    super.initState();
+    widget.controller?._attach(this);
+  }
+
+  @override
+  void didUpdateWidget(MealIngredientBatchPickerSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?._detach(this);
+      widget.controller?._attach(this);
+    }
+  }
+
+  @override
   void dispose() {
+    widget.controller?._detach(this);
     _queryController.dispose();
     _scrollController.dispose();
     super.dispose();

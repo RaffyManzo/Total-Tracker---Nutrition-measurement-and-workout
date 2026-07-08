@@ -40,7 +40,10 @@ class TargetInputMutationService {
     required String reasonCode,
     String? sourceEntityUuid,
     int? sourceRevision,
+    String operationId = '',
   }) {
+    final String resolvedOperationId =
+        operationId.isEmpty ? const Uuid().v4() : operationId;
     TargetInputChangeBus.publishInput(
       TargetInputChanged(
         kind: kind,
@@ -49,6 +52,7 @@ class TargetInputMutationService {
         reasonCode: reasonCode,
         sourceRevision: sourceRevision ?? DateTime.now().millisecondsSinceEpoch,
         sourceEntityUuid: sourceEntityUuid,
+        operationId: resolvedOperationId,
       ),
     );
   }

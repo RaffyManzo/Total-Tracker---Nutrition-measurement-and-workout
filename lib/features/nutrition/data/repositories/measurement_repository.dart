@@ -183,15 +183,20 @@ class MeasurementRepository {
     TapeMeasurementEntity measurement,
     List<TapeMeasurementEntryEntity> entries,
   ) {
-    return _store.runInTransaction(TxMode.write, () {
+    late final TapeMeasurementEntity savedMeasurement;
+    _store.runInTransaction(TxMode.write, () {
       _normalizeTape(measurement);
       _prepareTape(measurement);
       measurement.id = _tapeBox.put(measurement);
-      final List<int> oldEntryIds = getTapeEntries(measurement.id)
-          .map((TapeMeasurementEntryEntity entry) => entry.id)
-          .toList();
-      if (oldEntryIds.isNotEmpty) {
-        _tapeEntryBox.removeMany(oldEntryIds);
+      final int now = measurement.updatedAtEpochMs;
+      final List<TapeMeasurementEntryEntity> oldEntries =
+          getTapeEntries(measurement.id);
+      if (oldEntries.isNotEmpty) {
+        for (final TapeMeasurementEntryEntity entry in oldEntries) {
+          entry.deletedAtEpochMs ??= now;
+          entry.updatedAtEpochMs = now;
+        }
+        _tapeEntryBox.putMany(oldEntries);
       }
       for (int index = 0; index < entries.length; index += 1) {
         final TapeMeasurementEntryEntity entry = entries[index];
@@ -200,8 +205,67 @@ class MeasurementRepository {
         entry.tapeMeasurement.target = measurement;
         entry.id = _tapeEntryBox.put(entry);
       }
-      return measurement;
+      TargetInputMutationService.enqueueInCurrentTransaction(
+        _store,
+        kind: TargetInputChangeKind.tapeMeasurement,
+        fromDateKey: measurement.dateKey,
+        reasonCode: 'tape_measurement_saved',
+        sourceEntityUuid: measurement.uuid,
+        sourceRevision: measurement.updatedAtEpochMs,
+      );
+      savedMeasurement = measurement;
     });
+    TargetInputMutationService.publishAfterCommit(
+      kind: TargetInputChangeKind.tapeMeasurement,
+      fromDateKey: savedMeasurement.dateKey,
+      reasonCode: 'tape_measurement_saved',
+      sourceEntityUuid: savedMeasurement.uuid,
+      sourceRevision: savedMeasurement.updatedAtEpochMs,
+    );
+    return savedMeasurement;
+  }
+
+  TapeMeasurementEntity softDeleteTape(
+    TapeMeasurementEntity measurement,
+  ) {
+    if (measurement.id == 0 || _tapeBox.get(measurement.id) == null) {
+      throw ArgumentError.value(
+        measurement.id,
+        'id',
+        'Tape measurement not found.',
+      );
+    }
+    final int now = _clock.nowEpochMs();
+    measurement.deletedAtEpochMs ??= now;
+    measurement.updatedAtEpochMs = now;
+    _store.runInTransaction(TxMode.write, () {
+      measurement.id = _tapeBox.put(measurement);
+      final List<TapeMeasurementEntryEntity> entries =
+          getTapeEntries(measurement.id);
+      if (entries.isNotEmpty) {
+        for (final TapeMeasurementEntryEntity entry in entries) {
+          entry.deletedAtEpochMs ??= now;
+          entry.updatedAtEpochMs = now;
+        }
+        _tapeEntryBox.putMany(entries);
+      }
+      TargetInputMutationService.enqueueInCurrentTransaction(
+        _store,
+        kind: TargetInputChangeKind.tapeMeasurement,
+        fromDateKey: measurement.dateKey,
+        reasonCode: 'tape_measurement_deleted',
+        sourceEntityUuid: measurement.uuid,
+        sourceRevision: now,
+      );
+    });
+    TargetInputMutationService.publishAfterCommit(
+      kind: TargetInputChangeKind.tapeMeasurement,
+      fromDateKey: measurement.dateKey,
+      reasonCode: 'tape_measurement_deleted',
+      sourceEntityUuid: measurement.uuid,
+      sourceRevision: now,
+    );
+    return measurement;
   }
 
   void _prepareScale(ScaleMeasurementEntity measurement) {

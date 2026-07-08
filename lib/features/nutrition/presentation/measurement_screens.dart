@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_spacing.dart';
+import '../../../app/widgets/delayed_loading_indicator.dart';
 import '../../../l10n/l10n.dart';
 import '../../../core/database/objectbox_providers.dart';
 import '../../../shared/widgets/tt_app_card.dart';
@@ -192,7 +193,7 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
       bottomNavigationBar:
           const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
       body: data.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const DelayedLoadingIndicator(),
         error: (Object error, StackTrace stackTrace) => _ErrorView(
           error: error,
           onRetry: () => ref.invalidate(measurementHubProvider),
@@ -875,7 +876,7 @@ class ScaleMeasurementsScreen extends ConsumerWidget {
       bottomNavigationBar:
           const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
       body: data.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const DelayedLoadingIndicator(),
         error: (Object error, StackTrace stackTrace) => _ErrorView(
           error: error,
           onRetry: () => ref.invalidate(measurementHubProvider),
@@ -928,7 +929,7 @@ class TapeMeasurementsScreen extends ConsumerWidget {
       bottomNavigationBar:
           const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
       body: data.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const DelayedLoadingIndicator(),
         error: (Object error, StackTrace stackTrace) => _ErrorView(
           error: error,
           onRetry: () => ref.invalidate(measurementHubProvider),
@@ -1727,12 +1728,36 @@ Future<void> _showScaleDialog(
       );
     },
   );
+  void disposeScaleControllers() {
+    for (final TextEditingController controller in <TextEditingController>[
+      date,
+      weight,
+      bodyFat,
+      muscle,
+      water,
+      bone,
+      visceral,
+      subcutaneous,
+      bmr,
+      bmi,
+      metabolicAge,
+      physique,
+      time,
+      device,
+      notes,
+    ]) {
+      controller.dispose();
+    }
+  }
+
   if (action == 'delete' && existing != null) {
     ref.read(measurementRepositoryProvider).softDeleteScale(existing);
     ref.invalidate(measurementHubProvider);
+    disposeScaleControllers();
     return;
   }
   if (action != 'save') {
+    disposeScaleControllers();
     return;
   }
   final String dateKey = date.text.trim();
@@ -1774,6 +1799,7 @@ Future<void> _showScaleDialog(
   measurement.notes = notes.text.trim();
   repository.saveScale(measurement);
   ref.invalidate(measurementHubProvider);
+  disposeScaleControllers();
 }
 
 Future<void> _showTapeDialog(
@@ -1801,7 +1827,7 @@ Future<void> _showTapeDialog(
       ),
   };
   final GlobalKey<FormState> formKey = GlobalKey<FormState>();
-  final bool? saved = await showModalBottomSheet<bool>(
+  final String? action = await showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
@@ -1832,7 +1858,7 @@ Future<void> _showTapeDialog(
                     ),
                     IconButton(
                       tooltip: 'Chiudi',
-                      onPressed: () => Navigator.of(sheetContext).pop(false),
+                      onPressed: () => Navigator.of(sheetContext).pop('cancel'),
                       icon: const Icon(Icons.close_rounded),
                     ),
                   ],
@@ -1929,25 +1955,87 @@ Future<void> _showTapeDialog(
                     AppSpacing.lg,
                     AppSpacing.lg,
                   ),
-                  child: Row(
+                  child: Column(
                     children: <Widget>[
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () =>
-                              Navigator.of(sheetContext).pop(false),
-                          child: const Text('Annulla'),
+                      if (existing != null) ...<Widget>[
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor:
+                                  Theme.of(sheetContext).colorScheme.error,
+                              side: BorderSide(
+                                color: Theme.of(sheetContext).colorScheme.error,
+                              ),
+                            ),
+                            onPressed: () async {
+                              final bool? confirmed = await showDialog<bool>(
+                                context: sheetContext,
+                                builder: (BuildContext dialogContext) {
+                                  return AlertDialog(
+                                    title: const Text('Elimina misurazione'),
+                                    content: const Text(
+                                      'La misurazione metro verrà rimossa dallo storico visibile. '
+                                      'Il record resta conservato come eliminato.',
+                                    ),
+                                    actions: <Widget>[
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(dialogContext)
+                                                .pop(false),
+                                        child: const Text('Annulla'),
+                                      ),
+                                      FilledButton(
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor:
+                                              Theme.of(dialogContext)
+                                                  .colorScheme
+                                                  .error,
+                                          foregroundColor:
+                                              Theme.of(dialogContext)
+                                                  .colorScheme
+                                                  .onError,
+                                        ),
+                                        onPressed: () =>
+                                            Navigator.of(dialogContext)
+                                                .pop(true),
+                                        child: const Text('Elimina'),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              );
+                              if (confirmed == true && sheetContext.mounted) {
+                                Navigator.of(sheetContext).pop('delete');
+                              }
+                            },
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            label: const Text('Elimina misurazione'),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: () {
-                            if (formKey.currentState?.validate() ?? false) {
-                              Navigator.of(sheetContext).pop(true);
-                            }
-                          },
-                          child: const Text('Salva'),
-                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                      ],
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () =>
+                                  Navigator.of(sheetContext).pop('cancel'),
+                              child: const Text('Annulla'),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () {
+                                if (formKey.currentState?.validate() ?? false) {
+                                  Navigator.of(sheetContext).pop('save');
+                                }
+                              },
+                              child: const Text('Salva'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1959,7 +2047,22 @@ Future<void> _showTapeDialog(
       );
     },
   );
-  if (saved != true) {
+  void disposeTapeControllers() {
+    date.dispose();
+    notes.dispose();
+    for (final TextEditingController controller in controllers.values) {
+      controller.dispose();
+    }
+  }
+
+  if (action == 'delete' && existing != null) {
+    ref.read(measurementRepositoryProvider).softDeleteTape(existing);
+    ref.invalidate(measurementHubProvider);
+    disposeTapeControllers();
+    return;
+  }
+  if (action != 'save') {
+    disposeTapeControllers();
     return;
   }
   final String dateKey = date.text.trim();
@@ -1989,6 +2092,7 @@ Future<void> _showTapeDialog(
     ],
   );
   ref.invalidate(measurementHubProvider);
+  disposeTapeControllers();
 }
 
 Widget _field(

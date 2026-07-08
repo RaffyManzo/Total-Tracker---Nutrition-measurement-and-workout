@@ -1325,6 +1325,9 @@ class _OpenNutritionImportOverlayState
 
   @override
   Widget build(BuildContext context) {
+    if (widget.targetType == 'recipe') {
+      return widget.child;
+    }
     return Stack(
       children: <Widget>[
         KeyedSubtree(

@@ -17,7 +17,8 @@ void main() {
       food,
       isNot(contains("context.push('/food/meals/\${meal.meal.id}')")),
     );
-    expect(food, contains('showPersistentMealIngredientBatchPicker('));
+    expect(food, contains('MealIngredientBatchPickerSheet('));
+    expect(food, contains('_ingredientPickerOpen'));
     expect(
       food,
       isNot(
@@ -26,7 +27,8 @@ void main() {
         ),
       ),
     );
-    expect(picker, contains('showBottomSheet('));
+    expect(picker, isNot(contains('showBottomSheet(')));
+    expect(picker, contains('class MealIngredientBatchPickerController'));
     expect(picker, contains('la pagina resta utilizzabile'));
     expect(picker, contains('_collapsedExtent = 0.18'));
     expect(picker, contains('_dragDeltaDy += details.primaryDelta ?? 0'));

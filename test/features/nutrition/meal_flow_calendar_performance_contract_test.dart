@@ -28,12 +28,12 @@ void main() {
       'Batch picker must not own one controller per ingredient row',
     );
     expectSource(
-      source.contains('showBottomSheet('),
-      'Batch picker must be persistent and non-modal',
+      source.contains('class MealIngredientBatchPickerController'),
+      'Batch picker must expose a local lifecycle controller',
     );
     expectSource(
-      source.contains('controller.closed.whenComplete'),
-      'Persistent picker must complete safely when its scaffold closes',
+      !source.contains('showBottomSheet('),
+      'Batch picker must not depend on Scaffold.of(context)',
     );
     expectSource(
       source.contains('widget.onConfirm(result)'),
@@ -51,8 +51,12 @@ void main() {
     ).readAsStringSync();
 
     expectSource(
-      source.contains('showPersistentMealIngredientBatchPicker('),
-      'Meal detail must use the persistent batch picker',
+      source.contains('MealIngredientBatchPickerSheet('),
+      'Meal detail must mount the persistent picker in its own tree',
+    );
+    expectSource(
+      source.contains('_ingredientPickerOpen'),
+      'Meal detail must own one picker instance',
     );
     expectSource(
       !source.contains(

@@ -27,6 +27,9 @@ void main() {
       expect(coordinator, contains('schedule(immediate: true)'));
       expect(coordinator, contains('if (_running)'));
       expect(coordinator, contains('_rerunRequested = true'));
+      expect(coordinator, contains('pubsub.target_recalculation.started'));
+      expect(coordinator, contains('queueWaitMs'));
+      expect(coordinator, contains('coalescedEventCount'));
     },
   );
 

@@ -39,10 +39,14 @@ class DashboardBackController {
     '/measurements',
     '/settings',
   };
-  static const Duration _exitWindow = Duration(seconds: 2);
+  static const Duration _exitWindow = Duration(milliseconds: 1500);
 
   bool _handling = false;
   DateTime? _lastExitAttempt;
+
+  void resetExitAttempt() {
+    _lastExitAttempt = null;
+  }
 
   Future<bool> handle(GoRouter router) async {
     if (_handling) return true;
@@ -84,7 +88,7 @@ class DashboardBackController {
       final DateTime? previous = _lastExitAttempt;
       if (previous == null || now.difference(previous) > _exitWindow) {
         _lastExitAttempt = now;
-        _showMessage('Premi di nuovo Indietro per chiudere.');
+        _showMessage('Premi di nuovo indietro per uscire');
         return true;
       }
 
