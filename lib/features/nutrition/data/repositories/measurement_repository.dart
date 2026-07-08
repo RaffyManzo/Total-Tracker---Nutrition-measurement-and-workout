@@ -3,6 +3,9 @@ import 'package:objectbox/objectbox.dart';
 import '../../../../core/identifiers/uuid_generator.dart';
 import '../../../../core/time/clock.dart';
 import '../entities/nutrition_tracking_entities.dart';
+import '../services/scale_measurement_validator.dart';
+import '../services/target_input_change_bus.dart';
+import '../services/target_input_mutation_service.dart';
 
 class MeasurementRepository {
   MeasurementRepository(
@@ -119,8 +122,26 @@ class MeasurementRepository {
 
   ScaleMeasurementEntity saveScale(ScaleMeasurementEntity measurement) {
     _normalizeScale(measurement);
+    const ScaleMeasurementValidator().validateOrThrow(measurement);
     _prepareScale(measurement);
-    measurement.id = _scaleBox.put(measurement);
+    _store.runInTransaction(TxMode.write, () {
+      measurement.id = _scaleBox.put(measurement);
+      TargetInputMutationService.enqueueInCurrentTransaction(
+        _store,
+        kind: TargetInputChangeKind.scaleMeasurement,
+        fromDateKey: measurement.dateKey,
+        reasonCode: 'scale_measurement_saved',
+        sourceEntityUuid: measurement.uuid,
+        sourceRevision: measurement.updatedAtEpochMs,
+      );
+    });
+    TargetInputMutationService.publishAfterCommit(
+      kind: TargetInputChangeKind.scaleMeasurement,
+      fromDateKey: measurement.dateKey,
+      reasonCode: 'scale_measurement_saved',
+      sourceEntityUuid: measurement.uuid,
+      sourceRevision: measurement.updatedAtEpochMs,
+    );
     return measurement;
   }
 
@@ -137,7 +158,24 @@ class MeasurementRepository {
     final int now = _clock.nowEpochMs();
     measurement.deletedAtEpochMs ??= now;
     measurement.updatedAtEpochMs = now;
-    measurement.id = _scaleBox.put(measurement);
+    _store.runInTransaction(TxMode.write, () {
+      measurement.id = _scaleBox.put(measurement);
+      TargetInputMutationService.enqueueInCurrentTransaction(
+        _store,
+        kind: TargetInputChangeKind.scaleMeasurement,
+        fromDateKey: measurement.dateKey,
+        reasonCode: 'scale_measurement_deleted',
+        sourceEntityUuid: measurement.uuid,
+        sourceRevision: now,
+      );
+    });
+    TargetInputMutationService.publishAfterCommit(
+      kind: TargetInputChangeKind.scaleMeasurement,
+      fromDateKey: measurement.dateKey,
+      reasonCode: 'scale_measurement_deleted',
+      sourceEntityUuid: measurement.uuid,
+      sourceRevision: now,
+    );
     return measurement;
   }
 

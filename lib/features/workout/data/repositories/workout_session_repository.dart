@@ -3,6 +3,8 @@ import 'package:objectbox/objectbox.dart';
 import '../../../../core/identifiers/uuid_generator.dart';
 import '../../../../core/time/clock.dart';
 import '../entities/workout_tracking_entities.dart';
+import '../../../nutrition/data/services/target_input_change_bus.dart';
+import '../../../nutrition/data/services/target_input_mutation_service.dart';
 
 class WorkoutSessionDetails {
   const WorkoutSessionDetails({
@@ -43,7 +45,24 @@ class WorkoutSessionRepository {
     _normalize(session);
     _validate(session);
     _prepareSession(session);
-    session.id = _sessionBox.put(session);
+    _store.runInTransaction(TxMode.write, () {
+      session.id = _sessionBox.put(session);
+      TargetInputMutationService.enqueueInCurrentTransaction(
+        _store,
+        kind: TargetInputChangeKind.workout,
+        fromDateKey: session.sessionDateKey,
+        reasonCode: 'workout_active_calories_changed',
+        sourceEntityUuid: session.uuid,
+        sourceRevision: session.updatedAtEpochMs,
+      );
+    });
+    TargetInputMutationService.publishAfterCommit(
+      kind: TargetInputChangeKind.workout,
+      fromDateKey: session.sessionDateKey,
+      reasonCode: 'workout_active_calories_changed',
+      sourceEntityUuid: session.uuid,
+      sourceRevision: session.updatedAtEpochMs,
+    );
     return session;
   }
 

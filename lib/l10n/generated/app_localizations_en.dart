@@ -191,4 +191,16 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get bodyMeasurementsListHint =>
       'Open a group and tap a measurement to view its history.';
+
+  @override
+  String get xlsQuickDateSelection => 'Quick date selection';
+
+  @override
+  String get xlsLatestMeasurementPerDay => 'One per day: latest measurement';
+
+  @override
+  String get xlsApplySelection => 'Apply selection';
+
+  @override
+  String get mealQuickSummaryOpenFull => 'Open full meal';
 }

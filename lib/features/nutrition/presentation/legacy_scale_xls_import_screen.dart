@@ -1,15 +1,13 @@
-import 'dart:convert';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:uuid/uuid.dart';
 
 import '../../../core/database/objectbox_providers.dart';
 import '../data/entities/nutrition_tracking_entities.dart';
 import '../data/import/legacy_scale_xls_importer.dart';
 import '../data/services/scale_device_catalog_service.dart';
+import '../data/services/scale_measurement_batch_import_service.dart';
 
 class LegacyScaleXlsImportScreen extends ConsumerStatefulWidget {
   const LegacyScaleXlsImportScreen({super.key});
@@ -26,7 +24,10 @@ class _LegacyScaleXlsImportScreenState
   List<ScaleDeviceOption> _devices = const <ScaleDeviceOption>[];
   String? _deviceId;
   LegacyScaleImportPreview? _preview;
-  Set<int> _selectedRows = <int>{};
+  Set<String> _selectedRows = <String>{};
+  DateTime? _fromDate;
+  DateTime? _toDate;
+  XlsDailySelectionMode _selectionMode = XlsDailySelectionMode.allMeasurements;
   bool _busy = false;
   String? _status;
 
@@ -48,9 +49,9 @@ class _LegacyScaleXlsImportScreenState
             child: Padding(
               padding: EdgeInsets.all(16),
               child: Text(
-                'Sono supportati file Excel 97–2003 (.xls). Le intestazioni '
-                'vengono confrontate anche parzialmente. Nessun dato viene '
-                'scritto prima della pagina di riepilogo.',
+                'Sono supportati file Excel 97–2003 (.xls). Tutti i fogli '
+                'non vuoti vengono analizzati. Nessun dato viene scritto '
+                'prima della conferma nella pagina di riepilogo.',
               ),
             ),
           ),
@@ -97,49 +98,11 @@ class _LegacyScaleXlsImportScreenState
           ),
           if (preview != null) ...<Widget>[
             const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'Riepilogo file',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Text('Foglio: ${preview.sheetName}'),
-                    Text('Misurazioni valide: ${preview.rows.length}'),
-                    Text('Selezionate: ${_selectedRows.length}'),
-                    Text(
-                      'Intervallo: ${preview.rows.isEmpty ? 'n/d' : preview.rows.first.dateKey} '
-                      '→ ${preview.rows.isEmpty ? 'n/d' : preview.rows.last.dateKey}',
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            _buildSummary(preview),
             const SizedBox(height: 8),
-            Card(
-              clipBehavior: Clip.antiAlias,
-              child: ExpansionTile(
-                title: Text('Mappatura colonne (${preview.matches.length})'),
-                children: <Widget>[
-                  for (final LegacyScaleFieldMatch match in preview.matches)
-                    ListTile(
-                      dense: true,
-                      title:
-                          Text('${match.sourceHeader} → ${match.targetField}'),
-                      trailing: Text('${(match.score * 100).round()}%'),
-                    ),
-                  if (preview.unmatchedHeaders.isNotEmpty)
-                    ListTile(
-                      title: const Text('Colonne non modellate'),
-                      subtitle: Text(preview.unmatchedHeaders.join(', ')),
-                    ),
-                ],
-              ),
-            ),
+            _buildColumnMapping(preview),
+            const SizedBox(height: 8),
+            _buildQuickSelection(preview),
             const SizedBox(height: 8),
             Row(
               children: <Widget>[
@@ -148,7 +111,7 @@ class _LegacyScaleXlsImportScreenState
                       ? null
                       : () => setState(() {
                             _selectedRows = preview.rows
-                                .map((LegacyScaleImportRow row) => row.index)
+                                .map((LegacyScaleImportRow row) => row.rowId)
                                 .toSet();
                           }),
                   child: const Text('Seleziona tutte'),
@@ -156,7 +119,9 @@ class _LegacyScaleXlsImportScreenState
                 TextButton(
                   onPressed: _busy
                       ? null
-                      : () => setState(() => _selectedRows = <int>{}),
+                      : () => setState(
+                            () => _selectedRows = <String>{},
+                          ),
                   child: const Text('Deseleziona'),
                 ),
                 const Spacer(),
@@ -173,23 +138,27 @@ class _LegacyScaleXlsImportScreenState
             for (final LegacyScaleImportRow row in preview.rows)
               Card(
                 child: CheckboxListTile(
-                  value: _selectedRows.contains(row.index),
+                  value: _selectedRows.contains(row.rowId),
                   onChanged: _busy
                       ? null
                       : (bool? selected) {
                           setState(() {
                             if (selected == true) {
-                              _selectedRows.add(row.index);
+                              _selectedRows.add(row.rowId);
                             } else {
-                              _selectedRows.remove(row.index);
+                              _selectedRows.remove(row.rowId);
                             }
                           });
                         },
                   title: Text(
-                    '${row.dateKey} ${row.measurementTime} · '
-                    '${row.weightKg.toStringAsFixed(1)} kg',
+                    '${row.dateKey} ${row.hasExplicitTime ? row.measurementTime : 'orario n/d'} '
+                    '· ${row.weightKg.toStringAsFixed(1)} kg',
                   ),
-                  subtitle: Text(_rowSummary(row)),
+                  subtitle: Text(
+                    '${row.sourceSheetName}, riga ${row.sourceRowNumber}\n'
+                    '${_rowSummary(row)}',
+                  ),
+                  isThreeLine: true,
                   controlAffinity: ListTileControlAffinity.leading,
                 ),
               ),
@@ -203,7 +172,7 @@ class _LegacyScaleXlsImportScreenState
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Text(_status!),
+                child: SelectableText(_status!),
               ),
             ),
           ],
@@ -212,11 +181,162 @@ class _LegacyScaleXlsImportScreenState
     );
   }
 
+  Widget _buildSummary(LegacyScaleImportPreview preview) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              'Riepilogo file',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text('Fogli: ${preview.sheetNames.join(', ')}'),
+            Text('Misurazioni valide: ${preview.rows.length}'),
+            Text('Selezionate: ${_selectedRows.length}'),
+            Text(
+              'Intervallo trovato: ${preview.firstDateKey ?? 'n/d'} '
+              '→ ${preview.lastDateKey ?? 'n/d'}',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildColumnMapping(LegacyScaleImportPreview preview) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        title: Text('Mappatura colonne (${preview.matches.length})'),
+        children: <Widget>[
+          for (final LegacyScaleFieldMatch match in preview.matches)
+            ListTile(
+              dense: true,
+              title: Text(
+                '${match.sourceSheetName}: ${match.sourceHeader} '
+                '→ ${match.targetField}',
+              ),
+              trailing: Text('${(match.score * 100).round()}%'),
+            ),
+          if (preview.unmatchedHeaders.isNotEmpty)
+            ListTile(
+              title: const Text('Colonne non modellate'),
+              subtitle: Text(preview.unmatchedHeaders.join(', ')),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickSelection(LegacyScaleImportPreview preview) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              'Selezione rapida per data',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'La selezione non elimina righe: puoi sempre modificare '
+              'manualmente le singole caselle prima dell’importazione.',
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _busy ? null : () => _pickBoundary(true),
+                    icon: const Icon(Icons.date_range_rounded),
+                    label: Text(
+                      _fromDate == null
+                          ? 'Data iniziale'
+                          : 'Da ${_dateKey(_fromDate!)}',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _busy ? null : () => _pickBoundary(false),
+                    icon: const Icon(Icons.event_rounded),
+                    label: Text(
+                      _toDate == null
+                          ? 'Data finale'
+                          : 'A ${_dateKey(_toDate!)}',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<XlsDailySelectionMode>(
+              initialValue: _selectionMode,
+              decoration: const InputDecoration(
+                labelText: 'Misurazioni da selezionare',
+              ),
+              items: const <DropdownMenuItem<XlsDailySelectionMode>>[
+                DropdownMenuItem<XlsDailySelectionMode>(
+                  value: XlsDailySelectionMode.allMeasurements,
+                  child: Text('Tutte le misurazioni nell’intervallo'),
+                ),
+                DropdownMenuItem<XlsDailySelectionMode>(
+                  value: XlsDailySelectionMode.latestPerDay,
+                  child: Text('Una per giorno: la più recente'),
+                ),
+              ],
+              onChanged: _busy
+                  ? null
+                  : (XlsDailySelectionMode? value) {
+                      if (value != null) {
+                        setState(() => _selectionMode = value);
+                      }
+                    },
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed:
+                        _busy ? null : () => _applyQuickSelection(preview),
+                    icon: const Icon(Icons.filter_alt_rounded),
+                    label: const Text('Applica selezione'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.outlined(
+                  tooltip: 'Ripristina l’intervallo completo',
+                  onPressed: _busy
+                      ? null
+                      : () => setState(() {
+                            _fromDate = _parseDate(preview.firstDateKey);
+                            _toDate = _parseDate(preview.lastDateKey);
+                          }),
+                  icon: const Icon(Icons.restart_alt_rounded),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _loadDevices() async {
     final SharedPreferences preferences = await SharedPreferences.getInstance();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     final ScaleDeviceCatalogService catalog =
         ScaleDeviceCatalogService(preferences);
+    await catalog.ensureMigrated();
     await catalog.mergeStoredValues(
       ref
           .read(measurementRepositoryProvider)
@@ -255,9 +375,13 @@ class _LegacyScaleXlsImportScreenState
       ),
     );
     controller.dispose();
-    if (name == null || name.isEmpty || _catalog == null) return;
+    if (name == null || name.isEmpty || _catalog == null) {
+      return;
+    }
     final ScaleDeviceOption device = await _catalog!.add(name);
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _devices = _catalog!.load();
       _deviceId = device.id;
@@ -273,27 +397,99 @@ class _LegacyScaleXlsImportScreenState
       withData: false,
     );
     final String? path = result?.files.single.path;
-    if (path == null) return;
+    if (path == null) {
+      return;
+    }
     setState(() {
       _busy = true;
-      _status = null;
+      _status = 'Analisi del workbook in corso…';
     });
     try {
-      final LegacyScaleImportPreview preview = _importer.read(path);
-      if (!mounted) return;
+      final LegacyScaleImportPreview preview = await _importer.readAsync(path);
+      if (!mounted) {
+        return;
+      }
+      final DateTime? from = _parseDate(preview.firstDateKey);
+      final DateTime? to = _parseDate(preview.lastDateKey);
       setState(() {
         _preview = preview;
-        _selectedRows =
-            preview.rows.map((LegacyScaleImportRow row) => row.index).toSet();
+        _fromDate = from;
+        _toDate = to;
+        _selectionMode = XlsDailySelectionMode.allMeasurements;
+        _selectedRows = LegacyScaleSelection.select(rows: preview.rows);
         _status = preview.warnings.isEmpty
             ? 'File analizzato. Controlla ogni misurazione prima di importare.'
             : preview.warnings.join('\n');
       });
     } on Object catch (error) {
-      if (mounted) setState(() => _status = 'File non importabile: $error');
+      if (mounted) {
+        setState(() => _status = 'File non importabile: $error');
+      }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() => _busy = false);
+      }
     }
+  }
+
+  Future<void> _pickBoundary(bool start) async {
+    final DateTime initial = start
+        ? (_fromDate ?? _toDate ?? DateTime.now())
+        : (_toDate ?? _fromDate ?? DateTime.now());
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() {
+      if (start) {
+        _fromDate = picked;
+        if (_toDate != null && picked.isAfter(_toDate!)) {
+          _toDate = picked;
+        }
+      } else {
+        _toDate = picked;
+        if (_fromDate != null && picked.isBefore(_fromDate!)) {
+          _fromDate = picked;
+        }
+      }
+    });
+  }
+
+  void _applyQuickSelection(LegacyScaleImportPreview preview) {
+    final String? from = _fromDate == null ? null : _dateKey(_fromDate!);
+    final String? to = _toDate == null ? null : _dateKey(_toDate!);
+    final Set<String> selected = LegacyScaleSelection.select(
+      rows: preview.rows,
+      fromDateKey: from,
+      toDateKey: to,
+      mode: _selectionMode,
+    );
+    final int hiddenSameDay =
+        _selectionMode == XlsDailySelectionMode.latestPerDay
+            ? preview.rows.where((row) {
+                  if (from != null && row.dateKey.compareTo(from) < 0) {
+                    return false;
+                  }
+                  if (to != null && row.dateKey.compareTo(to) > 0) {
+                    return false;
+                  }
+                  return true;
+                }).length -
+                selected.length
+            : 0;
+    setState(() {
+      _selectedRows = selected;
+      _status = _selectionMode == XlsDailySelectionMode.latestPerDay
+          ? 'Selezionate ${selected.length} misurazioni: una per giorno, '
+              'scegliendo l’orario più recente. Righe della stessa data '
+              'deselezionate: $hiddenSameDay.'
+          : 'Selezionate ${selected.length} misurazioni nell’intervallo.';
+    });
   }
 
   Future<void> _importSelected() async {
@@ -301,68 +497,44 @@ class _LegacyScaleXlsImportScreenState
     final ScaleDeviceOption? device = _devices
         .where((ScaleDeviceOption item) => item.id == _deviceId)
         .firstOrNull;
-    if (preview == null || device == null) return;
-
+    if (preview == null || device == null) {
+      return;
+    }
     setState(() {
       _busy = true;
       _status = null;
     });
     try {
-      final repository = ref.read(measurementRepositoryProvider);
-      final Set<String> existing = repository
-          .getScaleMeasurements()
-          .map(
-            (ScaleMeasurementEntity item) =>
-                '${item.dateKey}|${item.measurementTime}',
-          )
-          .toSet();
-      int imported = 0;
-      int duplicates = 0;
-      final int now = DateTime.now().millisecondsSinceEpoch;
-      for (final LegacyScaleImportRow row in preview.rows) {
-        if (!_selectedRows.contains(row.index)) continue;
-        if (existing.contains(row.duplicateKey)) {
-          duplicates += 1;
-          continue;
-        }
-        final ScaleMeasurementEntity entity = ScaleMeasurementEntity(
-          uuid: const Uuid().v4(),
-          dateKey: row.dateKey,
-          title: 'Bilancia · ${row.dateKey}',
-          weightKg: row.weightKg,
-          weightSourceCode: 'xls_import',
-          bodyFatPercent: row.number('bodyFatPercent'),
-          muscleMassKg: row.number('muscleMassKg'),
-          waterPercent: row.number('waterPercent'),
-          boneMassKg: row.number('boneMassKg'),
-          visceralFat: row.number('visceralFat'),
-          subcutaneousFatPercent: row.number('subcutaneousFatPercent'),
-          basalMetabolismKcal: row.number('basalMetabolismKcal'),
-          bmi: row.number('bmi'),
-          metabolicAge: row.number('metabolicAge'),
-          physiqueRating: row.text('physiqueRating'),
-          measurementTime: row.measurementTime,
-          device: ScaleDeviceCatalogService.encode(device),
-          reliabilityCode: 'normal',
-          notes: _notesFor(row),
-          createdAtEpochMs: now,
-          updatedAtEpochMs: now,
-        );
-        repository.saveScale(entity);
-        existing.add(row.duplicateKey);
-        imported += 1;
-      }
+      final ScaleBatchImportReport report = ScaleMeasurementBatchImportService(
+        ref.read(objectBoxStoreProvider),
+      ).importSelected(
+        preview: preview,
+        selectedRowIds: _selectedRows,
+        device: device,
+      );
       ref.invalidate(profileSettingsRevisionProvider);
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
-        _status = 'Importate $imported misurazioni. '
-            'Duplicati data/ora ignorati: $duplicates. '
-            'Ricalcola i target per applicare i nuovi dati.';
+        _status = 'Importazione completata.\n'
+            'Righe lette: ${report.readRows}.\n'
+            'Selezionate: ${report.selectedRows}.\n'
+            'Importate: ${report.importedRows}.\n'
+            'Duplicati esatti ignorati: ${report.exactDuplicates}.\n'
+            'Conflitti stesso istante ignorati: ${report.timestampConflicts}.\n'
+            'Righe non valide: ${report.invalidRows}.\n'
+            'Intervallo invalidato: ${report.fromDateKey ?? 'n/d'} '
+            '→ ${report.toDateKey ?? 'n/d'}.';
       });
     } on Object catch (error) {
-      if (mounted) setState(() => _status = 'Importazione interrotta: $error');
+      if (mounted) {
+        setState(() => _status = 'Importazione interrotta: $error');
+      }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() => _busy = false);
+      }
     }
   }
 
@@ -370,7 +542,9 @@ class _LegacyScaleXlsImportScreenState
     final List<String> parts = <String>[];
     void add(String label, String key, String unit) {
       final double? value = row.number(key);
-      if (value != null) parts.add('$label ${value.toStringAsFixed(1)}$unit');
+      if (value != null) {
+        parts.add('$label ${value.toStringAsFixed(1)}$unit');
+      }
     }
 
     add('Grasso', 'bodyFatPercent', '%');
@@ -381,14 +555,17 @@ class _LegacyScaleXlsImportScreenState
     return parts.isEmpty ? 'Solo peso riconosciuto' : parts.join(' · ');
   }
 
-  String _notesFor(LegacyScaleImportRow row) {
-    final List<String> lines = <String>[
-      'Importato da XLS legacy.',
-      if (row.unmappedValues.isNotEmpty)
-        'Campi originali non modellati: ${jsonEncode(row.unmappedValues)}',
-      ...row.warnings,
-    ];
-    return lines.join('\n');
+  DateTime? _parseDate(String? value) {
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+    return DateTime.tryParse(value);
+  }
+
+  String _dateKey(DateTime value) {
+    return '${value.year.toString().padLeft(4, '0')}-'
+        '${value.month.toString().padLeft(2, '0')}-'
+        '${value.day.toString().padLeft(2, '0')}';
   }
 }
 

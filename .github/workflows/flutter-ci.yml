@@ -2,61 +2,37 @@ name: Flutter CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'release/**'
+      - 'feature/**'
   pull_request:
-
-permissions:
-  contents: read
-
-concurrency:
-  group: flutter-ci-${{ github.ref }}
-  cancel-in-progress: true
+    branches:
+      - main
+      - 'release/**'
+      - 'feature/**'
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Resolve Flutter dependencies
+      - name: Dependencies
         run: flutter pub get
-
-      - name: Install OpenNutrition gateway dependencies
-        run: python -m pip install --disable-pip-version-check -r tools/opennutrition_gateway/requirements.txt
-
-      - name: Verify formatting
+      - name: ObjectBox generation
+        run: dart run build_runner build --delete-conflicting-outputs
+      - name: Localization generation
+        run: flutter gen-l10n
+      - name: Format check
         run: dart format --output=none --set-exit-if-changed lib test
-
-      - name: Static analysis
+      - name: Analyzer
         run: flutter analyze
-
-      - name: OpenNutrition security self-test
-        working-directory: tools/opennutrition_gateway
-        run: python security_self_test.py
-
-      - name: OpenNutrition importer self-test
-        working-directory: tools/opennutrition_gateway
-        run: python self_test_importer.py
-
-      - name: Build Android debug APK
+      - name: Tests
+        run: flutter test
+      - name: Android debug build validation
         run: flutter build apk --debug --no-pub

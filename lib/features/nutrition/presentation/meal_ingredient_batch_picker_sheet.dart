@@ -14,10 +14,7 @@ class MealIngredientBatchSelection {
 }
 
 class MealIngredientBatchPickerSheet extends StatefulWidget {
-  const MealIngredientBatchPickerSheet({
-    required this.ingredients,
-    super.key,
-  });
+  const MealIngredientBatchPickerSheet({required this.ingredients, super.key});
 
   final List<IngredientEntity> ingredients;
 
@@ -32,17 +29,21 @@ class _MealIngredientBatchPickerSheetState
   final GlobalKey<FormState> _quantityFormKey = GlobalKey<FormState>();
   final Set<int> _selectedIds = <int>{};
   final Map<int, String> _gramsById = <int, String>{};
+  final DraggableScrollableController _sheetController =
+      DraggableScrollableController();
   int _step = 0;
 
   @override
   void dispose() {
     _queryController.dispose();
+    _sheetController.dispose();
     super.dispose();
   }
 
   List<IngredientEntity> get _selectedIngredients => widget.ingredients
       .where((IngredientEntity item) => _selectedIds.contains(item.id))
       .toList(growable: false);
+
   List<IngredientEntity> get _filteredIngredients {
     final String clean = _queryController.text.trim().toLowerCase();
     if (clean.isEmpty) return const <IngredientEntity>[];
@@ -65,6 +66,43 @@ class _MealIngredientBatchPickerSheetState
         _gramsById.putIfAbsent(ingredient.id, () => '100');
       }
     });
+  }
+
+  Future<void> _collapse() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await _sheetController.animateTo(
+      0.18,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Future<void> _requestClose() async {
+    if (_selectedIds.isEmpty) {
+      if (mounted) Navigator.of(context).pop();
+      return;
+    }
+    final bool? discard = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('Scartare la selezione?'),
+        content: Text(
+          'Hai selezionato ${_selectedIds.length} alimenti. '
+          'La chiusura rimuoverà anche le quantità inserite.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Mantieni'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Scarta e chiudi'),
+          ),
+        ],
+      ),
+    );
+    if (discard == true && mounted) Navigator.of(context).pop();
   }
 
   void _continue() {
@@ -92,100 +130,131 @@ class _MealIngredientBatchPickerSheetState
   @override
   Widget build(BuildContext context) {
     final List<IngredientEntity> selected = _selectedIngredients;
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.92,
-      minChildSize: 0.48,
-      maxChildSize: 0.96,
-      builder: (BuildContext context, ScrollController scrollController) {
-        return SafeArea(
-          child: Column(
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg,
-                  AppSpacing.sm,
-                  AppSpacing.lg,
-                  AppSpacing.md,
-                ),
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            _step == 0
-                                ? 'Seleziona alimenti'
-                                : 'Inserisci le quantità',
-                            style: Theme.of(context).textTheme.headlineSmall,
-                          ),
-                          Text(
-                            '${_selectedIds.length} selezionati',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Chiudi',
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: _step == 0
-                    ? _buildSelectionList(context, scrollController)
-                    : _buildQuantityList(context, scrollController, selected),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg,
-                  AppSpacing.sm,
-                  AppSpacing.lg,
-                  AppSpacing.md,
-                ),
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          if (_step == 0) {
-                            Navigator.of(context).pop();
-                          } else {
-                            FocusManager.instance.primaryFocus?.unfocus();
-                            setState(() => _step = 0);
-                          }
-                        },
-                        icon: Icon(
-                          _step == 0
-                              ? Icons.keyboard_arrow_down_rounded
-                              : Icons.arrow_back_rounded,
-                        ),
-                        label: Text(_step == 0 ? 'Chiudi' : 'Indietro'),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: _selectedIds.isEmpty ? null : _continue,
-                        icon: Icon(
-                          _step == 0
-                              ? Icons.arrow_forward_rounded
-                              : Icons.check_rounded,
-                        ),
-                        label: Text(_step == 0 ? 'Continua' : 'Conferma'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
+    return PopScope(
+      canPop: _selectedIds.isEmpty,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (!didPop) _requestClose();
       },
+      child: DraggableScrollableSheet(
+        controller: _sheetController,
+        expand: false,
+        initialChildSize: 0.92,
+        minChildSize: 0.18,
+        maxChildSize: 0.92,
+        snap: true,
+        snapSizes: const <double>[0.18, 0.48, 0.92],
+        shouldCloseOnMinExtent: _selectedIds.isEmpty,
+        builder: (
+          BuildContext context,
+          ScrollController scrollController,
+        ) {
+          return SafeArea(
+            child: Column(
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.sm,
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              _step == 0
+                                  ? 'Seleziona alimenti'
+                                  : 'Inserisci le quantità',
+                              style: Theme.of(context).textTheme.headlineSmall,
+                            ),
+                            Text(
+                              '${_selectedIds.length} selezionati',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_selectedIds.isNotEmpty)
+                        IconButton(
+                          tooltip: 'Comprimi mantenendo la selezione',
+                          onPressed: _collapse,
+                          icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                        ),
+                      IconButton(
+                        tooltip: 'Chiudi',
+                        onPressed: _requestClose,
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: _step == 0
+                      ? _buildSelectionList(context, scrollController)
+                      : _buildQuantityList(
+                          context,
+                          scrollController,
+                          selected,
+                        ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.sm,
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            if (_step == 0) {
+                              if (_selectedIds.isNotEmpty) {
+                                _collapse();
+                              } else {
+                                Navigator.of(context).pop();
+                              }
+                            } else {
+                              FocusManager.instance.primaryFocus?.unfocus();
+                              setState(() => _step = 0);
+                            }
+                          },
+                          icon: Icon(
+                            _step == 0
+                                ? Icons.keyboard_arrow_down_rounded
+                                : Icons.arrow_back_rounded,
+                          ),
+                          label: Text(
+                            _step == 0
+                                ? (_selectedIds.isEmpty ? 'Chiudi' : 'Comprimi')
+                                : 'Indietro',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _selectedIds.isEmpty ? null : _continue,
+                          icon: Icon(
+                            _step == 0
+                                ? Icons.arrow_forward_rounded
+                                : Icons.check_rounded,
+                          ),
+                          label: Text(_step == 0 ? 'Continua' : 'Conferma'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 

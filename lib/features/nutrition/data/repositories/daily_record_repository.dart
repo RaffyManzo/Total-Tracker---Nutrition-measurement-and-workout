@@ -4,6 +4,8 @@ import '../../../../core/identifiers/uuid_generator.dart';
 import '../../../../core/time/clock.dart';
 import '../entities/nutrition_tracking_entities.dart';
 import '../food_data_refresh_bus.dart';
+import '../services/target_input_change_bus.dart';
+import '../services/target_input_mutation_service.dart';
 
 class DailyRecordRepository {
   DailyRecordRepository(
@@ -31,10 +33,7 @@ class DailyRecordRepository {
     final double? previousActiveActual = stored?.activeKcalActual;
     final double? previousActiveReference = stored?.activeRefKcal;
     final double? previousTarget = stored?.targetKcal;
-
     _prepareForSave(record);
-    record.id = _box.put(record);
-
     final bool predictionInputsChanged = stored != null &&
         (previousSteps != record.steps ||
             previousStepGoal != record.stepGoal ||
@@ -49,7 +48,28 @@ class DailyRecordRepository {
             (record.activeKcalActual ?? 0) > 0 ||
             (record.activeRefKcal ?? 0) > 0 ||
             (record.targetKcal ?? 0) > 0);
-    if (predictionInputsChanged || newRecordWithInputs) {
+    final bool changed = predictionInputsChanged || newRecordWithInputs;
+    _store.runInTransaction(TxMode.write, () {
+      record.id = _box.put(record);
+      if (changed) {
+        TargetInputMutationService.enqueueInCurrentTransaction(
+          _store,
+          kind: TargetInputChangeKind.dailyActivity,
+          fromDateKey: record.dateKey,
+          reasonCode: 'daily_record_input_changed',
+          sourceEntityUuid: record.uuid,
+          sourceRevision: record.updatedAtEpochMs,
+        );
+      }
+    });
+    if (changed) {
+      TargetInputMutationService.publishAfterCommit(
+        kind: TargetInputChangeKind.dailyActivity,
+        fromDateKey: record.dateKey,
+        reasonCode: 'daily_record_input_changed',
+        sourceEntityUuid: record.uuid,
+        sourceRevision: record.updatedAtEpochMs,
+      );
       FoodDataRefreshBus.publishDailyRecord(
         dateKey: record.dateKey,
         steps: record.steps,
@@ -57,6 +77,18 @@ class DailyRecordRepository {
       );
     }
     return record;
+  }
+
+  void saveCalculatedSnapshots(List<DailyRecordEntity> records) {
+    if (records.isEmpty) return;
+    _store.runInTransaction(TxMode.write, () {
+      for (final DailyRecordEntity record in records) {
+        _normalize(record);
+        _validate(record);
+        _prepareForSave(record);
+      }
+      _box.putMany(records);
+    });
   }
 
   DailyRecordEntity upsertImported(DailyRecordEntity importedRecord) {
@@ -143,7 +175,24 @@ class DailyRecordRepository {
     final int now = _clock.nowEpochMs();
     record.deletedAtEpochMs ??= now;
     record.updatedAtEpochMs = now;
-    record.id = _box.put(record);
+    _store.runInTransaction(TxMode.write, () {
+      record.id = _box.put(record);
+      TargetInputMutationService.enqueueInCurrentTransaction(
+        _store,
+        kind: TargetInputChangeKind.dailyActivity,
+        fromDateKey: record.dateKey,
+        reasonCode: 'daily_record_deleted_incremental',
+        sourceEntityUuid: record.uuid,
+        sourceRevision: now,
+      );
+    });
+    TargetInputMutationService.publishAfterCommit(
+      kind: TargetInputChangeKind.dailyActivity,
+      fromDateKey: record.dateKey,
+      reasonCode: 'daily_record_deleted_incremental',
+      sourceEntityUuid: record.uuid,
+      sourceRevision: now,
+    );
     return record;
   }
 

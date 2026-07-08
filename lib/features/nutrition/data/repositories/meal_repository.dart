@@ -6,6 +6,8 @@ import '../entities/nutrition_tracking_entities.dart';
 import '../entities/ingredient_entity.dart';
 import '../import/obsidian_food_seed.dart';
 import 'daily_record_repository.dart';
+import '../services/target_input_change_bus.dart';
+import '../services/target_input_mutation_service.dart';
 
 class MealWithItems {
   const MealWithItems({
@@ -98,7 +100,24 @@ class MealRepository {
     _normalizeMeal(meal);
     _validateMeal(meal);
     _prepareMealForSave(meal);
-    meal.id = _mealBox.put(meal);
+    _store.runInTransaction(TxMode.write, () {
+      meal.id = _mealBox.put(meal);
+      TargetInputMutationService.enqueueInCurrentTransaction(
+        _store,
+        kind: TargetInputChangeKind.meal,
+        fromDateKey: meal.dateKey,
+        reasonCode: 'meal_saved_incremental',
+        sourceEntityUuid: meal.uuid,
+        sourceRevision: meal.updatedAtEpochMs,
+      );
+    });
+    TargetInputMutationService.publishAfterCommit(
+      kind: TargetInputChangeKind.meal,
+      fromDateKey: meal.dateKey,
+      reasonCode: 'meal_saved_incremental',
+      sourceEntityUuid: meal.uuid,
+      sourceRevision: meal.updatedAtEpochMs,
+    );
     return meal;
   }
 
@@ -107,7 +126,7 @@ class MealRepository {
     List<MealItemEntity> items, {
     bool replaceItems = true,
   }) {
-    return _store.runInTransaction(TxMode.write, () {
+    final MealWithItems result = _store.runInTransaction(TxMode.write, () {
       _preserveStoredSlot(meal);
       _normalizeMeal(meal);
       _validateMeal(meal);
@@ -115,16 +134,12 @@ class MealRepository {
       meal.dailyRecord.target ??=
           _dailyRecordRepository.findByDate(meal.dateKey);
       meal.id = _mealBox.put(meal);
-
       if (replaceItems) {
         final List<int> oldItemIds = getItemsForMeal(meal.id)
             .map((MealItemEntity item) => item.id)
             .toList();
-        if (oldItemIds.isNotEmpty) {
-          _itemBox.removeMany(oldItemIds);
-        }
+        if (oldItemIds.isNotEmpty) _itemBox.removeMany(oldItemIds);
       }
-
       final List<MealItemEntity> savedItems = <MealItemEntity>[];
       for (int index = 0; index < items.length; index += 1) {
         final MealItemEntity item = items[index];
@@ -136,8 +151,24 @@ class MealRepository {
         item.id = _itemBox.put(item);
         savedItems.add(item);
       }
+      TargetInputMutationService.enqueueInCurrentTransaction(
+        _store,
+        kind: TargetInputChangeKind.meal,
+        fromDateKey: meal.dateKey,
+        reasonCode: 'meal_items_saved_incremental',
+        sourceEntityUuid: meal.uuid,
+        sourceRevision: meal.updatedAtEpochMs,
+      );
       return MealWithItems(meal: meal, items: savedItems);
     });
+    TargetInputMutationService.publishAfterCommit(
+      kind: TargetInputChangeKind.meal,
+      fromDateKey: meal.dateKey,
+      reasonCode: 'meal_items_saved_incremental',
+      sourceEntityUuid: meal.uuid,
+      sourceRevision: meal.updatedAtEpochMs,
+    );
+    return result;
   }
 
   MealWithItems upsertImported(
@@ -444,17 +475,17 @@ class MealRepository {
     if (grams <= 0) {
       throw ArgumentError.value(grams, 'grams', 'Must be greater than zero.');
     }
-    return _store.runInTransaction(TxMode.write, () {
-      final meal = getById(mealId);
-      if (meal == null) {
-        throw StateError('Meal not found: $mealId');
-      }
-      final items = getItemsForMeal(mealId);
-      final reference = ingredient.nutritionReferenceAmount <= 0
+    late MealEntity meal;
+    final MealWithItems result = _store.runInTransaction(TxMode.write, () {
+      final MealEntity? storedMeal = getById(mealId);
+      if (storedMeal == null) throw StateError('Meal not found: $mealId');
+      meal = storedMeal;
+      final List<MealItemEntity> items = getItemsForMeal(mealId);
+      final double reference = ingredient.nutritionReferenceAmount <= 0
           ? 100.0
           : ingredient.nutritionReferenceAmount;
-      final factor = grams / reference;
-      final item = MealItemEntity(
+      final double factor = grams / reference;
+      final MealItemEntity item = MealItemEntity(
         uuid: '',
         position: items.length,
         kindCode: 'ingredient',
@@ -479,15 +510,31 @@ class MealRepository {
       item.id = _itemBox.put(item);
       meal.updatedAtEpochMs = _clock.nowEpochMs();
       _mealBox.put(meal);
+      TargetInputMutationService.enqueueInCurrentTransaction(
+        _store,
+        kind: TargetInputChangeKind.meal,
+        fromDateKey: meal.dateKey,
+        reasonCode: 'meal_item_added_incremental',
+        sourceEntityUuid: meal.uuid,
+        sourceRevision: meal.updatedAtEpochMs,
+      );
       return MealWithItems(meal: meal, items: <MealItemEntity>[...items, item]);
     });
+    TargetInputMutationService.publishAfterCommit(
+      kind: TargetInputChangeKind.meal,
+      fromDateKey: meal.dateKey,
+      reasonCode: 'meal_item_added_incremental',
+      sourceEntityUuid: meal.uuid,
+      sourceRevision: meal.updatedAtEpochMs,
+    );
+    return result;
   }
 
   MealEntity softDelete(MealEntity meal) {
     if (meal.id == 0 || _mealBox.get(meal.id) == null) {
       throw ArgumentError.value(meal.id, 'id', 'Meal not found.');
     }
-    return _store.runInTransaction(TxMode.write, () {
+    final MealEntity result = _store.runInTransaction(TxMode.write, () {
       final int now = _clock.nowEpochMs();
       meal.deletedAtEpochMs ??= now;
       meal.updatedAtEpochMs = now;
@@ -497,11 +544,25 @@ class MealRepository {
         item.deletedAtEpochMs ??= now;
         item.updatedAtEpochMs = now;
       }
-      if (items.isNotEmpty) {
-        _itemBox.putMany(items);
-      }
+      if (items.isNotEmpty) _itemBox.putMany(items);
+      TargetInputMutationService.enqueueInCurrentTransaction(
+        _store,
+        kind: TargetInputChangeKind.meal,
+        fromDateKey: meal.dateKey,
+        reasonCode: 'meal_deleted_incremental',
+        sourceEntityUuid: meal.uuid,
+        sourceRevision: now,
+      );
       return meal;
     });
+    TargetInputMutationService.publishAfterCommit(
+      kind: TargetInputChangeKind.meal,
+      fromDateKey: meal.dateKey,
+      reasonCode: 'meal_deleted_incremental',
+      sourceEntityUuid: meal.uuid,
+      sourceRevision: meal.updatedAtEpochMs,
+    );
+    return result;
   }
 
   int clearItemsForDate(String dateKey) {
@@ -509,14 +570,12 @@ class MealRepository {
     if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(cleanDateKey)) {
       throw ArgumentError.value(dateKey, 'dateKey', 'Use YYYY-MM-DD.');
     }
-    return _store.runInTransaction(TxMode.write, () {
+    final int deleted = _store.runInTransaction(TxMode.write, () {
       final int now = _clock.nowEpochMs();
       final List<MealItemEntity> itemsToDelete = <MealItemEntity>[];
       for (final MealEntity meal in getMealsForDate(cleanDateKey)) {
         final List<MealItemEntity> activeItems = getItemsForMeal(meal.id);
-        if (activeItems.isEmpty) {
-          continue;
-        }
+        if (activeItems.isEmpty) continue;
         for (final MealItemEntity item in activeItems) {
           item.deletedAtEpochMs = now;
           item.updatedAtEpochMs = now;
@@ -527,9 +586,24 @@ class MealRepository {
       }
       if (itemsToDelete.isNotEmpty) {
         _itemBox.putMany(itemsToDelete);
+        TargetInputMutationService.enqueueInCurrentTransaction(
+          _store,
+          kind: TargetInputChangeKind.meal,
+          fromDateKey: cleanDateKey,
+          reasonCode: 'meal_items_cleared_incremental',
+          sourceRevision: now,
+        );
       }
       return itemsToDelete.length;
     });
+    if (deleted > 0) {
+      TargetInputMutationService.publishAfterCommit(
+        kind: TargetInputChangeKind.meal,
+        fromDateKey: cleanDateKey,
+        reasonCode: 'meal_items_cleared_incremental',
+      );
+    }
+    return deleted;
   }
 
   void _preserveStoredSlot(MealEntity meal) {

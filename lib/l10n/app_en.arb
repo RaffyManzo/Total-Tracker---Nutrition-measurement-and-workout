@@ -55,5 +55,9 @@
   "bodyArmsGroup": "Arms",
   "bodyLegsGroup": "Legs",
   "bodyMeasurementsList": "Recorded measurements",
-  "bodyMeasurementsListHint": "Open a group and tap a measurement to view its history."
+  "bodyMeasurementsListHint": "Open a group and tap a measurement to view its history.",
+  "xlsQuickDateSelection": "Quick date selection",
+  "xlsLatestMeasurementPerDay": "One per day: latest measurement",
+  "xlsApplySelection": "Apply selection",
+  "mealQuickSummaryOpenFull": "Open full meal"
 }

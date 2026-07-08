@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'meal_quick_summary_sheet.dart';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -9236,7 +9237,21 @@ class _MealListCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TtAppCard(
-      onTap: () => context.push('/food/meals/${meal.meal.id}'),
+      onTap: () async {
+        final bool openFull = await showMealQuickSummarySheet(
+          context,
+          meal: meal,
+        );
+        if (!context.mounted || !openFull) {
+          return;
+        }
+        await context.push('/food/meals/${meal.meal.id}');
+        if (context.mounted) {
+          FoodDataRefreshBus.publishManualRefresh(
+            meal.meal.dateKey,
+          );
+        }
+      },
       child: Row(
         children: <Widget>[
           Text(_slotEmoji(meal.meal.mealTypeCode),

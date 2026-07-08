@@ -433,6 +433,30 @@ abstract class AppLocalizations {
   /// In it, this message translates to:
   /// **'Apri un gruppo e tocca una misura per visualizzare lo storico.'**
   String get bodyMeasurementsListHint;
+
+  /// No description provided for @xlsQuickDateSelection.
+  ///
+  /// In it, this message translates to:
+  /// **'Selezione rapida per data'**
+  String get xlsQuickDateSelection;
+
+  /// No description provided for @xlsLatestMeasurementPerDay.
+  ///
+  /// In it, this message translates to:
+  /// **'Una per giorno: la più recente'**
+  String get xlsLatestMeasurementPerDay;
+
+  /// No description provided for @xlsApplySelection.
+  ///
+  /// In it, this message translates to:
+  /// **'Applica selezione'**
+  String get xlsApplySelection;
+
+  /// No description provided for @mealQuickSummaryOpenFull.
+  ///
+  /// In it, this message translates to:
+  /// **'Apri pasto completo'**
+  String get mealQuickSummaryOpenFull;
 }
 
 class _AppLocalizationsDelegate

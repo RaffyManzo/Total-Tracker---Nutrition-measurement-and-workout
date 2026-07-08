@@ -3,6 +3,8 @@ import 'package:objectbox/objectbox.dart';
 import '../../../../core/identifiers/uuid_generator.dart';
 import '../../../../core/time/clock.dart';
 import '../../../nutrition/data/entities/nutrition_tracking_entities.dart';
+import '../../../nutrition/data/services/target_input_change_bus.dart';
+import '../../../nutrition/data/services/target_input_mutation_service.dart';
 import '../../domain/profile_codes.dart';
 import '../entities/user_profile_entity.dart';
 
@@ -57,14 +59,34 @@ class UserProfileRepository {
 
   UserProfileEntity save(UserProfileEntity profile) {
     _validate(profile);
-    return _store.runInTransaction(TxMode.write, () {
+    final DateTime today = DateTime.now();
+    final String effectiveDate = '${today.year.toString().padLeft(4, '0')}-'
+        '${today.month.toString().padLeft(2, '0')}-'
+        '${today.day.toString().padLeft(2, '0')}';
+    final UserProfileEntity result = _store.runInTransaction(TxMode.write, () {
       _prepareForSave(profile);
       if (profile.isActive && profile.deletedAtEpochMs == null) {
         _deactivateOtherProfiles(profile.id);
       }
       profile.id = _box.put(profile);
+      TargetInputMutationService.enqueueInCurrentTransaction(
+        _store,
+        kind: TargetInputChangeKind.profile,
+        fromDateKey: effectiveDate,
+        reasonCode: 'profile_effective_from_today',
+        sourceEntityUuid: profile.uuid,
+        sourceRevision: profile.updatedAtEpochMs,
+      );
       return profile;
     });
+    TargetInputMutationService.publishAfterCommit(
+      kind: TargetInputChangeKind.profile,
+      fromDateKey: effectiveDate,
+      reasonCode: 'profile_effective_from_today',
+      sourceEntityUuid: profile.uuid,
+      sourceRevision: profile.updatedAtEpochMs,
+    );
+    return result;
   }
 
   UserProfileEntity saveWithDailyRecords(

@@ -586,7 +586,7 @@
     },
     {
       "id": "6:1866238313368872607",
-      "lastPropertyId": "51:4266169536574169163",
+      "lastPropertyId": "54:2329602267609370658",
       "name": "DailyRecordEntity",
       "properties": [
         {
@@ -847,6 +847,21 @@
         {
           "id": "51:4266169536574169163",
           "name": "deletedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "52:7745608149714703665",
+          "name": "targetInputHash",
+          "type": 9
+        },
+        {
+          "id": "53:7608613574840557077",
+          "name": "targetInputHashVersion",
+          "type": 9
+        },
+        {
+          "id": "54:2329602267609370658",
+          "name": "targetCalculationRevision",
           "type": 6
         }
       ],
@@ -2854,10 +2869,100 @@
         }
       ],
       "relations": []
+    },
+    {
+      "id": "26:4224589252931363551",
+      "lastPropertyId": "15:5565564953066261898",
+      "name": "TargetInvalidationEntity",
+      "properties": [
+        {
+          "id": "1:346065967202908021",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:4104750644672257516",
+          "name": "uuid",
+          "indexId": "58:546026762001478759",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:2571157061622920903",
+          "name": "fromDateKey",
+          "indexId": "59:4421470775572823027",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "4:4088386870058032276",
+          "name": "toDateKey",
+          "type": 9
+        },
+        {
+          "id": "5:5832793337414403402",
+          "name": "kindCode",
+          "type": 9
+        },
+        {
+          "id": "6:8927376395439895651",
+          "name": "reasonCode",
+          "type": 9
+        },
+        {
+          "id": "7:4998566114151902464",
+          "name": "sourceEntityUuid",
+          "type": 9
+        },
+        {
+          "id": "8:6807471785313019655",
+          "name": "sourceRevision",
+          "type": 6
+        },
+        {
+          "id": "9:1940694942140512718",
+          "name": "statusCode",
+          "indexId": "60:3466793498580347204",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "10:5325899790795415505",
+          "name": "createdAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "11:5331200275739358395",
+          "name": "updatedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "12:7952422695406363492",
+          "name": "startedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "13:5205161131930075743",
+          "name": "completedAtEpochMs",
+          "type": 6
+        },
+        {
+          "id": "14:9080032660636133136",
+          "name": "failureCount",
+          "type": 6
+        },
+        {
+          "id": "15:5565564953066261898",
+          "name": "lastErrorCode",
+          "type": 9
+        }
+      ],
+      "relations": []
     }
   ],
-  "lastEntityId": "25:1938988888524376966",
-  "lastIndexId": "57:4217912142887605977",
+  "lastEntityId": "26:4224589252931363551",
+  "lastIndexId": "60:3466793498580347204",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

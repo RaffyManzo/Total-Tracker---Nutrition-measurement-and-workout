@@ -14,6 +14,9 @@ class DailyRecordEntity {
     this.targetStatusCode = 'provisional',
     this.targetCalculatedAtEpochMs,
     this.targetSourceHash = '',
+    this.targetInputHash = '',
+    this.targetInputHashVersion = '',
+    this.targetCalculationRevision = 0,
     this.tdeeRefKcal,
     this.tdeeTheoreticalKcal,
     this.tdeeObservedKcal,
@@ -73,6 +76,9 @@ class DailyRecordEntity {
   String targetStatusCode;
   int? targetCalculatedAtEpochMs;
   String targetSourceHash;
+  String targetInputHash;
+  String targetInputHashVersion;
+  int targetCalculationRevision;
   double? tdeeRefKcal;
   double? tdeeTheoreticalKcal;
   double? tdeeObservedKcal;
@@ -488,4 +494,45 @@ class TapeMeasurementEntryEntity {
   int updatedAtEpochMs;
   int? deletedAtEpochMs;
   final tapeMeasurement = ToOne<TapeMeasurementEntity>();
+}
+
+@Entity()
+class TargetInvalidationEntity {
+  TargetInvalidationEntity({
+    this.id = 0,
+    required this.uuid,
+    required this.fromDateKey,
+    this.toDateKey = '',
+    required this.kindCode,
+    required this.reasonCode,
+    this.sourceEntityUuid = '',
+    required this.sourceRevision,
+    this.statusCode = 'pending',
+    required this.createdAtEpochMs,
+    required this.updatedAtEpochMs,
+    this.startedAtEpochMs,
+    this.completedAtEpochMs,
+    this.failureCount = 0,
+    this.lastErrorCode = '',
+  });
+
+  @Id()
+  int id;
+  @Index()
+  String uuid;
+  @Index()
+  String fromDateKey;
+  String toDateKey;
+  String kindCode;
+  String reasonCode;
+  String sourceEntityUuid;
+  int sourceRevision;
+  @Index()
+  String statusCode;
+  int createdAtEpochMs;
+  int updatedAtEpochMs;
+  int? startedAtEpochMs;
+  int? completedAtEpochMs;
+  int failureCount;
+  String lastErrorCode;
 }
