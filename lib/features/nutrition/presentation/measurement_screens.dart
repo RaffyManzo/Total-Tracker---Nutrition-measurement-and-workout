@@ -70,17 +70,17 @@ class MeasurementHubData {
 
   List<TtChartPoint> get weightTrend {
     return <TtChartPoint>[
-      for (final ScaleMeasurementEntity item
-          in scaleMeasurements.take(12).toList().reversed)
+      for (final ScaleMeasurementEntity item in scaleMeasurements.reversed)
         if (item.weightKg != null)
-          TtChartPoint(label: item.dateKey.substring(5), value: item.weightKg!),
+          TtChartPoint(
+              label: _measurementDateLabel(item.dateKey),
+              value: item.weightKg!),
     ];
   }
 
   List<TtChartPoint> get bodyFatTrend {
     return <TtChartPoint>[
-      for (final ScaleMeasurementEntity item
-          in scaleMeasurements.take(12).toList().reversed)
+      for (final ScaleMeasurementEntity item in scaleMeasurements.reversed)
         if (item.bodyFatPercent != null)
           TtChartPoint(
             label: item.dateKey.substring(5),
@@ -157,9 +157,12 @@ class MeasurementsHubScreen extends ConsumerStatefulWidget {
 }
 
 class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
+  static const int _historyPageSize = 15;
+
   DateTime? _filterFrom;
   DateTime? _filterTo;
   String _filterType = 'all';
+  int _historyPage = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -195,10 +198,28 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
           onRetry: () => ref.invalidate(measurementHubProvider),
         ),
         data: (MeasurementHubData data) {
+          final List<ScaleMeasurementEntity> chartScale = data.scaleMeasurements
+              .where(
+                  (ScaleMeasurementEntity item) => _dateMatches(item.dateKey))
+              .toList(growable: false);
           final List<ScaleMeasurementEntity> filteredScale =
               _filteredScale(data.scaleMeasurements);
           final List<TapeMeasurementEntity> filteredTape =
               _filteredTape(data.tapeMeasurements);
+          final List<_MeasurementHistoryRow> history =
+              _mergeMeasurementHistory(filteredScale, filteredTape);
+          final int pageCount =
+              history.isEmpty ? 1 : (history.length / _historyPageSize).ceil();
+          final int safePage = _historyPage.clamp(0, pageCount - 1).toInt();
+          final int pageStart = safePage * _historyPageSize;
+          final int pageEnd =
+              (pageStart + _historyPageSize).clamp(0, history.length).toInt();
+          final List<_MeasurementHistoryRow> visibleHistory = history.isEmpty
+              ? const <_MeasurementHistoryRow>[]
+              : history.sublist(pageStart, pageEnd);
+          final List<TtChartPoint> weightPoints = _weightTrendFor(chartScale);
+          final List<TtChartPoint> bodyFatPoints = _bodyFatTrendFor(chartScale);
+
           return ListView(
             padding: _screenPadding,
             children: <Widget>[
@@ -208,7 +229,8 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
               ),
               const SizedBox(height: AppSpacing.xs),
               Text(
-                'Peso e misure sono registrazioni autonome; i giorni leggono il peso dalla bilancia.',
+                'Peso e misure sono registrazioni autonome; i giorni leggono '
+                'il peso dalla bilancia.',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
@@ -259,18 +281,37 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
                     _showBodyRegionSheet(context, ref, data, code),
               ),
               const SizedBox(height: AppSpacing.sectionGap),
-              _ChartCard(
+              const TtSectionHeader(title: 'Intervallo e tipo'),
+              const SizedBox(height: AppSpacing.md),
+              _MeasurementFilterCard(
+                from: _filterFrom,
+                to: _filterTo,
+                type: _filterType,
+                onPickFrom: () => _pickFilterDate(isFrom: true),
+                onPickTo: () => _pickFilterDate(isFrom: false),
+                onClear: _clearFilters,
+                onTypeChanged: (String value) {
+                  setState(() {
+                    _filterType = value;
+                    _historyPage = 0;
+                  });
+                },
+              ),
+              const SizedBox(height: AppSpacing.sectionGap),
+              _MeasurementTrendCard(
                 title: 'Peso',
-                subtitle: 'Trend bilancia',
-                child: TtMiniLineChart(
-                    points: data.weightTrend, valueSuffix: 'kg'),
+                subtitle:
+                    '${weightPoints.length} valori nell’intervallo selezionato',
+                points: weightPoints,
+                valueSuffix: 'kg',
               ),
               const SizedBox(height: AppSpacing.md),
-              _ChartCard(
+              _MeasurementTrendCard(
                 title: 'Grasso corporeo',
-                subtitle: 'Percentuale quando disponibile',
-                child: TtMiniLineChart(
-                    points: data.bodyFatTrend, valueSuffix: '%'),
+                subtitle:
+                    '${bodyFatPoints.length} valori nell’intervallo selezionato',
+                points: bodyFatPoints,
+                valueSuffix: '%',
               ),
               const SizedBox(height: AppSpacing.md),
               _ChartCard(
@@ -283,7 +324,11 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
               ),
               const SizedBox(height: AppSpacing.md),
               TtAppCard(
-                onTap: () => _showMeasurementChartsSheet(context, data),
+                onTap: () => _showMeasurementChartsSheet(
+                  context,
+                  data,
+                  scaleMeasurements: chartScale,
+                ),
                 child: Row(
                   children: <Widget>[
                     Icon(
@@ -300,7 +345,7 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
                           Text(
-                            'Apri statistiche complete per bilancia e metro',
+                            'Statistiche complete nell’intervallo selezionato',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ],
@@ -313,48 +358,46 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
               const SizedBox(height: AppSpacing.sectionGap),
               const TtSectionHeader(title: 'Ultime misurazioni'),
               const SizedBox(height: AppSpacing.md),
-              _MeasurementFilterCard(
-                from: _filterFrom,
-                to: _filterTo,
-                type: _filterType,
-                onPickFrom: () => _pickFilterDate(isFrom: true),
-                onPickTo: () => _pickFilterDate(isFrom: false),
-                onClear: _clearFilters,
-                onTypeChanged: (String value) {
-                  setState(() => _filterType = value);
-                },
-              ),
-              const SizedBox(height: AppSpacing.md),
-              if (filteredScale.isEmpty && filteredTape.isEmpty)
+              if (history.isEmpty)
                 const TtAppCard(
                   child: Text('Nessuna misurazione per i filtri selezionati.'),
                 )
               else ...<Widget>[
-                for (final ScaleMeasurementEntity item in filteredScale.take(6))
+                for (final _MeasurementHistoryRow row in visibleHistory)
                   Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: _buildScaleTile(
-                      context: context,
-                      ref: ref,
-                      data: data,
-                      item: item,
-                    ),
+                    child: row.scale != null
+                        ? _buildScaleTile(
+                            context: context,
+                            ref: ref,
+                            data: data,
+                            item: row.scale!,
+                          )
+                        : _TapeTile(
+                            item: row.tape!,
+                            entries: data.entriesByTapeId[row.tape!.id] ??
+                                const <TapeMeasurementEntryEntity>[],
+                            onTap: () => _showTapeDialog(
+                              context,
+                              ref,
+                              existing: row.tape,
+                              existingEntries:
+                                  data.entriesByTapeId[row.tape!.id] ??
+                                      const <TapeMeasurementEntryEntity>[],
+                            ),
+                          ),
                   ),
-                for (final TapeMeasurementEntity item in filteredTape.take(6))
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: _TapeTile(
-                      item: item,
-                      entries: data.entriesByTapeId[item.id] ??
-                          const <TapeMeasurementEntryEntity>[],
-                      onTap: () => _showTapeDialog(
-                        context,
-                        ref,
-                        existing: item,
-                        existingEntries: data.entriesByTapeId[item.id] ??
-                            const <TapeMeasurementEntryEntity>[],
-                      ),
-                    ),
+                if (pageCount > 1)
+                  _MeasurementHistoryPager(
+                    page: safePage,
+                    pageCount: pageCount,
+                    total: history.length,
+                    onPrevious: safePage == 0
+                        ? null
+                        : () => setState(() => _historyPage = safePage - 1),
+                    onNext: safePage >= pageCount - 1
+                        ? null
+                        : () => setState(() => _historyPage = safePage + 1),
                   ),
               ],
             ],
@@ -372,7 +415,7 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
     }
     return measurements
         .where((ScaleMeasurementEntity item) => _dateMatches(item.dateKey))
-        .toList();
+        .toList(growable: false);
   }
 
   List<TapeMeasurementEntity> _filteredTape(
@@ -383,7 +426,7 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
     }
     return measurements
         .where((TapeMeasurementEntity item) => _dateMatches(item.dateKey))
-        .toList();
+        .toList(growable: false);
   }
 
   bool _dateMatches(String dateKey) {
@@ -425,6 +468,7 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
       } else {
         _filterTo = picked;
       }
+      _historyPage = 0;
     });
   }
 
@@ -433,7 +477,201 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
       _filterFrom = null;
       _filterTo = null;
       _filterType = 'all';
+      _historyPage = 0;
     });
+  }
+}
+
+class _MeasurementHistoryRow {
+  const _MeasurementHistoryRow.scale(this.scale) : tape = null;
+  const _MeasurementHistoryRow.tape(this.tape) : scale = null;
+
+  final ScaleMeasurementEntity? scale;
+  final TapeMeasurementEntity? tape;
+
+  String get dateKey => scale?.dateKey ?? tape!.dateKey;
+  int get updatedAtEpochMs => scale?.updatedAtEpochMs ?? tape!.updatedAtEpochMs;
+}
+
+List<_MeasurementHistoryRow> _mergeMeasurementHistory(
+  List<ScaleMeasurementEntity> scale,
+  List<TapeMeasurementEntity> tape,
+) {
+  final List<_MeasurementHistoryRow> rows = <_MeasurementHistoryRow>[
+    for (final ScaleMeasurementEntity item in scale)
+      _MeasurementHistoryRow.scale(item),
+    for (final TapeMeasurementEntity item in tape)
+      _MeasurementHistoryRow.tape(item),
+  ];
+  rows.sort((_MeasurementHistoryRow a, _MeasurementHistoryRow b) {
+    final int dateCompare = b.dateKey.compareTo(a.dateKey);
+    if (dateCompare != 0) {
+      return dateCompare;
+    }
+    return b.updatedAtEpochMs.compareTo(a.updatedAtEpochMs);
+  });
+  return rows;
+}
+
+List<TtChartPoint> _weightTrendFor(
+  List<ScaleMeasurementEntity> measurements,
+) {
+  return <TtChartPoint>[
+    for (final ScaleMeasurementEntity item in measurements.reversed)
+      if (item.weightKg != null)
+        TtChartPoint(
+          label: _measurementDateLabel(item.dateKey),
+          value: item.weightKg!,
+        ),
+  ];
+}
+
+List<TtChartPoint> _bodyFatTrendFor(
+  List<ScaleMeasurementEntity> measurements,
+) {
+  return <TtChartPoint>[
+    for (final ScaleMeasurementEntity item in measurements.reversed)
+      if (item.bodyFatPercent != null)
+        TtChartPoint(
+          label: _measurementDateLabel(item.dateKey),
+          value: item.bodyFatPercent!,
+        ),
+  ];
+}
+
+String _measurementDateLabel(String dateKey) {
+  final List<String> parts = dateKey.split('-');
+  if (parts.length != 3) {
+    return dateKey;
+  }
+  return '${parts[2]}/${parts[1]}/${parts[0]}';
+}
+
+class _MeasurementTrendCard extends StatelessWidget {
+  const _MeasurementTrendCard({
+    required this.title,
+    required this.subtitle,
+    required this.points,
+    required this.valueSuffix,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<TtChartPoint> points;
+  final String valueSuffix;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ChartCard(
+      title: title,
+      subtitle: subtitle,
+      child: points.isEmpty
+          ? const Padding(
+              padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+              child: Center(child: Text('Nessun valore disponibile.')),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                TtMiniLineChart(
+                  points: points,
+                  valueSuffix: valueSuffix,
+                  height: 180,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  'Valori inclusi',
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: <Widget>[
+                      for (final TtChartPoint point in points)
+                        Padding(
+                          padding: const EdgeInsets.only(right: AppSpacing.sm),
+                          child: Container(
+                            constraints: const BoxConstraints(minWidth: 112),
+                            padding: const EdgeInsets.all(AppSpacing.sm),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Text(
+                                  point.label,
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                ),
+                                Text(
+                                  '${point.value.toStringAsFixed(1)} '
+                                  '$valueSuffix',
+                                  style: Theme.of(context).textTheme.titleSmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+class _MeasurementHistoryPager extends StatelessWidget {
+  const _MeasurementHistoryPager({
+    required this.page,
+    required this.pageCount,
+    required this.total,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final int page;
+  final int pageCount;
+  final int total;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    return TtAppCard(
+      child: Row(
+        children: <Widget>[
+          IconButton(
+            tooltip: 'Pagina precedente',
+            onPressed: onPrevious,
+            icon: const Icon(Icons.chevron_left_rounded),
+          ),
+          Expanded(
+            child: Column(
+              children: <Widget>[
+                Text(
+                  'Pagina ${page + 1} di $pageCount',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                Text(
+                  '$total misurazioni · 15 per pagina',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Pagina successiva',
+            onPressed: onNext,
+            icon: const Icon(Icons.chevron_right_rounded),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -469,7 +707,10 @@ class _MeasurementFilterCard extends StatelessWidget {
             decoration: const InputDecoration(labelText: 'Tipo misurazione'),
             items: const <DropdownMenuItem<String>>[
               DropdownMenuItem<String>(value: 'all', child: Text('Tutte')),
-              DropdownMenuItem<String>(value: 'scale', child: Text('Bilancia')),
+              DropdownMenuItem<String>(
+                value: 'scale',
+                child: Text('Bilancia'),
+              ),
               DropdownMenuItem<String>(value: 'tape', child: Text('Metro')),
             ],
             onChanged: (String? value) {
@@ -522,14 +763,19 @@ class _MeasurementFilterCard extends StatelessWidget {
 
 Future<void> _showMeasurementChartsSheet(
   BuildContext context,
-  MeasurementHubData data,
-) async {
+  MeasurementHubData data, {
+  required List<ScaleMeasurementEntity> scaleMeasurements,
+}) async {
   await showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
     builder: (BuildContext context) {
       final List<TtChartSeries> allTapeSeries = data.tapeSeries();
+      final List<TtChartPoint> weightPoints =
+          _weightTrendFor(scaleMeasurements);
+      final List<TtChartPoint> bodyFatPoints =
+          _bodyFatTrendFor(scaleMeasurements);
       return SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(
@@ -546,24 +792,20 @@ Future<void> _showMeasurementChartsSheet(
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const SizedBox(height: AppSpacing.sectionGap),
-              _ChartCard(
+              _MeasurementTrendCard(
                 title: 'Peso',
-                subtitle: 'Tutte le misurazioni bilancia disponibili',
-                child: TtMiniLineChart(
-                  points: data.weightTrend,
-                  valueSuffix: 'kg',
-                  height: 180,
-                ),
+                subtitle:
+                    '${weightPoints.length} valori nell’intervallo selezionato',
+                points: weightPoints,
+                valueSuffix: 'kg',
               ),
               const SizedBox(height: AppSpacing.md),
-              _ChartCard(
+              _MeasurementTrendCard(
                 title: 'Grasso corporeo',
-                subtitle: 'Percentuale quando disponibile',
-                child: TtMiniLineChart(
-                  points: data.bodyFatTrend,
-                  valueSuffix: '%',
-                  height: 180,
-                ),
+                subtitle:
+                    '${bodyFatPoints.length} valori nell’intervallo selezionato',
+                points: bodyFatPoints,
+                valueSuffix: '%',
               ),
               const SizedBox(height: AppSpacing.md),
               _ChartCard(

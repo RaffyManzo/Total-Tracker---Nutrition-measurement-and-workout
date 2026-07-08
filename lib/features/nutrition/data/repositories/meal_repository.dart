@@ -299,6 +299,10 @@ class MealRepository {
     ];
   }
 
+  // ingredient_usage_single_item_query
+  // Query the matching item rows once. The previous implementation iterated
+  // every active meal and executed getItemsForMeal for each one (N+1 reads),
+  // making the ingredient detail page progressively slower as history grew.
   List<IngredientMealUsage> getIngredientUsage(
     String ingredientUuid, {
     String? fromDateKey,
@@ -310,8 +314,41 @@ class MealRepository {
       return const <IngredientMealUsage>[];
     }
 
+    final Query<MealItemEntity> itemQuery = _itemBox
+        .query(
+          MealItemEntity_.deletedAtEpochMs
+              .isNull()
+              .and(MealItemEntity_.kindCode.equals('ingredient'))
+              .and(MealItemEntity_.sourceUuid.equals(cleanUuid)),
+        )
+        .build();
+    final List<MealItemEntity> matchingItems;
+    try {
+      matchingItems = itemQuery.find();
+    } finally {
+      itemQuery.close();
+    }
+    if (matchingItems.isEmpty) {
+      return const <IngredientMealUsage>[];
+    }
+
+    final Map<int, List<MealItemEntity>> itemsByMealId =
+        <int, List<MealItemEntity>>{};
+    for (final MealItemEntity item in matchingItems) {
+      final int mealId = item.meal.targetId;
+      if (mealId == 0) {
+        continue;
+      }
+      (itemsByMealId[mealId] ??= <MealItemEntity>[]).add(item);
+    }
+
     final List<IngredientMealUsage> usage = <IngredientMealUsage>[];
-    for (final MealEntity meal in getAllActive()) {
+    for (final MapEntry<int, List<MealItemEntity>> entry
+        in itemsByMealId.entries) {
+      final MealEntity? meal = _mealBox.get(entry.key);
+      if (meal == null || meal.deletedAtEpochMs != null) {
+        continue;
+      }
       if (fromDateKey != null &&
           fromDateKey.isNotEmpty &&
           meal.dateKey.compareTo(fromDateKey) < 0) {
@@ -322,27 +359,14 @@ class MealRepository {
           meal.dateKey.compareTo(toDateKey) > 0) {
         continue;
       }
-
-      final List<MealItemEntity> matchingItems = getItemsForMeal(meal.id)
-          .where(
-            (MealItemEntity item) =>
-                item.kindCode == 'ingredient' &&
-                item.sourceUuid == cleanUuid &&
-                item.deletedAtEpochMs == null,
-          )
-          .toList();
-      if (matchingItems.isEmpty) {
-        continue;
-      }
-
       usage.add(
         IngredientMealUsage(
           meal: meal,
-          grams: matchingItems.fold<double>(
+          grams: entry.value.fold<double>(
             0,
             (double sum, MealItemEntity item) => sum + (item.grams ?? 0),
           ),
-          registrationCount: matchingItems.length,
+          registrationCount: entry.value.length,
         ),
       );
     }
@@ -354,7 +378,6 @@ class MealRepository {
       }
       return b.meal.updatedAtEpochMs.compareTo(a.meal.updatedAtEpochMs);
     });
-
     if (limit == null || limit < 0 || usage.length <= limit) {
       return usage;
     }

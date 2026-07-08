@@ -573,9 +573,8 @@ class _FoodHubV01Body extends StatelessWidget {
                       onOpenDay: () =>
                           context.push('/food/days/${latest.dateKey}'),
                     ),
-            onMealTap: (MealWithItems meal) {
-              context.push('/food/meals/${meal.meal.id}');
-            },
+            onMealTap: (MealWithItems meal) =>
+                openMealQuickSummary(context, meal: meal),
           ),
           if (latestTargetResult != null) ...<Widget>[
             const SizedBox(height: AppSpacing.md),
@@ -5310,14 +5309,9 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
     }
 
     final List<MealIngredientBatchSelection>? selections =
-        await showModalBottomSheet<List<MealIngredientBatchSelection>>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (BuildContext _) {
-        return MealIngredientBatchPickerSheet(ingredients: ingredients);
-      },
+        await showPersistentMealIngredientBatchPicker(
+      context,
+      ingredients: ingredients,
     );
     if (!mounted || selections == null || selections.isEmpty) {
       return;
@@ -9237,21 +9231,7 @@ class _MealListCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TtAppCard(
-      onTap: () async {
-        final bool openFull = await showMealQuickSummarySheet(
-          context,
-          meal: meal,
-        );
-        if (!context.mounted || !openFull) {
-          return;
-        }
-        await context.push('/food/meals/${meal.meal.id}');
-        if (context.mounted) {
-          FoodDataRefreshBus.publishManualRefresh(
-            meal.meal.dateKey,
-          );
-        }
-      },
+      onTap: () => openMealQuickSummary(context, meal: meal),
       child: Row(
         children: <Widget>[
           Text(_slotEmoji(meal.meal.mealTypeCode),

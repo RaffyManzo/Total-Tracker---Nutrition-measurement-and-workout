@@ -7,13 +7,16 @@ void expectSource(bool condition, String message) {
 }
 
 void main() {
-  test('batch ingredient picker owns safe state and returns selections', () {
+  test('batch ingredient picker owns persistent safe state', () {
     final String source = File(
-      'lib/features/nutrition/presentation/meal_ingredient_batch_picker_sheet.dart',
+      'lib/features/nutrition/presentation/'
+      'meal_ingredient_batch_picker_sheet.dart',
     ).readAsStringSync();
+
     expectSource(
       source.contains(
-          'class MealIngredientBatchPickerSheet extends StatefulWidget'),
+        'class MealIngredientBatchPickerSheet extends StatefulWidget',
+      ),
       'Missing standalone stateful batch picker',
     );
     expectSource(
@@ -25,18 +28,37 @@ void main() {
       'Batch picker must not own one controller per ingredient row',
     );
     expectSource(
-      source.contains('pop<List<MealIngredientBatchSelection>>(result)'),
+      source.contains('showBottomSheet('),
+      'Batch picker must be persistent and non-modal',
+    );
+    expectSource(
+      source.contains('controller.closed.whenComplete'),
+      'Persistent picker must complete safely when its scaffold closes',
+    );
+    expectSource(
+      source.contains('widget.onConfirm(result)'),
       'Batch picker must return data before caller persists it',
+    );
+    expectSource(
+      source.contains('la pagina resta utilizzabile'),
+      'Collapsed state must explain that the page remains usable',
     );
   });
 
-  test('meal detail no longer disposes active batch-row controllers', () {
+  test('meal detail uses the persistent batch picker', () {
     final String source = File(
       'lib/features/nutrition/presentation/food_v01_screens.dart',
     ).readAsStringSync();
+
     expectSource(
-      source.contains('MealIngredientBatchPickerSheet('),
-      'Meal detail must use the standalone batch picker',
+      source.contains('showPersistentMealIngredientBatchPicker('),
+      'Meal detail must use the persistent batch picker',
+    );
+    expectSource(
+      !source.contains(
+        'showModalBottomSheet<List<MealIngredientBatchSelection>>',
+      ),
+      'Legacy modal batch picker is still present',
     );
     expectSource(
       !source.contains('_pendingIngredientGrams'),
@@ -85,7 +107,8 @@ void main() {
     }
     expectSource(
       RegExp(
-        r'if\s*\(\s*!isFuture\s*&&\s*info\s*!=\s*null\s*&&\s*info\.itemCount\s*>\s*0\s*\)',
+        r'if\s*\(\s*!isFuture\s*&&\s*info\s*!=\s*null\s*&&\s*'
+        r'info\.itemCount\s*>\s*0\s*\)',
       ).hasMatch(source),
       'Future days must not display consumed calories',
     );
