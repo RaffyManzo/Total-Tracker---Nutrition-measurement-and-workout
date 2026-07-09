@@ -256,6 +256,7 @@ class _MealIngredientBatchPickerSheetState
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOutCubic,
         height: targetHeight,
+        clipBehavior: Clip.hardEdge,
         decoration: BoxDecoration(
           color: colors.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -268,10 +269,19 @@ class _MealIngredientBatchPickerSheetState
           ],
           border: Border(top: BorderSide(color: colors.outlineVariant)),
         ),
-        child: SafeArea(
-          top: false,
-          child:
-              _isCollapsed ? _buildCollapsed(context) : _buildExpanded(context),
+        child: OverflowBox(
+          alignment: Alignment.bottomCenter,
+          minHeight: targetHeight,
+          maxHeight: targetHeight,
+          child: SizedBox(
+            height: targetHeight,
+            child: SafeArea(
+              top: false,
+              child: _isCollapsed
+                  ? _buildCollapsed(context)
+                  : _buildExpanded(context),
+            ),
+          ),
         ),
       ),
     );

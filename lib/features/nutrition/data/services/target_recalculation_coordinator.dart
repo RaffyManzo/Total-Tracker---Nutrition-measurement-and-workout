@@ -25,27 +25,39 @@ class TargetRecalculationCoordinator {
   Timer? _timer;
   bool _running = false;
   bool _rerunRequested = false;
+  bool _disposed = false;
   int _coalescedEventCount = 0;
   int _lastScheduleEpochMs = 0;
   String _lastCauseEventId = '';
   String _lastOperationId = '';
 
   void start() {
-    if (_subscription != null) return;
+    if (_disposed || _subscription != null) {
+      return;
+    }
     _invalidations.recoverInterrupted();
-    _subscription = TargetInputChangeBus.inputChanges.listen(
-      (TargetInputChanged event) {
+    _subscription = TargetInputChangeBus.inputChanges.listen((
+      TargetInputChanged event,
+    ) {
+      final bool coalesced = _timer?.isActive == true || _running;
+      if (coalesced) {
         _coalescedEventCount += 1;
-        _lastCauseEventId = event.eventId;
-        _lastOperationId = event.operationId;
-        _lastScheduleEpochMs = DateTime.now().millisecondsSinceEpoch;
-        schedule(cause: event);
-      },
-    );
+      }
+      TargetInputChangeBus.recordRecalculationRequested(
+        coalesced: coalesced,
+      );
+      _lastCauseEventId = event.eventId;
+      _lastOperationId = event.operationId;
+      _lastScheduleEpochMs = DateTime.now().millisecondsSinceEpoch;
+      schedule(cause: event);
+    });
     schedule(immediate: true);
   }
 
   void schedule({bool immediate = false, TargetInputChanged? cause}) {
+    if (_disposed) {
+      return;
+    }
     _timer?.cancel();
     if (cause != null) {
       unawaited(
@@ -58,6 +70,7 @@ class TargetRecalculationCoordinator {
             'dateFrom': cause.fromDateKey,
             'dateTo': cause.toDateKey ?? cause.fromDateKey,
             'coalescedEventCount': _coalescedEventCount,
+            ...TargetInputChangeBus.inputMetrics.toJson(),
           },
         ),
       );
@@ -66,6 +79,9 @@ class TargetRecalculationCoordinator {
   }
 
   Future<void> _drain() async {
+    if (_disposed) {
+      return;
+    }
     if (_running) {
       _rerunRequested = true;
       return;
@@ -73,16 +89,24 @@ class TargetRecalculationCoordinator {
     _running = true;
     try {
       do {
+        if (_disposed) {
+          return;
+        }
         _rerunRequested = false;
         final allDays = _dailyRecords.getAllActive();
-        if (allDays.isEmpty) return;
+        if (allDays.isEmpty) {
+          return;
+        }
         final String lastDateKey = allDays
             .map((day) => day.dateKey)
             .reduce((a, b) => a.compareTo(b) >= 0 ? a : b);
         final TargetInvalidationBatch? batch = _invalidations.acquirePending(
           lastExistingDateKey: lastDateKey,
         );
-        if (batch == null) return;
+        if (batch == null) {
+          return;
+        }
+
         final int drainStartedAt = DateTime.now().millisecondsSinceEpoch;
         final int queueWaitMs = _lastScheduleEpochMs == 0
             ? 0
@@ -90,6 +114,8 @@ class TargetRecalculationCoordinator {
         final int coalesced = _coalescedEventCount;
         _coalescedEventCount = 0;
         final Stopwatch recalculationWatch = Stopwatch()..start();
+        TargetInputChangeBus.recordRecalculationExecution();
+
         unawaited(
           AppDiagnostics.instance.info(
             'pubsub.target_recalculation.started',
@@ -101,9 +127,15 @@ class TargetRecalculationCoordinator {
               'reasonCount': batch.reasonCodes.length,
               'coalescedEventCount': coalesced,
               'queueWaitMs': queueWaitMs,
+              ...TargetInputChangeBus.inputMetrics.toJson(),
+              'recalculationRequests':
+                  TargetInputChangeBus.recalculationRequests,
+              'recalculationExecutions':
+                  TargetInputChangeBus.recalculationExecutions,
             },
           ),
         );
+
         try {
           final TargetRecalculationReport report =
               await _recalculation.recalculateExistingRange(
@@ -112,6 +144,9 @@ class TargetRecalculationCoordinator {
             inputRevisionSeed: batch.inputRevisionSeed,
           );
           recalculationWatch.stop();
+          if (_disposed) {
+            return;
+          }
           _invalidations.complete(batch);
           TargetInputChangeBus.publishUpdated(
             TargetSnapshotsUpdated(
@@ -147,14 +182,21 @@ class TargetRecalculationCoordinator {
           _invalidations.fail(batch, error);
           _rerunRequested = _invalidations.pending().isNotEmpty;
         }
-      } while (_rerunRequested || _invalidations.pending().isNotEmpty);
+      } while (!_disposed &&
+          (_rerunRequested || _invalidations.pending().isNotEmpty));
     } finally {
       _running = false;
-      if (_rerunRequested) schedule(immediate: true);
+      if (!_disposed && _rerunRequested) {
+        schedule(immediate: true);
+      }
     }
   }
 
   Future<void> dispose() async {
+    if (_disposed) {
+      return;
+    }
+    _disposed = true;
     _timer?.cancel();
     await _subscription?.cancel();
     _subscription = null;

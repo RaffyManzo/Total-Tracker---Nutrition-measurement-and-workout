@@ -12,7 +12,10 @@ import '../data/services/target_recalculation_service.dart';
 import 'food_v01_screens.dart';
 
 class TargetRecalculationCoordinatorHost extends ConsumerStatefulWidget {
-  const TargetRecalculationCoordinatorHost({required this.child, super.key});
+  const TargetRecalculationCoordinatorHost({
+    required this.child,
+    super.key,
+  });
 
   final Widget child;
 
@@ -25,20 +28,31 @@ class _TargetRecalculationCoordinatorHostState
     extends ConsumerState<TargetRecalculationCoordinatorHost> {
   TargetRecalculationCoordinator? _coordinator;
   StreamSubscription<TargetSnapshotsUpdated>? _snapshotSubscription;
+  bool _startScheduled = false;
+  bool _disposed = false;
 
   @override
   Widget build(BuildContext context) {
     final DatabaseInitializationStatus status = ref.watch(
       databaseInitializationStatusProvider,
     );
-    if (status.isReady && _coordinator == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _start());
+    if (status.isReady &&
+        _coordinator == null &&
+        !_startScheduled &&
+        !_disposed) {
+      _startScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _startScheduled = false;
+        _start();
+      });
     }
     return widget.child;
   }
 
   void _start() {
-    if (!mounted || _coordinator != null) return;
+    if (!mounted || _disposed || _coordinator != null) {
+      return;
+    }
     final TargetRecalculationService recalculation = TargetRecalculationService(
       profiles: ref.read(userProfileRepositoryProvider),
       dailyRecords: ref.read(dailyRecordRepositoryProvider),
@@ -60,11 +74,15 @@ class _TargetRecalculationCoordinatorHostState
   }
 
   void _handleSnapshotsUpdated(TargetSnapshotsUpdated event) {
-    if (!mounted) return;
+    TargetInputChangeBus.recordUiRefreshRequested();
+    if (!mounted || _disposed) {
+      return;
+    }
     ref.invalidate(profileSettingsRevisionProvider);
     ref.invalidate(foodHubV01Provider);
     ref.invalidate(foodDaysV01Provider);
     ref.invalidate(foodMealsV01Provider);
+    TargetInputChangeBus.recordUiRefreshExecution();
     FoodDataRefreshBus.publishManualRefresh(
       event.fromDateKey,
       operationId: event.operationId,
@@ -73,6 +91,8 @@ class _TargetRecalculationCoordinatorHostState
 
   @override
   void dispose() {
+    _disposed = true;
+    _startScheduled = false;
     unawaited(_snapshotSubscription?.cancel());
     unawaited(_coordinator?.dispose());
     super.dispose();

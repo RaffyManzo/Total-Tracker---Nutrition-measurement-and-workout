@@ -309,6 +309,10 @@ class _FoodHubScreenState extends ConsumerState<FoodHubScreen>
   StreamSubscription<FoodDataChange>? _changeSubscription;
   FoodDataChange? _pendingChange;
   bool _refreshing = false;
+  AppLifecycleState? _lastLifecycleState;
+  bool _resumeReconcileInFlight = false;
+  bool _resumeReconcilePending = false;
+  int _resumeGeneration = 0;
 
   @override
   void initState() {
@@ -380,59 +384,145 @@ class _FoodHubScreenState extends ConsumerState<FoodHubScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive) {
-      _backgroundedAt = DateTime.now();
+    final DateTime now = DateTime.now();
+    if (_lastLifecycleState == state) {
+      unawaited(
+        AppDiagnostics.instance.info(
+          'lifecycle.transition.coalesced',
+          data: <String, Object?>{'state': state.name},
+        ),
+      );
+      return;
+    }
+    _lastLifecycleState = state;
+
+    if (state == AppLifecycleState.inactive) {
+      unawaited(
+        AppDiagnostics.instance.info(
+          'lifecycle.inactive',
+          data: <String, Object?>{
+            'pendingOperations': _refreshing ? 1 : 0,
+            'subscriberCount': FoodDataRefreshBus.subscriberCount,
+            'queueDepth': FoodDataRefreshBus.pendingDeliveries,
+          },
+        ),
+      );
+      return;
+    }
+
+    if (state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused) {
+      _backgroundedAt ??= now;
       dashboardBackController.resetExitAttempt();
       unawaited(
         AppDiagnostics.instance.info(
           'lifecycle.background',
           data: <String, Object?>{
+            'state': state.name,
             'pendingOperations': _refreshing ? 1 : 0,
+            'subscriberCount': FoodDataRefreshBus.subscriberCount,
+            'queueDepth': FoodDataRefreshBus.pendingDeliveries,
             'activeSubscriptions': _changeSubscription == null ? 0 : 1,
-            'activeTimers': 0,
-            'activeOverlays': 0,
             'hasTodayCache': _cachedData != null,
           },
         ),
       );
       return;
     }
-    if (state == AppLifecycleState.resumed) {
-      final DateTime now = DateTime.now();
-      final Stopwatch resumeWatch = Stopwatch()..start();
+
+    if (state == AppLifecycleState.detached) {
+      _resumeReconcileInFlight = false;
+      _resumeReconcilePending = false;
+      _resumeGeneration += 1;
       unawaited(
         AppDiagnostics.instance.info(
-          'lifecycle.resume.started',
+          'lifecycle.detached',
           data: <String, Object?>{
-            if (_backgroundedAt != null)
-              'backgroundMs': now.difference(_backgroundedAt!).inMilliseconds,
-            'hasTodayCache': _cachedData != null,
-            'pendingOperations': _refreshing ? 1 : 0,
-            'activeSubscriptions': _changeSubscription == null ? 0 : 1,
-            'activeTimers': 0,
-            'activeOverlays': 0,
-            'queueDepth': FoodDataRefreshBus.publishedCount,
+            'subscriberCount': FoodDataRefreshBus.subscriberCount,
+            'queueDepth': FoodDataRefreshBus.pendingDeliveries,
           },
         ),
       );
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        resumeWatch.stop();
-        unawaited(
-          AppDiagnostics.instance.info(
-            'lifecycle.resume.completed',
-            data: <String, Object?>{
-              'elapsedMs': resumeWatch.elapsedMilliseconds,
-              'pendingOperations': _refreshing ? 1 : 0,
-              'activeSubscriptions': _changeSubscription == null ? 0 : 1,
-              'activeTimers': 0,
-              'activeOverlays': 0,
-              'hasTodayCache': _cachedData != null,
-            },
-          ),
-        );
-      });
+      return;
     }
+
+    if (state != AppLifecycleState.resumed) {
+      return;
+    }
+
+    if (_resumeReconcileInFlight) {
+      _resumeReconcilePending = true;
+      unawaited(
+        AppDiagnostics.instance.info(
+          'lifecycle.resume.coalesced',
+          data: <String, Object?>{
+            'generation': _resumeGeneration,
+            'subscriberCount': FoodDataRefreshBus.subscriberCount,
+            'queueDepth': FoodDataRefreshBus.pendingDeliveries,
+          },
+        ),
+      );
+      return;
+    }
+
+    _resumeReconcileInFlight = true;
+    _resumeReconcilePending = false;
+    final int generation = ++_resumeGeneration;
+    final Stopwatch resumeWatch = Stopwatch()..start();
+    unawaited(
+      AppDiagnostics.instance.info(
+        'lifecycle.resume.started',
+        data: <String, Object?>{
+          if (_backgroundedAt != null)
+            'backgroundMs': now.difference(_backgroundedAt!).inMilliseconds,
+          'hasTodayCache': _cachedData != null,
+          'pendingOperations': _refreshing ? 1 : 0,
+          'subscriberCount': FoodDataRefreshBus.subscriberCount,
+          'queueDepth': FoodDataRefreshBus.pendingDeliveries,
+          'activeSubscriptions': _changeSubscription == null ? 0 : 1,
+          'generation': generation,
+        },
+      ),
+    );
+
+    unawaited(() async {
+      var reconcilePasses = 0;
+      try {
+        do {
+          _resumeReconcilePending = false;
+          reconcilePasses += 1;
+          await _refreshDashboard();
+        } while (mounted &&
+            generation == _resumeGeneration &&
+            _lastLifecycleState == AppLifecycleState.resumed &&
+            _resumeReconcilePending);
+      } finally {
+        resumeWatch.stop();
+        final bool ownsCurrentGeneration =
+            mounted && generation == _resumeGeneration;
+        if (ownsCurrentGeneration) {
+          _resumeReconcileInFlight = false;
+          if (_lastLifecycleState == AppLifecycleState.resumed) {
+            _backgroundedAt = null;
+            unawaited(
+              AppDiagnostics.instance.info(
+                'lifecycle.resume.completed',
+                data: <String, Object?>{
+                  'elapsedMs': resumeWatch.elapsedMilliseconds,
+                  'reconcilePasses': reconcilePasses,
+                  'pendingOperations': _refreshing ? 1 : 0,
+                  'subscriberCount': FoodDataRefreshBus.subscriberCount,
+                  'queueDepth': FoodDataRefreshBus.pendingDeliveries,
+                  'activeSubscriptions': _changeSubscription == null ? 0 : 1,
+                  'hasTodayCache': _cachedData != null,
+                  'generation': generation,
+                },
+              ),
+            );
+          }
+        }
+      }
+    }());
   }
 
   @override

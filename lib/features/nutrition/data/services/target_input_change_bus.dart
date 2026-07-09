@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../../../core/diagnostics/app_diagnostics.dart';
+import '../../../../core/diagnostics/tracked_broadcast_bus.dart';
 
 enum TargetInputChangeKind {
   meal,
@@ -67,17 +68,28 @@ class TargetSnapshotsUpdated {
 class TargetInputChangeBus {
   TargetInputChangeBus._();
 
-  static final StreamController<TargetInputChanged> _inputController =
-      StreamController<TargetInputChanged>.broadcast(sync: true);
-  static final StreamController<TargetSnapshotsUpdated> _updatedController =
-      StreamController<TargetSnapshotsUpdated>.broadcast(sync: true);
-  static int _eventSequence = 0;
-  static int _published = 0;
-  static int _updates = 0;
+  static final TrackedBroadcastBus<TargetInputChanged> _inputBus =
+      TrackedBroadcastBus<TargetInputChanged>(sync: true);
+  static final TrackedBroadcastBus<TargetSnapshotsUpdated> _updatedBus =
+      TrackedBroadcastBus<TargetSnapshotsUpdated>(sync: true);
 
-  static Stream<TargetInputChanged> get inputChanges => _inputController.stream;
+  static int _eventSequence = 0;
+  static int _recalculationRequests = 0;
+  static int _recalculationExecutions = 0;
+  static int _uiRefreshRequests = 0;
+  static int _uiRefreshExecutions = 0;
+
+  static Stream<TargetInputChanged> get inputChanges => _inputBus.stream;
   static Stream<TargetSnapshotsUpdated> get snapshotUpdates =>
-      _updatedController.stream;
+      _updatedBus.stream;
+
+  static TrackedBroadcastMetrics get inputMetrics => _inputBus.metrics;
+  static TrackedBroadcastMetrics get updateMetrics => _updatedBus.metrics;
+
+  static int get recalculationRequests => _recalculationRequests;
+  static int get recalculationExecutions => _recalculationExecutions;
+  static int get uiRefreshRequests => _uiRefreshRequests;
+  static int get uiRefreshExecutions => _uiRefreshExecutions;
 
   static void publishInput(TargetInputChanged event) {
     final TargetInputChanged enriched =
@@ -98,7 +110,8 @@ class TargetInputChangeBus {
                     : event.publishedAtEpochMs,
               )
             : event;
-    _published += 1;
+
+    _inputBus.publish(enriched);
     unawaited(
       AppDiagnostics.instance.info(
         'pubsub.target_input.publish',
@@ -111,16 +124,16 @@ class TargetInputChangeBus {
           'reason': enriched.reasonCode,
           'sourceUuidHash': _privacyHash(enriched.sourceEntityUuid),
           'sourceRevision': enriched.sourceRevision,
-          'subscriberCount': _inputController.hasListener ? 1 : 0,
-          'published': _published,
+          ..._inputBus.metrics.toJson(),
+          'recalculationRequests': _recalculationRequests,
+          'recalculationExecutions': _recalculationExecutions,
         },
       ),
     );
-    if (!_inputController.isClosed) _inputController.add(enriched);
   }
 
   static void publishUpdated(TargetSnapshotsUpdated event) {
-    _updates += 1;
+    _updatedBus.publish(event);
     unawaited(
       AppDiagnostics.instance.info(
         'pubsub.target_input.updated',
@@ -135,12 +148,40 @@ class TargetInputChangeBus {
           'coalescedEventCount': event.coalescedEventCount,
           'queueWaitMs': event.queueWaitMs,
           'recalculationMs': event.recalculationMs,
-          'uiRefreshes': _updatedController.hasListener ? 1 : 0,
-          'updates': _updates,
+          ..._updatedBus.metrics.toJson(),
+          'uiRefreshRequests': _uiRefreshRequests,
+          'uiRefreshExecutions': _uiRefreshExecutions,
         },
       ),
     );
-    if (!_updatedController.isClosed) _updatedController.add(event);
+  }
+
+  static void recordRecalculationRequested({bool coalesced = false}) {
+    _recalculationRequests += 1;
+    if (coalesced) {
+      _inputBus.recordCoalesced();
+    }
+  }
+
+  static void recordRecalculationExecution() {
+    _recalculationExecutions += 1;
+  }
+
+  static void recordUiRefreshRequested() {
+    _uiRefreshRequests += 1;
+  }
+
+  static void recordUiRefreshExecution() {
+    _uiRefreshExecutions += 1;
+  }
+
+  static void debugResetMetricsForTests() {
+    _inputBus.resetMetricsForTests();
+    _updatedBus.resetMetricsForTests();
+    _recalculationRequests = 0;
+    _recalculationExecutions = 0;
+    _uiRefreshRequests = 0;
+    _uiRefreshExecutions = 0;
   }
 
   static String _nextEventId(String prefix) {
@@ -150,8 +191,10 @@ class TargetInputChangeBus {
 
   static String _privacyHash(String? value) {
     final String input = value?.trim() ?? '';
-    if (input.isEmpty) return '';
-    int hash = 0x811c9dc5;
+    if (input.isEmpty) {
+      return '';
+    }
+    var hash = 0x811c9dc5;
     for (final int unit in input.codeUnits) {
       hash ^= unit;
       hash = (hash * 0x01000193) & 0xffffffff;

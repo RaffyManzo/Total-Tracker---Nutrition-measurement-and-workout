@@ -9,6 +9,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/transfer/domain/transfer_models.dart';
+import 'diagnostic_privacy.dart';
 
 class AppDiagnosticLogFile {
   const AppDiagnosticLogFile({
@@ -112,7 +113,7 @@ class AppDiagnostics {
           'buildNumber': packageInfo.buildNumber,
           'diagnosticsSchemaVersion': diagnosticsSchemaVersion,
           'transferSchemaVersion': totalTrackerArchiveVersion,
-          'objectBoxModelVersion': objectBoxModelVersion,
+          'objectBoxModelSchemaVersion': objectBoxModelVersion,
           'platform': defaultTargetPlatform.name,
           'buildMode': kReleaseMode
               ? 'release'
@@ -482,9 +483,10 @@ class AppDiagnostics {
       'sessionId': _sessionId,
       'level': level,
       'event': event,
-      'data': _jsonSafe(data),
-      if (error != null) 'error': error.toString(),
-      if (stackTrace != null) 'stackTrace': stackTrace.toString(),
+      'data': _jsonSafe(DiagnosticPrivacy.sanitizeData(data)),
+      if (error != null) 'error': DiagnosticPrivacy.sanitizeError(error),
+      if (stackTrace != null)
+        'stackTrace': DiagnosticPrivacy.sanitizeText(stackTrace.toString()),
     };
     await file.writeAsString(
       '${jsonEncode(record)}\n',

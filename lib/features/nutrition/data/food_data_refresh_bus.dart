@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../../core/diagnostics/app_diagnostics.dart';
+import '../../../core/diagnostics/tracked_broadcast_bus.dart';
 
 enum FoodDataChangeKind {
   meal,
@@ -37,17 +38,19 @@ class FoodDataChange {
 class FoodDataRefreshBus {
   FoodDataRefreshBus._();
 
-  static final StreamController<FoodDataChange> _controller =
-      StreamController<FoodDataChange>.broadcast();
+  static final TrackedBroadcastBus<FoodDataChange> _bus =
+      TrackedBroadcastBus<FoodDataChange>();
   static int _revision = 0;
   static int _eventSequence = 0;
-  static int _published = 0;
   static FoodDataChange? _lastChange;
 
-  static Stream<FoodDataChange> get changes => _controller.stream;
+  static Stream<FoodDataChange> get changes => _bus.stream;
   static int get revision => _revision;
   static FoodDataChange? get lastChange => _lastChange;
-  static int get publishedCount => _published;
+  static int get publishedCount => _bus.metrics.publishedEvents;
+  static int get subscriberCount => _bus.metrics.registeredSubscribers;
+  static int get pendingDeliveries => _bus.metrics.pendingDeliveries;
+  static TrackedBroadcastMetrics get runtimeMetrics => _bus.metrics;
 
   static void publishMeal({
     required String dateKey,
@@ -89,7 +92,10 @@ class FoodDataRefreshBus {
     );
   }
 
-  static void publishManualRefresh(String dateKey, {String operationId = ''}) {
+  static void publishManualRefresh(
+    String dateKey, {
+    String operationId = '',
+  }) {
     _publish(
       FoodDataChange(
         kind: FoodDataChangeKind.manualRefresh,
@@ -105,7 +111,8 @@ class FoodDataRefreshBus {
 
   static void _publish(FoodDataChange change) {
     _lastChange = change;
-    _published += 1;
+    _bus.publish(change);
+    final TrackedBroadcastMetrics metrics = _bus.metrics;
     unawaited(
       AppDiagnostics.instance.info(
         'pubsub.food.publish',
@@ -117,17 +124,12 @@ class FoodDataRefreshBus {
           'dateTo': change.dateKey,
           'reason': change.reason,
           'revision': change.revision,
-          'subscriberCount': _controller.hasListener ? 1 : 0,
-          'coalescedEventCount': change.coalescedEventCount,
+          ...metrics.toJson(),
           'hasCalories': change.currentCalories != null,
           'hasSteps': change.steps != null,
-          'published': _published,
         },
       ),
     );
-    if (!_controller.isClosed) {
-      _controller.add(change);
-    }
   }
 
   static void recordSubscriberRun(
@@ -135,6 +137,9 @@ class FoodDataRefreshBus {
     FoodDataChange change, {
     bool skipped = false,
   }) {
+    if (skipped) {
+      _bus.recordSkipped();
+    }
     unawaited(
       AppDiagnostics.instance.info(
         'pubsub.food.subscriber',
@@ -148,10 +153,13 @@ class FoodDataRefreshBus {
           'queueWaitMs':
               DateTime.now().millisecondsSinceEpoch - change.publishedAtEpochMs,
           'skipped': skipped,
+          ..._bus.metrics.toJson(),
         },
       ),
     );
   }
+
+  static void debugResetMetricsForTests() => _bus.resetMetricsForTests();
 
   static String _nextEventId(String prefix) {
     _eventSequence += 1;

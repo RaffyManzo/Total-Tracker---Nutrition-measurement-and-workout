@@ -1,38 +1,30 @@
-# Total Tracker transfer coverage audit
+# Total Tracker transfer coverage audit — refinement 0.1.0-07
 
-Sessione bugfix: `fix/0.1.0-07-stability-performance-lifecycle`
+Base: `75a0a4c277774471843815acea5fddebd6fa7dcd`
+Formato corrente: schema 2
+Compatibilità lettura: schema 1 e 2
 
-Baseline verificata:
+## Inventario servizio/DTO/manifest
 
-- `APP_VERSION_BASE=0.1.0+19`
-- `TRANSFER_SCHEMA_VERSION=2`
-- `OBJECTBOX_MODEL_VERSION=1`
-- Versioni importabili: `1..2`
-- Archivi futuri: rifiutati da `TransferArchiveCodec.decode`.
+Il servizio corrente esporta e importa in un'unica architettura le sezioni `profile`, `ingredients`, `recipes`, `days`, `meals`, `scaleMeasurements`, `tapeMeasurements`, `muscles`, `exercises`, `routines`, `workoutPlans` e `workoutSessions`. Le relazioni figlio sono incluse nei DTO parent: ingredienti/passaggi ricetta, item pasto, misure metro, link muscolari, esercizi/serie routine, giorni/esercizi scheda ed esercizi/serie sessione.
 
-## Matrice copertura
+| Area | Contratto portabile ispezionato | Evidenza eseguibile |
+|---|---|---|
+| Profile | DTO campo-per-campo e strategie conflitto | suite completa del repository |
+| Ingredienti | nutrizione, origine, immagine/media, audit | round-trip reale tra due store, confronto canonico |
+| Giorni/pasti/item | snapshot, target e relazioni | suite completa + export schema 2 nel probe |
+| Ricette/media | parent, ingredienti, passaggi, riferimenti media | suite completa + inventario mapper |
+| Bilancia/metro | composizione e children | suite completa + inventario mapper |
+| Workout | muscoli, esercizi, routine, piani, sessioni e set | regressione fondazione + suite completa |
+| Soft delete | record tombstone esclusi dall'export | ingrediente soft-deleted escluso dal round-trip |
+| Conflitti | overwrite, keep existing, import copy | test servizio esistente + doppia importazione |
+| Schema 1 | checksum FNV-1a e migrazione | fixture binaria reale importata |
+| Corruzione | ZIP/checksum/JSON rifiutati prima della scrittura | archivio troncato, store invariato |
+| Atomicità | `applyImport` usa una singola transazione ObjectBox write | test di rollback forzato sulla stessa primitiva transazionale |
+| Runtime/segreti | esclusi dal formato | audit sicurezza esistente |
 
-| Area | Entita / campo | Export | Import | Strategia migrazione | Test |
-| --- | --- | --- | --- | --- | --- |
-| Profile | `UserProfileEntity` campi anagrafici, preferenze, target, macro, activity estimator | Incluso | Incluso | DTO map v2, overwrite/keep/import copy | `transfer_current_model_contract_test` |
-| Food | `IngredientEntity` nutrienti, origine, immagine, audit active | Incluso se non soft-deleted | Incluso | UUID conflict resolution | `total_tracker_transfer_service_test` |
-| Food | `DailyRecordEntity` target theo5, hash input, TDEE, workout kcal, completeness | Incluso | Incluso | `_dayToMapTheo5`, `_applyTheo5DayFields` | `transfer_current_model_contract_test` |
-| Food | `MealEntity`, `MealItemEntity`, snapshot nutrizionali | Incluso se non soft-deleted | Incluso | relazioni per UUID/date | transfer service tests |
-| Food | `RecipeEntity`, ingredienti, step, snapshot, media sidecar | Incluso se non soft-deleted | Incluso | children ricostruiti dopo parent | transfer service tests |
-| Measurements | `ScaleMeasurementEntity` composizione, device, anomaly confirmation, audit | Incluso se non soft-deleted | Incluso | `_scaleToMapTheo5`, `_applyTheo5ScaleFields` | `measurement_repository_delete_test`, `transfer_current_model_contract_test` |
-| Measurements | `TapeMeasurementEntity`, `TapeMeasurementEntryEntity` valori e posizioni | Incluso se non soft-deleted | Incluso | children sostituiti in import | `measurement_repository_delete_test` |
-| Workout | muscoli, esercizi, routine, piani, sessioni, set | Incluso se non soft-deleted | Incluso | import parent-first, relazioni ricostruite | workout/transfer tests esistenti |
-| Runtime | invalidation queue, timer, stream, log, lock | Escluso | Escluso | transitorio/ricostruibile | n/a |
-| Privacy | token, segreti, percorsi privati non necessari, log | Escluso | Escluso | non portabile | `transfer_archive_security_test` |
+## Limite esplicito
 
-## Note su tombstone
+Il nuovo round-trip seed-a direttamente un ingrediente completo, un riferimento media e un tombstone in uno Store sorgente, esporta un archivio reale e lo importa in uno Store distinto. Non pretende da solo di dimostrare ogni mapper. La prova cumulativa richiesta dal launcher comprende questo test mirato, i test transfer/security già presenti e infine l'intera suite `flutter test`.
 
-Il formato corrente esporta lo stato portabile attivo e non include record soft-deleted. La patch rende coerente il comportamento metro: la cancellazione lascia tombstone in ObjectBox e le query/export attivi li escludono. Un eventuale schema futuro potra includere tombstone espliciti per sincronizzazione multi-device; richiederebbe incremento schema e migrazione.
-
-## Esiti accettazione
-
-- `TRANSFER_SCHEMA_VERSION=2`
-- `TRANSFER_CURRENT_MODEL_COVERAGE=COMPLETE_ACTIVE_PORTABLE_STATE`
-- `TRANSFER_PREVIOUS_VERSION_IMPORT=COVERED_BY_CODEC_VERSION_1_COMPAT`
-- `TRANSFER_EMPTY_STORE_ROUNDTRIP=COVERED_BY_TRANSFER_TESTS`
-- `TRANSFER_CORRUPTION_ROLLBACK=COVERED_BY_CODEC_SECURITY_TESTS`
+Il rollback è dimostrato separatamente su due livelli: un archivio corrotto viene respinto prima della transazione e una failure forzata dentro `Store.runInTransaction(TxMode.write)` annulla tutte le scritture parziali. Non viene introdotto un secondo motore transfer né viene incrementato lo schema.
