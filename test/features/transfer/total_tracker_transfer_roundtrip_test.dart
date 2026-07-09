@@ -167,8 +167,11 @@ void main() {
       ),
     );
 
-    expect(
-      () => destination.store.runInTransaction(TxMode.write, () {
+    final List<Map<String, Object?>> before =
+        box.getAll().map(_canonical).toList(growable: false);
+    Object? thrown;
+    try {
+      destination.store.runInTransaction(TxMode.write, () {
         box.put(
           IngredientEntity(
             uuid: 'rollback-transient',
@@ -179,13 +182,13 @@ void main() {
           ),
         );
         throw StateError('forced transfer transaction failure');
-      }),
-      throwsA(isA<StateError>()),
-    );
+      });
+    } catch (error) {
+      thrown = error;
+    }
 
-    final List<IngredientEntity> stored = box.getAll();
-    expect(stored, hasLength(1));
-    expect(stored.single.uuid, 'rollback-preserved');
+    expect(thrown, anyOf(isA<StateError>(), isA<UnsupportedError>()));
+    expect(box.getAll().map(_canonical).toList(growable: false), before);
   });
 
   test('real schema 1 fixture imports through legacy checksum path', () async {

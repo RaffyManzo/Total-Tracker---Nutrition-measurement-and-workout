@@ -179,14 +179,26 @@ class _ScaleDeviceConfigurationScreenState
 
   Future<void> _add() async {
     final String? name = await _askName();
-    if (!mounted || name == null || name.isEmpty || _catalog == null) return;
+    if (name == null || name.isEmpty || _catalog == null) return;
+    if (!await _canContinueOnCurrentRoute()) return;
     final ScaleDeviceOption device = await _catalog!.add(name);
-    if (!mounted) return;
+    if (!_canUseCurrentRoute) return;
     final bool assignUnspecified = await _confirmAssignUnspecified();
-    if (!mounted) return;
+    if (!_canUseCurrentRoute) return;
     await _migrate(device, includeUnspecified: assignUnspecified);
-    if (!mounted) return;
+    if (!_canUseCurrentRoute) return;
     _refresh('Dispositivo configurato: ${device.name}.');
+  }
+
+  bool get _canUseCurrentRoute {
+    if (!mounted) return false;
+    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    return route == null || route.isCurrent;
+  }
+
+  Future<bool> _canContinueOnCurrentRoute() async {
+    await Future<void>.delayed(Duration.zero);
+    return _canUseCurrentRoute;
   }
 
   Future<bool> _confirmAssignUnspecified() async {

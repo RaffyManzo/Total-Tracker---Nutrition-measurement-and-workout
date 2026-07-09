@@ -37,7 +37,7 @@ void main() {
     'popping the route during device creation has no late callback',
     (WidgetTester tester) async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
-      final database = await openTestDatabase();
+      final database = (await tester.runAsync(() => openTestDatabase()))!;
 
       await tester.pumpWidget(
         ProviderScope(
@@ -91,7 +91,7 @@ void main() {
     'partial creation can be closed, reopened and completed',
     (WidgetTester tester) async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
-      final database = await openTestDatabase();
+      final database = (await tester.runAsync(() => openTestDatabase()))!;
 
       await tester.pumpWidget(
         ProviderScope(

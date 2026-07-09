@@ -386,10 +386,23 @@ class _FoodHubScreenState extends ConsumerState<FoodHubScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final DateTime now = DateTime.now();
     if (_lastLifecycleState == state) {
+      if (_lastLifecycleState != AppLifecycleState.resumed) {
+        unawaited(
+          AppDiagnostics.instance.info(
+            'lifecycle.transition.coalesced',
+            data: <String, Object?>{'state': state.name},
+          ),
+        );
+        return;
+      }
       unawaited(
         AppDiagnostics.instance.info(
-          'lifecycle.transition.coalesced',
-          data: <String, Object?>{'state': state.name},
+          'lifecycle.resume.coalesced',
+          data: <String, Object?>{
+            'generation': _resumeGeneration,
+            'subscriberCount': FoodDataRefreshBus.subscriberCount,
+            'queueDepth': FoodDataRefreshBus.pendingDeliveries,
+          },
         ),
       );
       return;
