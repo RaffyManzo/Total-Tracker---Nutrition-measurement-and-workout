@@ -66,6 +66,81 @@ void main() {
     expect(allUsage.last.grams, 100);
     expect(allUsage.last.registrationCount, 2);
   });
+
+  test('ingredient usage pagination returns ten-row pages without duplicates',
+      () async {
+    final database = await openTestDatabase();
+    final repository = MealRepository(database.store);
+
+    for (int index = 0; index < 24; index += 1) {
+      repository.saveMealWithItems(
+        _meal('2026-07-${(index + 1).toString().padLeft(2, '0')}', 'pranzo'),
+        <MealItemEntity>[_item('ingredient-a', (50 + index).toDouble())],
+      );
+    }
+    repository.saveMealWithItems(
+      _meal('2026-08-01', 'cena'),
+      <MealItemEntity>[_item('ingredient-b', 10)],
+    );
+
+    final page1 = repository.loadIngredientUsagePage(
+      'ingredient-a',
+      page: 1,
+    );
+    final page2 = repository.loadIngredientUsagePage(
+      'ingredient-a',
+      page: 2,
+    );
+    final beyond = repository.loadIngredientUsagePage(
+      'ingredient-a',
+      page: 99,
+    );
+
+    expect(page1.items, hasLength(10));
+    expect(page2.items, hasLength(10));
+    expect(page1.totalCount, 24);
+    expect(page1.totalPages, 3);
+    expect(
+      page1.items.map((item) => item.meal.id).toSet().intersection(
+            page2.items.map((item) => item.meal.id).toSet(),
+          ),
+      isEmpty,
+    );
+    expect(page1.items.first.meal.dateKey, '2026-07-24');
+    expect(beyond.items, isEmpty);
+  });
+
+  test('date filters are applied before ingredient usage pagination', () async {
+    final database = await openTestDatabase();
+    final repository = MealRepository(database.store);
+
+    for (int index = 1; index <= 24; index += 1) {
+      repository.saveMealWithItems(
+        _meal('2026-07-${index.toString().padLeft(2, '0')}', 'pranzo'),
+        <MealItemEntity>[
+          _item('ingredient-a', index.toDouble()),
+          if (index == 20) _item('ingredient-a', 5),
+        ],
+      );
+    }
+
+    final page = repository.loadIngredientUsagePage(
+      'ingredient-a',
+      page: 1,
+      fromDateKey: '2026-07-15',
+      toDateKey: '2026-07-24',
+    );
+
+    expect(page.totalCount, 10);
+    expect(page.items, hasLength(10));
+    expect(page.items.first.meal.dateKey, '2026-07-24');
+    expect(page.items.last.meal.dateKey, '2026-07-15');
+    final duplicateMeal = page.items.singleWhere(
+      (IngredientMealUsage item) => item.meal.dateKey == '2026-07-20',
+    );
+    expect(duplicateMeal.registrationCount, 2);
+    expect(duplicateMeal.grams, 25);
+  });
 }
 
 MealEntity _meal(String dateKey, String slot) {

@@ -29,9 +29,11 @@ void main() {
     );
     expect(picker, isNot(contains('showBottomSheet(')));
     expect(picker, contains('class MealIngredientBatchPickerController'));
-    expect(picker, contains('la pagina resta utilizzabile'));
-    expect(picker, contains('_collapsedExtent = 0.18'));
-    expect(picker, contains('_dragDeltaDy += details.primaryDelta ?? 0'));
+    expect(picker, contains('continuare a usare la pagina'));
+    expect(picker, contains('DraggableScrollableSheet('));
+    expect(picker, contains('_collapsedExtent = 0.22'));
+    expect(picker, contains('snapSizes: const <double>'));
+    expect(picker, isNot(contains('OverflowBox(')));
   });
 
   test('measurement history is complete, filtered and paginated', () {
@@ -39,11 +41,14 @@ void main() {
       'lib/features/nutrition/presentation/measurement_screens.dart',
     ).readAsStringSync();
 
-    expect(source, contains('_historyPageSize = 15'));
-    expect(source, contains('_mergeMeasurementHistory('));
+    expect(source, contains('_historyPageSize = 10'));
+    expect(source, contains('measurementHistoryPageProvider('));
+    expect(source, contains('loadMeasurementHistoryPage('));
+    expect(source, contains('pageSize: _historyPageSize'));
     expect(source, contains('_MeasurementHistoryPager('));
     expect(source, contains('_MeasurementTrendCard('));
     expect(source, contains('_measurementDateLabel('));
+    expect(source, isNot(contains('_mergeMeasurementHistory(')));
     expect(source, isNot(contains('filteredScale.take(6)')));
     expect(source, isNot(contains('filteredTape.take(6)')));
     expect(source, isNot(contains('scaleMeasurements.take(12)')));
@@ -53,6 +58,7 @@ void main() {
     final String repository = File(
       'lib/features/nutrition/data/repositories/meal_repository.dart',
     ).readAsStringSync();
+
     final int methodStart = repository.indexOf(
       'List<IngredientMealUsage> getIngredientUsage(',
     );
@@ -60,10 +66,10 @@ void main() {
       'List<MealEntity> getMealsForDate(',
       methodStart,
     );
+
     expect(methodStart, greaterThanOrEqualTo(0));
     expect(methodEnd, greaterThan(methodStart));
     final String method = repository.substring(methodStart, methodEnd);
-
     expect(
       method,
       contains('final Query<MealItemEntity> itemQuery = _itemBox'),

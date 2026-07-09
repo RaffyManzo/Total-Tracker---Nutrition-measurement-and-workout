@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:objectbox/objectbox.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:total_tracker/features/nutrition/data/entities/ingredient_entity.dart';
+import 'package:total_tracker/features/nutrition/data/entities/nutrition_tracking_entities.dart';
 import 'package:total_tracker/features/transfer/data/total_tracker_transfer_service.dart';
 import 'package:total_tracker/features/transfer/domain/transfer_models.dart';
 
@@ -206,6 +207,50 @@ void main() {
       destination.store.box<IngredientEntity>().getAll().single.uuid,
       'schema-1-ingredient',
     );
+  });
+
+  test('export excludes soft deleted scale measurements', () async {
+    final source = await openTestDatabase();
+    final int now = DateTime.utc(2026, 7, 9).millisecondsSinceEpoch;
+    source.store.box<ScaleMeasurementEntity>().putMany(<ScaleMeasurementEntity>[
+      ScaleMeasurementEntity(
+        uuid: 'scale-active',
+        dateKey: '2026-07-09',
+        title: 'Active scale',
+        weightKg: 70,
+        createdAtEpochMs: now,
+        updatedAtEpochMs: now,
+      ),
+      ScaleMeasurementEntity(
+        uuid: 'scale-deleted',
+        dateKey: '2026-07-08',
+        title: 'Deleted scale',
+        weightKg: 71,
+        createdAtEpochMs: now,
+        updatedAtEpochMs: now,
+        deletedAtEpochMs: now,
+      ),
+    ]);
+    final Directory exportDirectory =
+        await Directory.systemTemp.createTemp('tt_scale_export_');
+    addTearDown(() async {
+      if (await exportDirectory.exists()) {
+        await exportDirectory.delete(recursive: true);
+      }
+    });
+
+    final TransferExportResult exported =
+        await TotalTrackerTransferService(source.store).exportArchive(
+      options: const TransferExportOptions(),
+      directoryPath: exportDirectory.path,
+    );
+    final TransferArchivePayload decoded = const TransferArchiveCodec().decode(
+      await File(exported.path).readAsBytes(),
+    );
+    final String payload = decoded.data.toString();
+
+    expect(payload, contains('scale-active'));
+    expect(payload, isNot(contains('scale-deleted')));
   });
 }
 

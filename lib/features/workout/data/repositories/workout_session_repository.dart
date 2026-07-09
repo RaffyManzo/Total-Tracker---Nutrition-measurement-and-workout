@@ -1,7 +1,6 @@
-import 'package:objectbox/objectbox.dart';
-
 import '../../../../core/identifiers/uuid_generator.dart';
 import '../../../../core/time/clock.dart';
+import '../../../../objectbox.g.dart';
 import '../entities/workout_tracking_entities.dart';
 import '../../../nutrition/data/services/target_input_change_bus.dart';
 import '../../../nutrition/data/services/target_input_mutation_service.dart';
@@ -126,6 +125,23 @@ class WorkoutSessionRepository {
       (double sum, WorkoutSessionEntity session) =>
           sum + (session.estimatedKcalBurned ?? 0),
     );
+  }
+
+  int activeWorkoutInputRevision() {
+    final Query<WorkoutSessionEntity> query = _sessionBox
+        .query(WorkoutSessionEntity_.deletedAtEpochMs.isNull())
+        .build();
+    final PropertyQuery<int> propertyQuery =
+        query.property(WorkoutSessionEntity_.updatedAtEpochMs);
+    try {
+      if (propertyQuery.count() == 0) {
+        return 0;
+      }
+      return propertyQuery.max();
+    } finally {
+      propertyQuery.close();
+      query.close();
+    }
   }
 
   List<SessionExerciseEntity> getExercises(int sessionId) {

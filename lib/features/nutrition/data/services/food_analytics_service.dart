@@ -13,6 +13,7 @@ import '../../domain/target_model_math.dart';
 import '../entities/nutrition_tracking_entities.dart';
 import '../repositories/meal_repository.dart';
 import '../repositories/measurement_repository.dart';
+import 'target_input_hasher.dart';
 
 class ActivityBreakdown {
   const ActivityBreakdown({
@@ -262,6 +263,9 @@ class FoodAnalyticsService {
   final ProfileNutritionCalculator _profileCalculator =
       const ProfileNutritionCalculator();
   final AdaptiveTargetEngine _targetEngine = const AdaptiveTargetEngine();
+  static const int _targetDayResultCacheLimit = 128;
+  final Map<String, TargetDayResult> _targetDayResultCache =
+      <String, TargetDayResult>{};
 
   /// Nutrition-side adapter for the workout contract `estimated_active_calories`.
   /// The nutrition target engine consumes the value exposed by the completed
@@ -414,6 +418,34 @@ class FoodAnalyticsService {
         );
   }
 
+  String _targetDayCacheKey({
+    required DailyRecordEntity day,
+    required List<DailyRecordEntity> allDays,
+    required DateTime now,
+    UserProfileEntity? profile,
+  }) {
+    final String historyHash = TargetInputHasher.hashForDay(
+      day: day,
+      chronologicalHistory: allDays,
+      modelVersion: TargetModelConstants.modelVersion,
+      inputRevisionSeed: <Object?>[
+        profile?.updatedAtEpochMs ?? 0,
+        profile?.targetModeCode ?? '',
+        profile?.defaultTargetKcal ?? 0,
+        profile?.adaptiveReferenceDays ?? 0,
+        profile?.adaptiveMinimumObservedDays ?? 0,
+        _meals.activeMealInputRevision(),
+        _measurements.activeScaleRevision(),
+        _workoutSessions.activeWorkoutInputRevision(),
+      ].join('|'),
+    );
+    return <Object?>[
+      historyHash,
+      day.dateKey,
+      now.toIso8601String().substring(0, 13),
+    ].join('|');
+  }
+
   TargetDayResult targetResultForDay({
     required DailyRecordEntity day,
     required List<DailyRecordEntity> allDays,
@@ -421,6 +453,51 @@ class FoodAnalyticsService {
     DateTime? now,
   }) {
     final DateTime resolvedNow = now ?? DateTime.now();
+    final String cacheKey = _targetDayCacheKey(
+      day: day,
+      allDays: allDays,
+      profile: profile,
+      now: resolvedNow,
+    );
+    final TargetDayResult? cached = _targetDayResultCache[cacheKey];
+    if (cached != null) {
+      if (_diagnosticsEnabled) {
+        InteractionTrace.event(
+          'tdee.cache.hit',
+          data: <String, Object?>{
+            'dayKey': day.dateKey,
+            'entryCount': _targetDayResultCache.length,
+          },
+        );
+      }
+      return cached;
+    }
+    if (_diagnosticsEnabled) {
+      InteractionTrace.event(
+        'tdee.cache.miss',
+        data: <String, Object?>{
+          'dayKey': day.dateKey,
+          'entryCount': _targetDayResultCache.length,
+        },
+      );
+    }
+    TargetDayResult remember(TargetDayResult result) {
+      if (_targetDayResultCache.length >= _targetDayResultCacheLimit) {
+        final String oldestKey = _targetDayResultCache.keys.first;
+        _targetDayResultCache.remove(oldestKey);
+        if (_diagnosticsEnabled) {
+          InteractionTrace.event(
+            'tdee.cache.evicted',
+            data: <String, Object?>{
+              'entryCount': _targetDayResultCache.length,
+            },
+          );
+        }
+      }
+      _targetDayResultCache[cacheKey] = result;
+      return result;
+    }
+
     final ResolvedActivityBreakdown activity = effectiveActivityForDay(
       day,
       profile: profile,
@@ -429,7 +506,7 @@ class FoodAnalyticsService {
 
     if (profile == null) {
       final double target = day.targetKcal ?? 1980;
-      return TargetDayResult(
+      return remember(TargetDayResult(
         targetKcal: target,
         targetStatusCode: 'fallback',
         tdeeRefKcal: target,
@@ -454,7 +531,7 @@ class FoodAnalyticsService {
             severityCode: TargetAlertSeverityCodes.warning,
           ),
         ],
-      );
+      ));
     }
 
     final WeightFreshnessResult weight = _weightFreshnessForDate(
@@ -472,7 +549,7 @@ class FoodAnalyticsService {
     );
 
     if (profile.targetModeCode == TargetModeCodes.fixedUser) {
-      return TargetDayResult(
+      return remember(TargetDayResult(
         targetKcal: profile.defaultTargetKcal.toDouble(),
         targetStatusCode: 'fixed_user',
         tdeeRefKcal: profile.defaultTargetKcal.toDouble(),
@@ -490,11 +567,11 @@ class FoodAnalyticsService {
         activity: activity,
         activityDeltaKcal: 0,
         alerts: const <TargetAlert>[],
-      );
+      ));
     }
 
     if (profile.targetModeCode == TargetModeCodes.appCalculatedFixed) {
-      return TargetDayResult(
+      return remember(TargetDayResult(
         targetKcal: fixed.targetKcal,
         targetStatusCode: 'calculated_fixed',
         tdeeRefKcal: fixed.targetKcal,
@@ -512,7 +589,7 @@ class FoodAnalyticsService {
         activity: activity,
         activityDeltaKcal: 0,
         alerts: weight.alerts,
-      );
+      ));
     }
 
     final DateTime date = DateTime.parse(day.dateKey);
@@ -541,7 +618,7 @@ class FoodAnalyticsService {
         ),
       );
     }
-    return TargetDayResult(
+    return remember(TargetDayResult(
       targetKcal: target,
       targetStatusCode: activity.statusCode == 'partially_provisional'
           ? 'partially_provisional'
@@ -590,7 +667,7 @@ class FoodAnalyticsService {
           ? dayGuardrail.reasonCode
           : summary.guardrailReasonCode,
       unclampedTargetKcal: dayGuardrail.unclampedValue,
-    );
+    ));
   }
 
   double targetForDay({

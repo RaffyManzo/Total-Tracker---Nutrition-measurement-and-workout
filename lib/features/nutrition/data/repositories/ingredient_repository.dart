@@ -1,7 +1,7 @@
-import 'package:objectbox/objectbox.dart';
-
+import '../../../../core/pagination/paged_result.dart';
 import '../../../../core/identifiers/uuid_generator.dart';
 import '../../../../core/time/clock.dart';
+import '../../../../objectbox.g.dart';
 import '../../domain/nutrition_codes.dart';
 import '../entities/ingredient_entity.dart';
 
@@ -30,12 +30,18 @@ class IngredientRepository {
   }
 
   IngredientEntity? findByUuid(String uuid) {
-    for (final IngredientEntity ingredient in _box.getAll()) {
-      if (ingredient.uuid == uuid && ingredient.deletedAtEpochMs == null) {
-        return ingredient;
-      }
+    final Query<IngredientEntity> query = _box
+        .query(
+          IngredientEntity_.uuid
+              .equals(uuid.trim())
+              .and(IngredientEntity_.deletedAtEpochMs.isNull()),
+        )
+        .build();
+    try {
+      return query.findFirst();
+    } finally {
+      query.close();
     }
-    return null;
   }
 
   IngredientEntity? findByBarcode(String barcode) {
@@ -43,13 +49,18 @@ class IngredientRepository {
     if (normalizedBarcode.isEmpty) {
       return null;
     }
-    for (final IngredientEntity ingredient in _box.getAll()) {
-      if (ingredient.barcode == normalizedBarcode &&
-          ingredient.deletedAtEpochMs == null) {
-        return ingredient;
-      }
+    final Query<IngredientEntity> query = _box
+        .query(
+          IngredientEntity_.barcode
+              .equals(normalizedBarcode)
+              .and(IngredientEntity_.deletedAtEpochMs.isNull()),
+        )
+        .build();
+    try {
+      return query.findFirst();
+    } finally {
+      query.close();
     }
-    return null;
   }
 
   IngredientEntity? getById(int id) {
@@ -61,46 +72,40 @@ class IngredientRepository {
   }
 
   List<IngredientEntity> searchByName(String query) {
-    final String normalizedQuery = query.trim().toLowerCase();
-    if (normalizedQuery.isEmpty) {
-      return getAllActive();
-    }
-
-    return getAllActive()
-        .where(
-          (IngredientEntity ingredient) =>
-              ingredient.name.toLowerCase().contains(normalizedQuery),
-        )
-        .toList()
-      ..sort(_sortByName);
+    return loadIngredientPage(
+      page: 1,
+      pageSize: _countActive(),
+      search: query,
+    ).items;
   }
 
   List<IngredientEntity> getAllActive() {
-    return _box
-        .getAll()
-        .where(
-          (IngredientEntity ingredient) =>
-              !ingredient.isArchived && ingredient.deletedAtEpochMs == null,
-        )
-        .toList()
-      ..sort(_sortByName);
+    return loadIngredientPage(
+      page: 1,
+      pageSize: _countActive(),
+    ).items;
   }
 
   List<IngredientEntity> getRecentActive({int limit = 50}) {
-    final safeLimit = limit < 0 ? 0 : limit;
-    final values = _box
-        .getAll()
-        .where(
-          (IngredientEntity ingredient) =>
-              !ingredient.isArchived && ingredient.deletedAtEpochMs == null,
+    final int safeLimit = limit < 0 ? 0 : limit;
+    if (safeLimit == 0) {
+      return const <IngredientEntity>[];
+    }
+    final Query<IngredientEntity> query = _box
+        .query(
+          IngredientEntity_.deletedAtEpochMs
+              .isNull()
+              .and(IngredientEntity_.isArchived.equals(false)),
         )
-        .toList()
-      ..sort((IngredientEntity a, IngredientEntity b) {
-        final createdCompare = b.createdAtEpochMs.compareTo(a.createdAtEpochMs);
-        if (createdCompare != 0) return createdCompare;
-        return b.id.compareTo(a.id);
-      });
-    return values.take(safeLimit).toList();
+        .order(IngredientEntity_.createdAtEpochMs, flags: Order.descending)
+        .order(IngredientEntity_.id, flags: Order.descending)
+        .build();
+    query.limit = safeLimit;
+    try {
+      return query.find();
+    } finally {
+      query.close();
+    }
   }
 
   List<IngredientEntity> searchByNameLimited(
@@ -108,18 +113,61 @@ class IngredientRepository {
     int offset = 0,
     int limit = 25,
   }) {
-    final normalizedQuery = query.trim().toLowerCase();
-    final values = getAllActive()
-        .where(
-          (ingredient) =>
-              normalizedQuery.isEmpty ||
-              ingredient.name.toLowerCase().contains(normalizedQuery) ||
-              ingredient.brand.toLowerCase().contains(normalizedQuery) ||
-              ingredient.barcode.contains(normalizedQuery),
+    final int safeOffset = offset < 0 ? 0 : offset;
+    final int safeLimit = PagedResult.normalizePageSize(limit);
+    final Query<IngredientEntity> ingredientQuery = _box
+        .query(
+          _ingredientPageCondition(
+            search: query,
+            brand: '',
+            activeOnly: true,
+          ),
         )
-        .toList()
-      ..sort(_sortByName);
-    return values.skip(offset).take(limit).toList();
+        .order(IngredientEntity_.name)
+        .order(IngredientEntity_.id)
+        .build();
+    ingredientQuery.offset = safeOffset;
+    ingredientQuery.limit = safeLimit;
+    try {
+      return ingredientQuery.find();
+    } finally {
+      ingredientQuery.close();
+    }
+  }
+
+  PagedResult<IngredientEntity> loadIngredientPage({
+    required int page,
+    int pageSize = 10,
+    String search = '',
+    String brand = '',
+    bool activeOnly = true,
+  }) {
+    final int safePage = PagedResult.normalizePage(page);
+    final int safePageSize = PagedResult.normalizePageSize(pageSize);
+    final Query<IngredientEntity> query = _box
+        .query(
+          _ingredientPageCondition(
+            search: search,
+            brand: brand,
+            activeOnly: activeOnly,
+          ),
+        )
+        .order(IngredientEntity_.name)
+        .order(IngredientEntity_.id)
+        .build();
+    try {
+      final int totalCount = query.count();
+      query.offset = (safePage - 1) * safePageSize;
+      query.limit = safePageSize;
+      return PagedResult<IngredientEntity>(
+        items: query.find(),
+        page: safePage,
+        pageSize: safePageSize,
+        totalCount: totalCount,
+      );
+    } finally {
+      query.close();
+    }
   }
 
   IngredientEntity? findByExternalSource(
@@ -128,14 +176,19 @@ class IngredientRepository {
   ) {
     final normalizedId = sourceExternalId.trim();
     if (normalizedId.isEmpty) return null;
-    for (final ingredient in _box.getAll()) {
-      if (ingredient.deletedAtEpochMs == null &&
-          ingredient.sourceTypeCode == sourceTypeCode &&
-          ingredient.sourceExternalId == normalizedId) {
-        return ingredient;
-      }
+    final Query<IngredientEntity> query = _box
+        .query(
+          IngredientEntity_.deletedAtEpochMs
+              .isNull()
+              .and(IngredientEntity_.sourceTypeCode.equals(sourceTypeCode))
+              .and(IngredientEntity_.sourceExternalId.equals(normalizedId)),
+        )
+        .build();
+    try {
+      return query.findFirst();
+    } finally {
+      query.close();
     }
-    return null;
   }
 
   IngredientEntity archive(IngredientEntity ingredient) {
@@ -255,7 +308,56 @@ class IngredientRepository {
     }
   }
 
-  int _sortByName(IngredientEntity a, IngredientEntity b) {
-    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  Condition<IngredientEntity> _ingredientPageCondition({
+    required String search,
+    required String brand,
+    required bool activeOnly,
+  }) {
+    Condition<IngredientEntity> condition =
+        IngredientEntity_.deletedAtEpochMs.isNull();
+    if (activeOnly) {
+      condition = condition.and(IngredientEntity_.isArchived.equals(false));
+    }
+    final String cleanSearch = search.trim();
+    if (cleanSearch.isNotEmpty) {
+      condition = condition.and(
+        IngredientEntity_.name
+            .contains(cleanSearch, caseSensitive: false)
+            .or(
+              IngredientEntity_.brand.contains(
+                cleanSearch,
+                caseSensitive: false,
+              ),
+            )
+            .or(
+              IngredientEntity_.barcode.contains(
+                cleanSearch,
+                caseSensitive: false,
+              ),
+            ),
+      );
+    }
+    final String cleanBrand = brand.trim();
+    if (cleanBrand.isNotEmpty) {
+      condition = condition.and(
+        IngredientEntity_.brand.contains(cleanBrand, caseSensitive: false),
+      );
+    }
+    return condition;
+  }
+
+  int _countActive() {
+    final Query<IngredientEntity> query = _box
+        .query(
+          IngredientEntity_.deletedAtEpochMs
+              .isNull()
+              .and(IngredientEntity_.isArchived.equals(false)),
+        )
+        .build();
+    try {
+      return query.count();
+    } finally {
+      query.close();
+    }
   }
 }

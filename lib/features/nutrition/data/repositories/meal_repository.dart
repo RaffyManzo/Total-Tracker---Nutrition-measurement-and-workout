@@ -1,6 +1,9 @@
+import 'dart:math' as math;
+
 import '../../../../objectbox.g.dart';
 
 import '../../../../core/identifiers/uuid_generator.dart';
+import '../../../../core/pagination/paged_result.dart';
 import '../../../../core/time/clock.dart';
 import '../entities/nutrition_tracking_entities.dart';
 import '../entities/ingredient_entity.dart';
@@ -73,6 +76,89 @@ class IngredientMealUsage {
   final MealEntity meal;
   final double grams;
   final int registrationCount;
+}
+
+class IngredientUsagePageRequest {
+  const IngredientUsagePageRequest({
+    required this.ingredientUuid,
+    required this.page,
+    required this.pageSize,
+    this.fromDateKey,
+    this.toDateKey,
+  });
+
+  final String ingredientUuid;
+  final int page;
+  final int pageSize;
+  final String? fromDateKey;
+  final String? toDateKey;
+}
+
+class IngredientMealUsageSnapshot {
+  const IngredientMealUsageSnapshot({
+    required this.mealId,
+    required this.dateKey,
+    required this.title,
+    required this.mealTypeCode,
+    required this.grams,
+    required this.registrationCount,
+  });
+
+  final int mealId;
+  final String dateKey;
+  final String title;
+  final String mealTypeCode;
+  final double grams;
+  final int registrationCount;
+}
+
+class IngredientUsagePageSnapshot {
+  const IngredientUsagePageSnapshot({
+    required this.items,
+    required this.page,
+    required this.pageSize,
+    required this.totalCount,
+  });
+
+  final List<IngredientMealUsageSnapshot> items;
+  final int page;
+  final int pageSize;
+  final int totalCount;
+
+  int get totalPages {
+    if (totalCount <= 0) return 0;
+    return (totalCount / pageSize).ceil();
+  }
+}
+
+IngredientUsagePageSnapshot loadIngredientUsagePageInBackground(
+  Store store,
+  IngredientUsagePageRequest request,
+) {
+  final PagedResult<IngredientMealUsage> result =
+      MealRepository(store).loadIngredientUsagePage(
+    request.ingredientUuid,
+    page: request.page,
+    pageSize: request.pageSize,
+    fromDateKey: request.fromDateKey,
+    toDateKey: request.toDateKey,
+  );
+  return IngredientUsagePageSnapshot(
+    items: <IngredientMealUsageSnapshot>[
+      for (final IngredientMealUsage usage in result.items)
+        IngredientMealUsageSnapshot(
+          mealId: usage.meal.id,
+          dateKey: usage.meal.dateKey,
+          title: usage.meal.title,
+          mealTypeCode: usage.meal.mealTypeCode,
+          grams: usage.grams,
+          registrationCount: usage.registrationCount,
+        ),
+    ],
+    page: result.page,
+    pageSize: result.pageSize,
+    totalCount: result.totalCount,
+  );
 }
 
 class MealRepository {
@@ -384,6 +470,55 @@ class MealRepository {
     return usage.take(limit).toList();
   }
 
+  PagedResult<IngredientMealUsage> loadIngredientUsagePage(
+    String ingredientUuid, {
+    required int page,
+    int pageSize = 10,
+    String? fromDateKey,
+    String? toDateKey,
+  }) {
+    final String cleanUuid = ingredientUuid.trim();
+    final int safePage = PagedResult.normalizePage(page);
+    final int safePageSize = PagedResult.normalizePageSize(pageSize);
+    if (cleanUuid.isEmpty) {
+      return PagedResult<IngredientMealUsage>(
+        items: const <IngredientMealUsage>[],
+        page: safePage,
+        pageSize: safePageSize,
+        totalCount: 0,
+      );
+    }
+
+    final QueryBuilder<MealEntity> mealBuilder = _mealBox.query(
+      _ingredientUsageMealCondition(
+        fromDateKey: fromDateKey,
+        toDateKey: toDateKey,
+      ),
+    );
+    mealBuilder.backlink<MealItemEntity>(
+      MealItemEntity_.meal,
+      _ingredientUsageCondition(cleanUuid),
+    );
+    mealBuilder
+      ..order(MealEntity_.dateKey, flags: Order.descending)
+      ..order(MealEntity_.id, flags: Order.descending);
+    final Query<MealEntity> mealQuery = mealBuilder.build();
+    try {
+      final int totalCount = mealQuery.count();
+      mealQuery.offset = (safePage - 1) * safePageSize;
+      mealQuery.limit = safePageSize;
+      final List<MealEntity> pageMeals = mealQuery.find();
+      return PagedResult<IngredientMealUsage>(
+        items: _usageForMeals(pageMeals, cleanUuid),
+        page: safePage,
+        pageSize: safePageSize,
+        totalCount: totalCount,
+      );
+    } finally {
+      mealQuery.close();
+    }
+  }
+
   List<MealEntity> getMealsForDate(String dateKey) {
     return getAllActive()
         .where((MealEntity meal) => meal.dateKey == dateKey)
@@ -393,6 +528,103 @@ class MealRepository {
 
   List<MealWithItems> getMealsWithItemsForDate(String dateKey) {
     return _attachItems(getMealsForDate(dateKey));
+  }
+
+  int activeMealInputRevision() {
+    final Query<MealEntity> mealQuery =
+        _mealBox.query(MealEntity_.deletedAtEpochMs.isNull()).build();
+    final PropertyQuery<int> mealRevisionQuery =
+        mealQuery.property(MealEntity_.updatedAtEpochMs);
+    final Query<MealItemEntity> itemQuery =
+        _itemBox.query(MealItemEntity_.deletedAtEpochMs.isNull()).build();
+    final PropertyQuery<int> itemRevisionQuery =
+        itemQuery.property(MealItemEntity_.updatedAtEpochMs);
+    try {
+      final int mealRevision =
+          mealRevisionQuery.count() == 0 ? 0 : mealRevisionQuery.max();
+      final int itemRevision =
+          itemRevisionQuery.count() == 0 ? 0 : itemRevisionQuery.max();
+      return math.max(mealRevision, itemRevision);
+    } finally {
+      itemRevisionQuery.close();
+      itemQuery.close();
+      mealRevisionQuery.close();
+      mealQuery.close();
+    }
+  }
+
+  Condition<MealItemEntity> _ingredientUsageCondition(String ingredientUuid) {
+    return MealItemEntity_.deletedAtEpochMs
+        .isNull()
+        .and(MealItemEntity_.kindCode.equals('ingredient'))
+        .and(MealItemEntity_.sourceUuid.equals(ingredientUuid));
+  }
+
+  Condition<MealEntity> _ingredientUsageMealCondition({
+    String? fromDateKey,
+    String? toDateKey,
+  }) {
+    Condition<MealEntity> condition = MealEntity_.deletedAtEpochMs.isNull();
+    final String cleanFrom = fromDateKey?.trim() ?? '';
+    if (cleanFrom.isNotEmpty) {
+      condition = condition.and(MealEntity_.dateKey.greaterOrEqual(cleanFrom));
+    }
+    final String cleanTo = toDateKey?.trim() ?? '';
+    if (cleanTo.isNotEmpty) {
+      condition = condition.and(MealEntity_.dateKey.lessOrEqual(cleanTo));
+    }
+    return condition;
+  }
+
+  List<IngredientMealUsage> _usageForMeals(
+    List<MealEntity> meals,
+    String ingredientUuid,
+  ) {
+    if (meals.isEmpty) {
+      return const <IngredientMealUsage>[];
+    }
+
+    Condition<MealItemEntity> mealCondition =
+        MealItemEntity_.meal.equals(meals.first.id);
+    for (final MealEntity meal in meals.skip(1)) {
+      mealCondition = mealCondition.or(MealItemEntity_.meal.equals(meal.id));
+    }
+    final Query<MealItemEntity> itemQuery = _itemBox
+        .query(_ingredientUsageCondition(ingredientUuid).and(mealCondition))
+        .order(MealItemEntity_.id)
+        .build();
+    final List<MealItemEntity> rows;
+    try {
+      rows = itemQuery.find();
+    } finally {
+      itemQuery.close();
+    }
+
+    final Map<int, double> gramsByMealId = <int, double>{};
+    final Map<int, int> countByMealId = <int, int>{};
+    for (final MealItemEntity row in rows) {
+      final int mealId = row.meal.targetId;
+      gramsByMealId.update(
+        mealId,
+        (double current) => current + (row.grams ?? 0),
+        ifAbsent: () => row.grams ?? 0,
+      );
+      countByMealId.update(
+        mealId,
+        (int current) => current + 1,
+        ifAbsent: () => 1,
+      );
+    }
+
+    return <IngredientMealUsage>[
+      for (final MealEntity meal in meals)
+        if (countByMealId.containsKey(meal.id))
+          IngredientMealUsage(
+            meal: meal,
+            grams: gramsByMealId[meal.id] ?? 0,
+            registrationCount: countByMealId[meal.id] ?? 0,
+          ),
+    ];
   }
 
   List<MealWithItems> _attachItems(List<MealEntity> meals) {

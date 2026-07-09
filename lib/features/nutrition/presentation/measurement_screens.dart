@@ -8,41 +8,154 @@ import '../../../app/theme/app_spacing.dart';
 import '../../../app/widgets/delayed_loading_indicator.dart';
 import '../../../l10n/l10n.dart';
 import '../../../core/database/objectbox_providers.dart';
+import '../../../core/pagination/paged_result.dart';
 import '../../../shared/widgets/tt_app_card.dart';
 import '../../../shared/widgets/tt_global_nav_fab.dart';
 import '../../../shared/widgets/tt_mini_charts.dart';
 import '../../../shared/widgets/tt_primary_button.dart';
 import '../../../shared/widgets/tt_section_header.dart';
 import '../data/entities/nutrition_tracking_entities.dart';
+import '../data/repositories/measurement_repository.dart';
 import '../domain/weight_measurement_anomaly.dart';
 import 'widgets/anatomical_body_measurements_card.dart';
 
 final FutureProvider<MeasurementHubData> measurementHubProvider =
     FutureProvider<MeasurementHubData>((Ref ref) async {
   final repository = ref.watch(measurementRepositoryProvider);
-  final List<ScaleMeasurementEntity> scaleMeasurements =
-      repository.getScaleMeasurements();
-  final List<TapeMeasurementEntity> tapeMeasurements =
-      repository.getTapeMeasurements();
+  final PagedResult<ScaleMeasurementEntity> scalePage =
+      repository.loadScaleMeasurementPage(page: 1, pageSize: 10);
+  final PagedResult<TapeMeasurementEntity> tapePage =
+      repository.loadTapeMeasurementPage(page: 1, pageSize: 10);
   return MeasurementHubData(
-    scaleMeasurements: scaleMeasurements,
-    tapeMeasurements: tapeMeasurements,
+    scaleMeasurements: scalePage.items,
+    tapeMeasurements: tapePage.items,
+    totalScaleCount: scalePage.totalCount,
+    totalTapeCount: tapePage.totalCount,
     entriesByTapeId: <int, List<TapeMeasurementEntryEntity>>{
-      for (final TapeMeasurementEntity item in tapeMeasurements)
+      for (final TapeMeasurementEntity item in tapePage.items)
         item.id: repository.getTapeEntries(item.id),
     },
   );
 });
 
+@immutable
+class MeasurementHistoryRequest {
+  const MeasurementHistoryRequest({
+    required this.page,
+    required this.type,
+    this.fromDateKey,
+    this.toDateKey,
+    this.pageSize = 10,
+  });
+
+  final int page;
+  final int pageSize;
+  final String type;
+  final String? fromDateKey;
+  final String? toDateKey;
+
+  @override
+  bool operator ==(Object other) {
+    return other is MeasurementHistoryRequest &&
+        other.page == page &&
+        other.pageSize == pageSize &&
+        other.type == type &&
+        other.fromDateKey == fromDateKey &&
+        other.toDateKey == toDateKey;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        page,
+        pageSize,
+        type,
+        fromDateKey,
+        toDateKey,
+      );
+}
+
+class MeasurementHistoryPageData {
+  const MeasurementHistoryPageData({
+    required this.page,
+    required this.entriesByTapeId,
+  });
+
+  final PagedResult<MeasurementHistoryItem> page;
+  final Map<int, List<TapeMeasurementEntryEntity>> entriesByTapeId;
+}
+
+final measurementHistoryPageProvider = FutureProvider.family<
+    MeasurementHistoryPageData, MeasurementHistoryRequest>(
+  (Ref ref, MeasurementHistoryRequest request) async {
+    final repository = ref.watch(measurementRepositoryProvider);
+    final PagedResult<MeasurementHistoryItem> page =
+        repository.loadMeasurementHistoryPage(
+      page: request.page,
+      pageSize: request.pageSize,
+      type: request.type,
+      fromDateKey: request.fromDateKey,
+      toDateKey: request.toDateKey,
+    );
+    return MeasurementHistoryPageData(
+      page: page,
+      entriesByTapeId: <int, List<TapeMeasurementEntryEntity>>{
+        for (final MeasurementHistoryItem item in page.items)
+          if (item.tape != null)
+            item.tape!.id: repository.getTapeEntries(item.tape!.id),
+      },
+    );
+  },
+);
+
+final scaleMeasurementPageProvider =
+    FutureProvider.family<PagedResult<ScaleMeasurementEntity>, int>(
+  (Ref ref, int page) async {
+    return ref.watch(measurementRepositoryProvider).loadScaleMeasurementPage(
+          page: page,
+          pageSize: 10,
+        );
+  },
+);
+
+class TapeMeasurementPageData {
+  const TapeMeasurementPageData({
+    required this.page,
+    required this.entriesByTapeId,
+  });
+
+  final PagedResult<TapeMeasurementEntity> page;
+  final Map<int, List<TapeMeasurementEntryEntity>> entriesByTapeId;
+}
+
+final tapeMeasurementPageProvider =
+    FutureProvider.family<TapeMeasurementPageData, int>(
+  (Ref ref, int page) async {
+    final repository = ref.watch(measurementRepositoryProvider);
+    final PagedResult<TapeMeasurementEntity> result =
+        repository.loadTapeMeasurementPage(page: page, pageSize: 10);
+    return TapeMeasurementPageData(
+      page: result,
+      entriesByTapeId: <int, List<TapeMeasurementEntryEntity>>{
+        for (final TapeMeasurementEntity item in result.items)
+          item.id: repository.getTapeEntries(item.id),
+      },
+    );
+  },
+);
+
 class MeasurementHubData {
   const MeasurementHubData({
     required this.scaleMeasurements,
     required this.tapeMeasurements,
+    required this.totalScaleCount,
+    required this.totalTapeCount,
     required this.entriesByTapeId,
   });
 
   final List<ScaleMeasurementEntity> scaleMeasurements;
   final List<TapeMeasurementEntity> tapeMeasurements;
+  final int totalScaleCount;
+  final int totalTapeCount;
   final Map<int, List<TapeMeasurementEntryEntity>> entriesByTapeId;
 
   ScaleMeasurementEntity? get latestScale {
@@ -158,7 +271,7 @@ class MeasurementsHubScreen extends ConsumerStatefulWidget {
 }
 
 class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
-  static const int _historyPageSize = 15;
+  static const int _historyPageSize = 10;
 
   DateTime? _filterFrom;
   DateTime? _filterTo;
@@ -203,21 +316,18 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
               .where(
                   (ScaleMeasurementEntity item) => _dateMatches(item.dateKey))
               .toList(growable: false);
-          final List<ScaleMeasurementEntity> filteredScale =
-              _filteredScale(data.scaleMeasurements);
-          final List<TapeMeasurementEntity> filteredTape =
-              _filteredTape(data.tapeMeasurements);
-          final List<_MeasurementHistoryRow> history =
-              _mergeMeasurementHistory(filteredScale, filteredTape);
-          final int pageCount =
-              history.isEmpty ? 1 : (history.length / _historyPageSize).ceil();
-          final int safePage = _historyPage.clamp(0, pageCount - 1).toInt();
-          final int pageStart = safePage * _historyPageSize;
-          final int pageEnd =
-              (pageStart + _historyPageSize).clamp(0, history.length).toInt();
-          final List<_MeasurementHistoryRow> visibleHistory = history.isEmpty
-              ? const <_MeasurementHistoryRow>[]
-              : history.sublist(pageStart, pageEnd);
+          final AsyncValue<MeasurementHistoryPageData> historyValue = ref.watch(
+            measurementHistoryPageProvider(
+              MeasurementHistoryRequest(
+                page: _historyPage + 1,
+                pageSize: _historyPageSize,
+                type: _filterType,
+                fromDateKey:
+                    _filterFrom == null ? null : _dateKey(_filterFrom!),
+                toDateKey: _filterTo == null ? null : _dateKey(_filterTo!),
+              ),
+            ),
+          );
           final List<TtChartPoint> weightPoints = _weightTrendFor(chartScale);
           final List<TtChartPoint> bodyFatPoints = _bodyFatTrendFor(chartScale);
 
@@ -239,8 +349,8 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
               const SizedBox(height: AppSpacing.sectionGap),
               _MetricGrid(
                 metrics: <_Metric>[
-                  _Metric('Bilancia', data.scaleMeasurements.length.toString()),
-                  _Metric('Metro', data.tapeMeasurements.length.toString()),
+                  _Metric('Bilancia', data.totalScaleCount.toString()),
+                  _Metric('Metro', data.totalTapeCount.toString()),
                   _Metric(
                     'Ultimo peso',
                     _fmtNullable(data.latestScale?.weightKg, 'kg'),
@@ -359,48 +469,42 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
               const SizedBox(height: AppSpacing.sectionGap),
               const TtSectionHeader(title: 'Ultime misurazioni'),
               const SizedBox(height: AppSpacing.md),
-              if (history.isEmpty)
-                const TtAppCard(
-                  child: Text('Nessuna misurazione per i filtri selezionati.'),
-                )
-              else ...<Widget>[
-                for (final _MeasurementHistoryRow row in visibleHistory)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: row.scale != null
-                        ? _buildScaleTile(
-                            context: context,
-                            ref: ref,
-                            data: data,
-                            item: row.scale!,
-                          )
-                        : _TapeTile(
-                            item: row.tape!,
-                            entries: data.entriesByTapeId[row.tape!.id] ??
-                                const <TapeMeasurementEntryEntity>[],
-                            onTap: () => _showTapeDialog(
-                              context,
-                              ref,
-                              existing: row.tape,
-                              existingEntries:
-                                  data.entriesByTapeId[row.tape!.id] ??
-                                      const <TapeMeasurementEntryEntity>[],
+              historyValue.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+                  child: Center(child: DelayedLoadingIndicator()),
+                ),
+                error: (Object error, StackTrace stackTrace) => TtAppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text('Storico non disponibile: $error'),
+                      const SizedBox(height: AppSpacing.sm),
+                      FilledButton.icon(
+                        onPressed: () => ref.invalidate(
+                          measurementHistoryPageProvider(
+                            MeasurementHistoryRequest(
+                              page: _historyPage + 1,
+                              pageSize: _historyPageSize,
+                              type: _filterType,
+                              fromDateKey: _filterFrom == null
+                                  ? null
+                                  : _dateKey(_filterFrom!),
+                              toDateKey: _filterTo == null
+                                  ? null
+                                  : _dateKey(_filterTo!),
                             ),
                           ),
+                        ),
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Riprova'),
+                      ),
+                    ],
                   ),
-                if (pageCount > 1)
-                  _MeasurementHistoryPager(
-                    page: safePage,
-                    pageCount: pageCount,
-                    total: history.length,
-                    onPrevious: safePage == 0
-                        ? null
-                        : () => setState(() => _historyPage = safePage - 1),
-                    onNext: safePage >= pageCount - 1
-                        ? null
-                        : () => setState(() => _historyPage = safePage + 1),
-                  ),
-              ],
+                ),
+                data: (MeasurementHistoryPageData historyData) =>
+                    _buildHistoryPage(context, ref, data, historyData),
+              ),
             ],
           );
         },
@@ -408,26 +512,58 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
     );
   }
 
-  List<ScaleMeasurementEntity> _filteredScale(
-    List<ScaleMeasurementEntity> measurements,
+  Widget _buildHistoryPage(
+    BuildContext context,
+    WidgetRef ref,
+    MeasurementHubData hubData,
+    MeasurementHistoryPageData historyData,
   ) {
-    if (_filterType == 'tape') {
-      return const <ScaleMeasurementEntity>[];
+    final PagedResult<MeasurementHistoryItem> page = historyData.page;
+    if (page.items.isEmpty) {
+      return const TtAppCard(
+        child: Text('Nessuna misurazione per i filtri selezionati.'),
+      );
     }
-    return measurements
-        .where((ScaleMeasurementEntity item) => _dateMatches(item.dateKey))
-        .toList(growable: false);
-  }
-
-  List<TapeMeasurementEntity> _filteredTape(
-    List<TapeMeasurementEntity> measurements,
-  ) {
-    if (_filterType == 'scale') {
-      return const <TapeMeasurementEntity>[];
-    }
-    return measurements
-        .where((TapeMeasurementEntity item) => _dateMatches(item.dateKey))
-        .toList(growable: false);
+    return Column(
+      children: <Widget>[
+        for (final MeasurementHistoryItem row in page.items)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: row.scale != null
+                ? _buildScaleTile(
+                    context: context,
+                    ref: ref,
+                    data: hubData,
+                    item: row.scale!,
+                  )
+                : _TapeTile(
+                    item: row.tape!,
+                    entries: historyData.entriesByTapeId[row.tape!.id] ??
+                        const <TapeMeasurementEntryEntity>[],
+                    onTap: () => _showTapeDialog(
+                      context,
+                      ref,
+                      existing: row.tape,
+                      existingEntries:
+                          historyData.entriesByTapeId[row.tape!.id] ??
+                              const <TapeMeasurementEntryEntity>[],
+                    ),
+                  ),
+          ),
+        if (page.totalPages > 1)
+          _MeasurementHistoryPager(
+            page: page.page - 1,
+            pageCount: page.totalPages,
+            total: page.totalCount,
+            onPrevious: page.hasPrevious
+                ? () => setState(() => _historyPage = page.page - 2)
+                : null,
+            onNext: page.hasNext
+                ? () => setState(() => _historyPage = page.page)
+                : null,
+          ),
+      ],
+    );
   }
 
   bool _dateMatches(String dateKey) {
@@ -481,37 +617,6 @@ class _MeasurementsHubScreenState extends ConsumerState<MeasurementsHubScreen> {
       _historyPage = 0;
     });
   }
-}
-
-class _MeasurementHistoryRow {
-  const _MeasurementHistoryRow.scale(this.scale) : tape = null;
-  const _MeasurementHistoryRow.tape(this.tape) : scale = null;
-
-  final ScaleMeasurementEntity? scale;
-  final TapeMeasurementEntity? tape;
-
-  String get dateKey => scale?.dateKey ?? tape!.dateKey;
-  int get updatedAtEpochMs => scale?.updatedAtEpochMs ?? tape!.updatedAtEpochMs;
-}
-
-List<_MeasurementHistoryRow> _mergeMeasurementHistory(
-  List<ScaleMeasurementEntity> scale,
-  List<TapeMeasurementEntity> tape,
-) {
-  final List<_MeasurementHistoryRow> rows = <_MeasurementHistoryRow>[
-    for (final ScaleMeasurementEntity item in scale)
-      _MeasurementHistoryRow.scale(item),
-    for (final TapeMeasurementEntity item in tape)
-      _MeasurementHistoryRow.tape(item),
-  ];
-  rows.sort((_MeasurementHistoryRow a, _MeasurementHistoryRow b) {
-    final int dateCompare = b.dateKey.compareTo(a.dateKey);
-    if (dateCompare != 0) {
-      return dateCompare;
-    }
-    return b.updatedAtEpochMs.compareTo(a.updatedAtEpochMs);
-  });
-  return rows;
 }
 
 List<TtChartPoint> _weightTrendFor(
@@ -659,7 +764,7 @@ class _MeasurementHistoryPager extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 Text(
-                  '$total misurazioni · 15 per pagina',
+                  '$total misurazioni - 10 per pagina',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -850,13 +955,22 @@ Future<void> _showMeasurementChartsSheet(
   );
 }
 
-class ScaleMeasurementsScreen extends ConsumerWidget {
+class ScaleMeasurementsScreen extends ConsumerStatefulWidget {
   const ScaleMeasurementsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final AsyncValue<MeasurementHubData> data =
-        ref.watch(measurementHubProvider);
+  ConsumerState<ScaleMeasurementsScreen> createState() =>
+      _ScaleMeasurementsScreenState();
+}
+
+class _ScaleMeasurementsScreenState
+    extends ConsumerState<ScaleMeasurementsScreen> {
+  int _page = 1;
+
+  @override
+  Widget build(BuildContext context) {
+    final AsyncValue<PagedResult<ScaleMeasurementEntity>> value =
+        ref.watch(scaleMeasurementPageProvider(_page));
     return Scaffold(
       appBar: AppBar(
         title: const Text('Bilancia'),
@@ -875,32 +989,60 @@ class ScaleMeasurementsScreen extends ConsumerWidget {
       ),
       bottomNavigationBar:
           const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
-      body: data.when(
+      body: value.when(
         loading: () => const DelayedLoadingIndicator(),
         error: (Object error, StackTrace stackTrace) => _ErrorView(
           error: error,
-          onRetry: () => ref.invalidate(measurementHubProvider),
+          onRetry: () => ref.invalidate(scaleMeasurementPageProvider(_page)),
         ),
-        data: (MeasurementHubData data) {
-          if (data.scaleMeasurements.isEmpty) {
+        data: (PagedResult<ScaleMeasurementEntity> page) {
+          if (page.items.isEmpty && page.hasPrevious) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && _page > 1) {
+                setState(() => _page -= 1);
+              }
+            });
+            return const DelayedLoadingIndicator();
+          }
+          if (page.items.isEmpty) {
             return _EmptyList(
               message: 'Nessuna misurazione bilancia.',
               action: () => _openScaleEditor(context, ref),
             );
           }
-          return ListView.separated(
+          final MeasurementHubData pageData = MeasurementHubData(
+            scaleMeasurements: page.items,
+            tapeMeasurements: const <TapeMeasurementEntity>[],
+            totalScaleCount: page.totalCount,
+            totalTapeCount: 0,
+            entriesByTapeId: const <int, List<TapeMeasurementEntryEntity>>{},
+          );
+          return ListView(
             padding: _screenPadding,
-            itemCount: data.scaleMeasurements.length,
-            separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.md),
-            itemBuilder: (BuildContext context, int index) {
-              final ScaleMeasurementEntity item = data.scaleMeasurements[index];
-              return _buildScaleTile(
-                context: context,
-                ref: ref,
-                data: data,
-                item: item,
-              );
-            },
+            children: <Widget>[
+              for (final ScaleMeasurementEntity item in page.items)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                  child: _buildScaleTile(
+                    context: context,
+                    ref: ref,
+                    data: pageData,
+                    item: item,
+                  ),
+                ),
+              if (page.totalPages > 1)
+                _MeasurementHistoryPager(
+                  page: page.page - 1,
+                  pageCount: page.totalPages,
+                  total: page.totalCount,
+                  onPrevious: page.hasPrevious
+                      ? () => setState(() => _page = page.page - 1)
+                      : null,
+                  onNext: page.hasNext
+                      ? () => setState(() => _page = page.page + 1)
+                      : null,
+                ),
+            ],
           );
         },
       ),
@@ -908,13 +1050,22 @@ class ScaleMeasurementsScreen extends ConsumerWidget {
   }
 }
 
-class TapeMeasurementsScreen extends ConsumerWidget {
+class TapeMeasurementsScreen extends ConsumerStatefulWidget {
   const TapeMeasurementsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final AsyncValue<MeasurementHubData> data =
-        ref.watch(measurementHubProvider);
+  ConsumerState<TapeMeasurementsScreen> createState() =>
+      _TapeMeasurementsScreenState();
+}
+
+class _TapeMeasurementsScreenState
+    extends ConsumerState<TapeMeasurementsScreen> {
+  int _page = 1;
+
+  @override
+  Widget build(BuildContext context) {
+    final AsyncValue<TapeMeasurementPageData> value =
+        ref.watch(tapeMeasurementPageProvider(_page));
     return Scaffold(
       appBar: AppBar(
         title: const Text('Metro'),
@@ -928,29 +1079,40 @@ class TapeMeasurementsScreen extends ConsumerWidget {
       ),
       bottomNavigationBar:
           const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
-      body: data.when(
+      body: value.when(
         loading: () => const DelayedLoadingIndicator(),
         error: (Object error, StackTrace stackTrace) => _ErrorView(
           error: error,
-          onRetry: () => ref.invalidate(measurementHubProvider),
+          onRetry: () => ref.invalidate(tapeMeasurementPageProvider(_page)),
         ),
-        data: (MeasurementHubData data) {
+        data: (TapeMeasurementPageData data) {
+          final PagedResult<TapeMeasurementEntity> page = data.page;
+          if (page.items.isEmpty && page.hasPrevious) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && _page > 1) {
+                setState(() => _page -= 1);
+              }
+            });
+            return const DelayedLoadingIndicator();
+          }
           return ListView(
             padding: _screenPadding,
             children: <Widget>[
-              AnatomicalBodyMeasurementsCard(
-                values: <String, double?>{
-                  for (final TapeMeasurementEntryEntity entry
-                      in data.latestTapeEntries())
-                    entry.measurementCode: entry.valueCm,
-                },
-                onRegionTap: (String code) =>
-                    _showBodyRegionSheet(context, ref, data, code),
-              ),
-              const SizedBox(height: AppSpacing.sectionGap),
+              if (page.items.isNotEmpty)
+                AnatomicalBodyMeasurementsCard(
+                  values: <String, double?>{
+                    for (final TapeMeasurementEntryEntity entry
+                        in data.entriesByTapeId[page.items.first.id] ??
+                            const <TapeMeasurementEntryEntity>[])
+                      entry.measurementCode: entry.valueCm,
+                  },
+                  onRegionTap: (String _) {},
+                ),
+              if (page.items.isNotEmpty)
+                const SizedBox(height: AppSpacing.sectionGap),
               const TtSectionHeader(title: 'Registrazioni metro'),
               const SizedBox(height: AppSpacing.md),
-              if (data.tapeMeasurements.isEmpty)
+              if (page.items.isEmpty)
                 TtAppCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -966,22 +1128,34 @@ class TapeMeasurementsScreen extends ConsumerWidget {
                   ),
                 )
               else
-                for (final TapeMeasurementEntity item
-                    in data.tapeMeasurements) ...<Widget>[
-                  _TapeTile(
-                    item: item,
-                    entries: data.entriesByTapeId[item.id] ??
-                        const <TapeMeasurementEntryEntity>[],
-                    onTap: () => _showTapeDialog(
-                      context,
-                      ref,
-                      existing: item,
-                      existingEntries: data.entriesByTapeId[item.id] ??
+                for (final TapeMeasurementEntity item in page.items)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                    child: _TapeTile(
+                      item: item,
+                      entries: data.entriesByTapeId[item.id] ??
                           const <TapeMeasurementEntryEntity>[],
+                      onTap: () => _showTapeDialog(
+                        context,
+                        ref,
+                        existing: item,
+                        existingEntries: data.entriesByTapeId[item.id] ??
+                            const <TapeMeasurementEntryEntity>[],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.md),
-                ],
+              if (page.totalPages > 1)
+                _MeasurementHistoryPager(
+                  page: page.page - 1,
+                  pageCount: page.totalPages,
+                  total: page.totalCount,
+                  onPrevious: page.hasPrevious
+                      ? () => setState(() => _page = page.page - 1)
+                      : null,
+                  onNext: page.hasNext
+                      ? () => setState(() => _page = page.page + 1)
+                      : null,
+                ),
             ],
           );
         },
@@ -1023,6 +1197,9 @@ void _confirmWeightAnomaly(
   item.weightAnomalyConfirmationKey = confirmationKey;
   ref.read(measurementRepositoryProvider).saveScale(item);
   ref.invalidate(measurementHubProvider);
+  ref.invalidate(scaleMeasurementPageProvider);
+  ref.invalidate(tapeMeasurementPageProvider);
+  ref.invalidate(measurementHistoryPageProvider);
 }
 
 class _ScaleTile extends StatelessWidget {
@@ -1411,6 +1588,9 @@ Future<void> _openScaleEditor(
       extra: existing,
     );
     ref.invalidate(measurementHubProvider);
+    ref.invalidate(scaleMeasurementPageProvider);
+    ref.invalidate(tapeMeasurementPageProvider);
+    ref.invalidate(measurementHistoryPageProvider);
   } catch (_) {
     if (!context.mounted) {
       return;
@@ -1753,6 +1933,9 @@ Future<void> _showScaleDialog(
   if (action == 'delete' && existing != null) {
     ref.read(measurementRepositoryProvider).softDeleteScale(existing);
     ref.invalidate(measurementHubProvider);
+    ref.invalidate(scaleMeasurementPageProvider);
+    ref.invalidate(tapeMeasurementPageProvider);
+    ref.invalidate(measurementHistoryPageProvider);
     disposeScaleControllers();
     return;
   }
@@ -1799,6 +1982,9 @@ Future<void> _showScaleDialog(
   measurement.notes = notes.text.trim();
   repository.saveScale(measurement);
   ref.invalidate(measurementHubProvider);
+  ref.invalidate(scaleMeasurementPageProvider);
+  ref.invalidate(tapeMeasurementPageProvider);
+  ref.invalidate(measurementHistoryPageProvider);
   disposeScaleControllers();
 }
 
@@ -2058,6 +2244,9 @@ Future<void> _showTapeDialog(
   if (action == 'delete' && existing != null) {
     ref.read(measurementRepositoryProvider).softDeleteTape(existing);
     ref.invalidate(measurementHubProvider);
+    ref.invalidate(scaleMeasurementPageProvider);
+    ref.invalidate(tapeMeasurementPageProvider);
+    ref.invalidate(measurementHistoryPageProvider);
     disposeTapeControllers();
     return;
   }
@@ -2092,6 +2281,9 @@ Future<void> _showTapeDialog(
     ],
   );
   ref.invalidate(measurementHubProvider);
+  ref.invalidate(scaleMeasurementPageProvider);
+  ref.invalidate(tapeMeasurementPageProvider);
+  ref.invalidate(measurementHistoryPageProvider);
   disposeTapeControllers();
 }
 

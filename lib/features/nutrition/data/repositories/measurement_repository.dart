@@ -1,11 +1,24 @@
-import 'package:objectbox/objectbox.dart';
-
 import '../../../../core/identifiers/uuid_generator.dart';
+import '../../../../core/pagination/paged_result.dart';
 import '../../../../core/time/clock.dart';
+import '../../../../objectbox.g.dart';
 import '../entities/nutrition_tracking_entities.dart';
 import '../services/scale_measurement_validator.dart';
 import '../services/target_input_change_bus.dart';
 import '../services/target_input_mutation_service.dart';
+
+class MeasurementHistoryItem {
+  const MeasurementHistoryItem.scale(this.scale) : tape = null;
+  const MeasurementHistoryItem.tape(this.tape) : scale = null;
+
+  final ScaleMeasurementEntity? scale;
+  final TapeMeasurementEntity? tape;
+
+  bool get isScale => scale != null;
+  String get dateKey => scale?.dateKey ?? tape!.dateKey;
+  int get id => scale?.id ?? tape!.id;
+  int get updatedAtEpochMs => scale?.updatedAtEpochMs ?? tape!.updatedAtEpochMs;
+}
 
 class MeasurementRepository {
   MeasurementRepository(
@@ -33,67 +46,107 @@ class MeasurementRepository {
   }
 
   List<ScaleMeasurementEntity> getScaleMeasurements() {
-    return _scaleBox
-        .getAll()
-        .where((ScaleMeasurementEntity item) => item.deletedAtEpochMs == null)
-        .toList()
-      ..sort((ScaleMeasurementEntity a, ScaleMeasurementEntity b) {
-        return b.dateKey.compareTo(a.dateKey);
-      });
+    final Query<ScaleMeasurementEntity> query = _scaleBox
+        .query(_scalePageCondition())
+        .order(
+          ScaleMeasurementEntity_.dateKey,
+          flags: Order.descending,
+        )
+        .order(
+          ScaleMeasurementEntity_.id,
+          flags: Order.descending,
+        )
+        .build();
+    try {
+      return query.find();
+    } finally {
+      query.close();
+    }
   }
 
   List<TapeMeasurementEntity> getTapeMeasurements() {
-    return _tapeBox
-        .getAll()
-        .where((TapeMeasurementEntity item) => item.deletedAtEpochMs == null)
-        .toList()
-      ..sort((TapeMeasurementEntity a, TapeMeasurementEntity b) {
-        return b.dateKey.compareTo(a.dateKey);
-      });
+    final Query<TapeMeasurementEntity> query = _tapeBox
+        .query(_tapePageCondition())
+        .order(
+          TapeMeasurementEntity_.dateKey,
+          flags: Order.descending,
+        )
+        .order(
+          TapeMeasurementEntity_.id,
+          flags: Order.descending,
+        )
+        .build();
+    try {
+      return query.find();
+    } finally {
+      query.close();
+    }
   }
 
   List<TapeMeasurementEntryEntity> getTapeEntries(int tapeMeasurementId) {
-    return _tapeEntryBox
-        .getAll()
-        .where(
-          (TapeMeasurementEntryEntity entry) =>
-              entry.tapeMeasurement.targetId == tapeMeasurementId &&
-              entry.deletedAtEpochMs == null,
+    if (tapeMeasurementId <= 0) {
+      return const <TapeMeasurementEntryEntity>[];
+    }
+    final Query<TapeMeasurementEntryEntity> query = _tapeEntryBox
+        .query(
+          TapeMeasurementEntryEntity_.deletedAtEpochMs.isNull().and(
+                TapeMeasurementEntryEntity_.tapeMeasurement.equals(
+                  tapeMeasurementId,
+                ),
+              ),
         )
-        .toList()
-      ..sort((TapeMeasurementEntryEntity a, TapeMeasurementEntryEntity b) {
-        return a.position.compareTo(b.position);
-      });
+        .order(TapeMeasurementEntryEntity_.position)
+        .order(TapeMeasurementEntryEntity_.id)
+        .build();
+    try {
+      return query.find();
+    } finally {
+      query.close();
+    }
   }
 
   ScaleMeasurementEntity? findScaleByDate(String dateKey) {
-    final List<ScaleMeasurementEntity> matches = getScaleMeasurements()
-        .where((ScaleMeasurementEntity item) => item.dateKey == dateKey)
-        .toList();
-    if (matches.isEmpty) {
-      return null;
+    final Query<ScaleMeasurementEntity> query = _scaleBox
+        .query(
+          ScaleMeasurementEntity_.deletedAtEpochMs
+              .isNull()
+              .and(ScaleMeasurementEntity_.dateKey.equals(dateKey.trim())),
+        )
+        .order(
+          ScaleMeasurementEntity_.measurementTime,
+          flags: Order.descending,
+        )
+        .order(
+          ScaleMeasurementEntity_.updatedAtEpochMs,
+          flags: Order.descending,
+        )
+        .order(ScaleMeasurementEntity_.id, flags: Order.descending)
+        .build();
+    query.limit = 1;
+    try {
+      return query.findFirst();
+    } finally {
+      query.close();
     }
-    matches.sort((ScaleMeasurementEntity a, ScaleMeasurementEntity b) {
-      final int timeCompare = b.measurementTime.compareTo(a.measurementTime);
-      if (timeCompare != 0) {
-        return timeCompare;
-      }
-      return b.updatedAtEpochMs.compareTo(a.updatedAtEpochMs);
-    });
-    return matches.first;
   }
 
   ScaleMeasurementEntity? latestScaleOnOrBefore(String dateKey) {
-    final List<ScaleMeasurementEntity> matches = getScaleMeasurements()
-        .where(
-          (ScaleMeasurementEntity item) =>
-              item.weightKg != null && item.dateKey.compareTo(dateKey) <= 0,
+    final Query<ScaleMeasurementEntity> query = _scaleBox
+        .query(
+          ScaleMeasurementEntity_.deletedAtEpochMs
+              .isNull()
+              .and(ScaleMeasurementEntity_.weightKg.notNull())
+              .and(ScaleMeasurementEntity_.dateKey.lessOrEqual(dateKey)),
         )
-        .toList();
-    if (matches.isEmpty) {
-      return null;
+        .order(ScaleMeasurementEntity_.dateKey, flags: Order.descending)
+        .order(ScaleMeasurementEntity_.id, flags: Order.descending)
+        .build();
+    query.limit = 1;
+    try {
+      return query.findFirst();
+    } finally {
+      query.close();
     }
-    return matches.first;
   }
 
   List<TapeMeasurementEntryEntity> latestTapeEntriesForCode(String code) {
@@ -111,13 +164,239 @@ class MeasurementRepository {
   }
 
   ScaleMeasurementEntity? latestScale() {
-    final List<ScaleMeasurementEntity> items = getScaleMeasurements();
-    return items.isEmpty ? null : items.first;
+    final PagedResult<ScaleMeasurementEntity> page =
+        loadScaleMeasurementPage(page: 1, pageSize: 1);
+    return page.items.isEmpty ? null : page.items.first;
   }
 
   TapeMeasurementEntity? latestTape() {
-    final List<TapeMeasurementEntity> items = getTapeMeasurements();
-    return items.isEmpty ? null : items.first;
+    final PagedResult<TapeMeasurementEntity> page =
+        loadTapeMeasurementPage(page: 1, pageSize: 1);
+    return page.items.isEmpty ? null : page.items.first;
+  }
+
+  int activeScaleRevision() {
+    final Query<ScaleMeasurementEntity> query =
+        _scaleBox.query(_scalePageCondition()).build();
+    final PropertyQuery<int> propertyQuery =
+        query.property(ScaleMeasurementEntity_.updatedAtEpochMs);
+    try {
+      if (propertyQuery.count() == 0) {
+        return 0;
+      }
+      return propertyQuery.max();
+    } finally {
+      propertyQuery.close();
+      query.close();
+    }
+  }
+
+  PagedResult<ScaleMeasurementEntity> loadScaleMeasurementPage({
+    required int page,
+    int pageSize = 10,
+    String? fromDateKey,
+    String? toDateKey,
+  }) {
+    final int safePage = PagedResult.normalizePage(page);
+    final int safePageSize = PagedResult.normalizePageSize(pageSize);
+    final Query<ScaleMeasurementEntity> query = _scaleBox
+        .query(
+          _scalePageCondition(
+            fromDateKey: fromDateKey,
+            toDateKey: toDateKey,
+          ),
+        )
+        .order(ScaleMeasurementEntity_.dateKey, flags: Order.descending)
+        .order(ScaleMeasurementEntity_.id, flags: Order.descending)
+        .build();
+    try {
+      final int totalCount = query.count();
+      query.offset = (safePage - 1) * safePageSize;
+      query.limit = safePageSize;
+      return PagedResult<ScaleMeasurementEntity>(
+        items: query.find(),
+        page: safePage,
+        pageSize: safePageSize,
+        totalCount: totalCount,
+      );
+    } finally {
+      query.close();
+    }
+  }
+
+  PagedResult<TapeMeasurementEntity> loadTapeMeasurementPage({
+    required int page,
+    int pageSize = 10,
+    String? fromDateKey,
+    String? toDateKey,
+  }) {
+    final int safePage = PagedResult.normalizePage(page);
+    final int safePageSize = PagedResult.normalizePageSize(pageSize);
+    final Query<TapeMeasurementEntity> query = _tapeBox
+        .query(
+          _tapePageCondition(
+            fromDateKey: fromDateKey,
+            toDateKey: toDateKey,
+          ),
+        )
+        .order(TapeMeasurementEntity_.dateKey, flags: Order.descending)
+        .order(TapeMeasurementEntity_.id, flags: Order.descending)
+        .build();
+    try {
+      final int totalCount = query.count();
+      query.offset = (safePage - 1) * safePageSize;
+      query.limit = safePageSize;
+      return PagedResult<TapeMeasurementEntity>(
+        items: query.find(),
+        page: safePage,
+        pageSize: safePageSize,
+        totalCount: totalCount,
+      );
+    } finally {
+      query.close();
+    }
+  }
+
+  int countScaleMeasurements({
+    String? fromDateKey,
+    String? toDateKey,
+  }) {
+    final Query<ScaleMeasurementEntity> query = _scaleBox
+        .query(
+          _scalePageCondition(
+            fromDateKey: fromDateKey,
+            toDateKey: toDateKey,
+          ),
+        )
+        .build();
+    try {
+      return query.count();
+    } finally {
+      query.close();
+    }
+  }
+
+  int countTapeMeasurements({
+    String? fromDateKey,
+    String? toDateKey,
+  }) {
+    final Query<TapeMeasurementEntity> query = _tapeBox
+        .query(
+          _tapePageCondition(
+            fromDateKey: fromDateKey,
+            toDateKey: toDateKey,
+          ),
+        )
+        .build();
+    try {
+      return query.count();
+    } finally {
+      query.close();
+    }
+  }
+
+  PagedResult<MeasurementHistoryItem> loadMeasurementHistoryPage({
+    required int page,
+    int pageSize = 10,
+    String type = 'all',
+    String? fromDateKey,
+    String? toDateKey,
+  }) {
+    final int safePage = PagedResult.normalizePage(page);
+    final int safePageSize = PagedResult.normalizePageSize(pageSize);
+    final String cleanType = type == 'scale' || type == 'tape' ? type : 'all';
+    if (cleanType == 'scale') {
+      final PagedResult<ScaleMeasurementEntity> result =
+          loadScaleMeasurementPage(
+        page: safePage,
+        pageSize: safePageSize,
+        fromDateKey: fromDateKey,
+        toDateKey: toDateKey,
+      );
+      return PagedResult<MeasurementHistoryItem>(
+        items: <MeasurementHistoryItem>[
+          for (final ScaleMeasurementEntity item in result.items)
+            MeasurementHistoryItem.scale(item),
+        ],
+        page: result.page,
+        pageSize: result.pageSize,
+        totalCount: result.totalCount,
+      );
+    }
+    if (cleanType == 'tape') {
+      final PagedResult<TapeMeasurementEntity> result = loadTapeMeasurementPage(
+        page: safePage,
+        pageSize: safePageSize,
+        fromDateKey: fromDateKey,
+        toDateKey: toDateKey,
+      );
+      return PagedResult<MeasurementHistoryItem>(
+        items: <MeasurementHistoryItem>[
+          for (final TapeMeasurementEntity item in result.items)
+            MeasurementHistoryItem.tape(item),
+        ],
+        page: result.page,
+        pageSize: result.pageSize,
+        totalCount: result.totalCount,
+      );
+    }
+
+    final int boundedLimit = safePage * safePageSize;
+    final Query<ScaleMeasurementEntity> scaleQuery = _scaleBox
+        .query(
+          _scalePageCondition(
+            fromDateKey: fromDateKey,
+            toDateKey: toDateKey,
+          ),
+        )
+        .order(ScaleMeasurementEntity_.dateKey, flags: Order.descending)
+        .order(ScaleMeasurementEntity_.updatedAtEpochMs,
+            flags: Order.descending)
+        .order(ScaleMeasurementEntity_.id, flags: Order.descending)
+        .build();
+    final Query<TapeMeasurementEntity> tapeQuery = _tapeBox
+        .query(
+          _tapePageCondition(
+            fromDateKey: fromDateKey,
+            toDateKey: toDateKey,
+          ),
+        )
+        .order(TapeMeasurementEntity_.dateKey, flags: Order.descending)
+        .order(TapeMeasurementEntity_.updatedAtEpochMs, flags: Order.descending)
+        .order(TapeMeasurementEntity_.id, flags: Order.descending)
+        .build();
+    try {
+      final int totalCount = scaleQuery.count() + tapeQuery.count();
+      scaleQuery.limit = boundedLimit;
+      tapeQuery.limit = boundedLimit;
+      final List<MeasurementHistoryItem> merged = <MeasurementHistoryItem>[
+        for (final ScaleMeasurementEntity item in scaleQuery.find())
+          MeasurementHistoryItem.scale(item),
+        for (final TapeMeasurementEntity item in tapeQuery.find())
+          MeasurementHistoryItem.tape(item),
+      ]..sort((MeasurementHistoryItem a, MeasurementHistoryItem b) {
+          final int dateCompare = b.dateKey.compareTo(a.dateKey);
+          if (dateCompare != 0) return dateCompare;
+          final int revisionCompare =
+              b.updatedAtEpochMs.compareTo(a.updatedAtEpochMs);
+          if (revisionCompare != 0) return revisionCompare;
+          if (a.isScale != b.isScale) return a.isScale ? -1 : 1;
+          return b.id.compareTo(a.id);
+        });
+      final int offset = (safePage - 1) * safePageSize;
+      final List<MeasurementHistoryItem> items = offset >= merged.length
+          ? const <MeasurementHistoryItem>[]
+          : merged.skip(offset).take(safePageSize).toList(growable: false);
+      return PagedResult<MeasurementHistoryItem>(
+        items: items,
+        page: safePage,
+        pageSize: safePageSize,
+        totalCount: totalCount,
+      );
+    } finally {
+      tapeQuery.close();
+      scaleQuery.close();
+    }
   }
 
   ScaleMeasurementEntity saveScale(ScaleMeasurementEntity measurement) {
@@ -336,5 +615,47 @@ class MeasurementRepository {
       entry.createdAtEpochMs = now;
     }
     entry.updatedAtEpochMs = now;
+  }
+
+  Condition<ScaleMeasurementEntity> _scalePageCondition({
+    String? fromDateKey,
+    String? toDateKey,
+  }) {
+    Condition<ScaleMeasurementEntity> condition =
+        ScaleMeasurementEntity_.deletedAtEpochMs.isNull();
+    final String? cleanFrom = fromDateKey?.trim();
+    if (cleanFrom != null && cleanFrom.isNotEmpty) {
+      condition = condition.and(ScaleMeasurementEntity_.dateKey.greaterOrEqual(
+        cleanFrom,
+      ));
+    }
+    final String? cleanTo = toDateKey?.trim();
+    if (cleanTo != null && cleanTo.isNotEmpty) {
+      condition = condition.and(ScaleMeasurementEntity_.dateKey.lessOrEqual(
+        cleanTo,
+      ));
+    }
+    return condition;
+  }
+
+  Condition<TapeMeasurementEntity> _tapePageCondition({
+    String? fromDateKey,
+    String? toDateKey,
+  }) {
+    Condition<TapeMeasurementEntity> condition =
+        TapeMeasurementEntity_.deletedAtEpochMs.isNull();
+    final String? cleanFrom = fromDateKey?.trim();
+    if (cleanFrom != null && cleanFrom.isNotEmpty) {
+      condition = condition.and(TapeMeasurementEntity_.dateKey.greaterOrEqual(
+        cleanFrom,
+      ));
+    }
+    final String? cleanTo = toDateKey?.trim();
+    if (cleanTo != null && cleanTo.isNotEmpty) {
+      condition = condition.and(TapeMeasurementEntity_.dateKey.lessOrEqual(
+        cleanTo,
+      ));
+    }
+    return condition;
   }
 }

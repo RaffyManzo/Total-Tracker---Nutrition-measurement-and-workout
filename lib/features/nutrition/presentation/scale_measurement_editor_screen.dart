@@ -7,6 +7,12 @@ import 'package:uuid/uuid.dart';
 import '../../../core/database/objectbox_providers.dart';
 import '../data/entities/nutrition_tracking_entities.dart';
 import '../data/services/scale_device_catalog_service.dart';
+import 'measurement_screens.dart'
+    show
+        measurementHistoryPageProvider,
+        measurementHubProvider,
+        scaleMeasurementPageProvider,
+        tapeMeasurementPageProvider;
 
 class ScaleMeasurementEditorScreen extends ConsumerStatefulWidget {
   const ScaleMeasurementEditorScreen({this.initial, super.key});
@@ -106,6 +112,14 @@ class _ScaleMeasurementEditorScreenState
         title: Text(widget.initial == null
             ? 'Nuova misurazione bilancia'
             : 'Modifica misurazione bilancia'),
+        actions: <Widget>[
+          if (widget.initial != null)
+            IconButton(
+              tooltip: 'Elimina misurazione',
+              onPressed: _saving ? null : _delete,
+              icon: const Icon(Icons.delete_outline_rounded),
+            ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -282,6 +296,66 @@ class _ScaleMeasurementEditorScreenState
       if (mounted) setState(() => _status = 'Salvataggio non riuscito: $error');
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _delete() async {
+    final ScaleMeasurementEntity? initial = widget.initial;
+    if (initial == null) {
+      return;
+    }
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Elimina misurazione'),
+          content: const Text(
+            'La pesata verra rimossa dalla lista attiva e dai trasferimenti. '
+            'Le misurazioni metro non saranno modificate.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Annulla'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(dialogContext).colorScheme.error,
+                foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Elimina'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _status = null;
+    });
+    bool popped = false;
+    try {
+      ref.read(measurementRepositoryProvider).softDeleteScale(initial);
+      ref.invalidate(measurementHubProvider);
+      ref.invalidate(scaleMeasurementPageProvider);
+      ref.invalidate(tapeMeasurementPageProvider);
+      ref.invalidate(measurementHistoryPageProvider);
+      ref.invalidate(profileSettingsRevisionProvider);
+      if (!mounted) return;
+      popped = true;
+      Navigator.of(context).pop(true);
+    } on Object catch (error) {
+      if (mounted) {
+        setState(() => _status = 'Eliminazione non riuscita: $error');
+      }
+    } finally {
+      if (mounted && !popped) {
+        setState(() => _saving = false);
+      }
     }
   }
 }

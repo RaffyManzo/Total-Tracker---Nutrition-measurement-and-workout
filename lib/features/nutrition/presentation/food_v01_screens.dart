@@ -18,6 +18,7 @@ import '../../../app/widgets/delayed_loading_indicator.dart';
 import '../../../core/database/objectbox_providers.dart';
 import '../../../core/diagnostics/app_diagnostics.dart';
 import '../../../core/diagnostics/interaction_trace.dart';
+import '../../../core/pagination/paged_result.dart';
 import '../../../core/preferences/food_service_preferences.dart';
 import '../../../shared/widgets/tt_app_card.dart';
 import '../../../shared/widgets/tt_global_nav_fab.dart';
@@ -32,6 +33,7 @@ import '../data/entities/ingredient_entity.dart';
 import '../data/entities/nutrition_tracking_entities.dart';
 import '../data/import/obsidian_food_seed.dart';
 import '../data/repositories/daily_record_repository.dart';
+import '../data/repositories/ingredient_repository.dart';
 import '../data/repositories/measurement_repository.dart';
 import '../data/repositories/meal_repository.dart';
 import '../data/repositories/recipe_repository.dart';
@@ -193,14 +195,44 @@ final FutureProvider<List<MealWithItems>> foodMealsV01Provider =
   return ref.watch(mealRepositoryProvider).getAllWithItems();
 });
 
-final FutureProvider<List<IngredientEntity>> ingredientArchiveProvider =
-    FutureProvider<List<IngredientEntity>>((Ref ref) async {
-  return ref
-      .watch(ingredientRepositoryProvider)
-      .getAllActive()
-      .take(25)
-      .toList();
-});
+final ingredientArchiveProvider = FutureProvider.family<
+    PagedResult<IngredientEntity>, IngredientArchiveRequest>(
+  (Ref ref, IngredientArchiveRequest request) async {
+    return ref.watch(ingredientRepositoryProvider).loadIngredientPage(
+          page: request.page,
+          pageSize: request.pageSize,
+          search: request.search,
+          brand: request.brand,
+        );
+  },
+);
+
+@immutable
+class IngredientArchiveRequest {
+  const IngredientArchiveRequest({
+    required this.page,
+    required this.search,
+    required this.brand,
+    this.pageSize = 10,
+  });
+
+  final int page;
+  final String search;
+  final String brand;
+  final int pageSize;
+
+  @override
+  bool operator ==(Object other) {
+    return other is IngredientArchiveRequest &&
+        other.page == page &&
+        other.search == search &&
+        other.brand == brand &&
+        other.pageSize == pageSize;
+  }
+
+  @override
+  int get hashCode => Object.hash(page, search, brand, pageSize);
+}
 
 final FutureProvider<List<RecipeEntity>> recipeArchiveProvider =
     FutureProvider<List<RecipeEntity>>((Ref ref) async {
@@ -4747,8 +4779,6 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
   late MealWithItems _details;
   final MealIngredientBatchPickerController _ingredientPickerController =
       MealIngredientBatchPickerController();
-  List<IngredientEntity> _ingredientPickerIngredients =
-      const <IngredientEntity>[];
   bool _ingredientPickerOpen = false;
 
   @override
@@ -4950,8 +4980,9 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
             ),
           ],
         ),
-        bottomNavigationBar:
-            const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
+        bottomNavigationBar: _ingredientPickerOpen
+            ? null
+            : const TtFoodBottomNavBar(activeItem: TtFoodNavItem.none),
         body: Stack(
           children: <Widget>[
             ListView(
@@ -5053,7 +5084,21 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
                 child: MealIngredientBatchPickerSheet(
                   key: const ValueKey<String>('meal-ingredient-picker-sheet'),
                   controller: _ingredientPickerController,
-                  ingredients: _ingredientPickerIngredients,
+                  loadPage: ({
+                    required int page,
+                    required int pageSize,
+                    required String search,
+                    String brand = '',
+                  }) {
+                    return ref
+                        .read(ingredientRepositoryProvider)
+                        .loadIngredientPage(
+                          page: page,
+                          pageSize: pageSize,
+                          search: search,
+                          brand: brand,
+                        );
+                  },
                   onConfirm: _confirmIngredientPicker,
                   onDiscard: _discardIngredientPicker,
                 ),
@@ -5480,15 +5525,7 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
       _ingredientPickerController.expand();
       return;
     }
-    final List<IngredientEntity> ingredients =
-        ref.read(ingredientRepositoryProvider).getAllActive();
-    if (ingredients.isEmpty) {
-      _snack('Nessun ingrediente salvato.');
-      return;
-    }
-
     setState(() {
-      _ingredientPickerIngredients = ingredients;
       _ingredientPickerOpen = true;
     });
   }
@@ -5497,7 +5534,6 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
     if (!mounted) return;
     setState(() {
       _ingredientPickerOpen = false;
-      _ingredientPickerIngredients = const <IngredientEntity>[];
     });
   }
 
@@ -5522,7 +5558,6 @@ class _FoodMealDetailScreenState extends ConsumerState<FoodMealDetailScreen> {
     setState(() {
       _details = next;
       _ingredientPickerOpen = false;
-      _ingredientPickerIngredients = const <IngredientEntity>[];
     });
     FoodDataRefreshBus.publishMeal(
       dateKey: next.meal.dateKey,
@@ -5740,9 +5775,14 @@ class _PersistentIngredientListScreenState
   bool _searchingOnline = false;
   String _onlineError = '';
   int _onlineAttempt = 0;
+  int _localPage = 1;
+  Timer? _localSearchDebounce;
+  String _localSearch = '';
+  String _localBrand = '';
 
   @override
   void dispose() {
+    _localSearchDebounce?.cancel();
     _query.dispose();
     _brandFilter.dispose();
     super.dispose();
@@ -5750,8 +5790,18 @@ class _PersistentIngredientListScreenState
 
   @override
   Widget build(BuildContext context) {
-    final AsyncValue<List<IngredientEntity>> ingredientsValue =
-        ref.watch(ingredientArchiveProvider);
+    final String query = _localSearch;
+    final String brandQuery = _localBrand;
+    final AsyncValue<PagedResult<IngredientEntity>> ingredientsValue =
+        ref.watch(
+      ingredientArchiveProvider(
+        IngredientArchiveRequest(
+          page: _localPage,
+          search: query,
+          brand: brandQuery,
+        ),
+      ),
+    );
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ingredienti'),
@@ -5776,25 +5826,16 @@ class _PersistentIngredientListScreenState
           error: error,
           onRetry: () => ref.invalidate(ingredientArchiveProvider),
         ),
-        data: (List<IngredientEntity> ingredients) {
-          final String query = _query.text.trim().toLowerCase();
-          final String brandQuery = _brandFilter.text.trim().toLowerCase();
-          final List<IngredientEntity> filtered =
-              ingredients.where((IngredientEntity ingredient) {
-            final bool nameMatch = query.isEmpty ||
-                ingredient.name.toLowerCase().contains(query) ||
-                ingredient.barcode.toLowerCase().contains(query);
-            final bool brandMatch = brandQuery.isEmpty ||
-                ingredient.brand.toLowerCase().contains(brandQuery);
-            return nameMatch && brandMatch;
-          }).toList();
+        data: (PagedResult<IngredientEntity> ingredientsPage) {
+          final String onlineQuery = query.toLowerCase();
+          final String onlineBrandQuery = brandQuery.toLowerCase();
           final List<OpenFoodFactsProduct> filteredOnline =
               _onlineResults.where((OpenFoodFactsProduct product) {
-            final bool nameMatch = query.isEmpty ||
-                product.name.toLowerCase().contains(query) ||
-                product.code.toLowerCase().contains(query);
-            final bool brandMatch = brandQuery.isEmpty ||
-                product.brand.toLowerCase().contains(brandQuery);
+            final bool nameMatch = onlineQuery.isEmpty ||
+                product.name.toLowerCase().contains(onlineQuery) ||
+                product.code.toLowerCase().contains(onlineQuery);
+            final bool brandMatch = onlineBrandQuery.isEmpty ||
+                product.brand.toLowerCase().contains(onlineBrandQuery);
             return nameMatch && brandMatch;
           }).toList();
           return ListView(
@@ -5806,7 +5847,7 @@ class _PersistentIngredientListScreenState
                   labelText: 'Cerca alimento salvato',
                   prefixIcon: Icon(Icons.search_rounded),
                 ),
-                onChanged: (_) => setState(() {}),
+                onChanged: (_) => _scheduleLocalSearch(),
               ),
               const SizedBox(height: AppSpacing.sm),
               TextField(
@@ -5815,7 +5856,7 @@ class _PersistentIngredientListScreenState
                   labelText: 'Filtra per brand',
                   prefixIcon: Icon(Icons.sell_outlined),
                 ),
-                onChanged: (_) => setState(() {}),
+                onChanged: (_) => _scheduleLocalSearch(),
               ),
               const SizedBox(height: AppSpacing.md),
               Wrap(
@@ -5875,21 +5916,47 @@ class _PersistentIngredientListScreenState
               const SizedBox(height: AppSpacing.sectionGap),
               const TtSectionHeader(title: 'Archivio locale'),
               const SizedBox(height: AppSpacing.md),
-              if (filtered.isEmpty)
+              if (ingredientsPage.items.isEmpty)
                 const _EmptyInline(
                   message: 'Nessun ingrediente locale con questi criteri.',
                 )
               else
-                for (final IngredientEntity ingredient in filtered)
+                for (final IngredientEntity ingredient in ingredientsPage.items)
                   Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                     child: _IngredientCard(ingredient: ingredient),
                   ),
+              if (ingredientsPage.totalPages > 1) ...<Widget>[
+                const SizedBox(height: AppSpacing.sm),
+                _LocalIngredientPager(
+                  page: ingredientsPage.page,
+                  pageCount: ingredientsPage.totalPages,
+                  total: ingredientsPage.totalCount,
+                  onPrevious: ingredientsPage.hasPrevious
+                      ? () => setState(() => _localPage -= 1)
+                      : null,
+                  onNext: ingredientsPage.hasNext
+                      ? () => setState(() => _localPage += 1)
+                      : null,
+                ),
+              ],
             ],
           );
         },
       ),
     );
+  }
+
+  void _scheduleLocalSearch() {
+    _localSearchDebounce?.cancel();
+    _localSearchDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      setState(() {
+        _localSearch = _query.text.trim();
+        _localBrand = _brandFilter.text.trim();
+        _localPage = 1;
+      });
+    });
   }
 
   Future<void> _searchOpenFoodFacts() async {
@@ -6106,6 +6173,9 @@ class _PersistentIngredientListScreenState
     setState(() {
       _query.clear();
       _brandFilter.clear();
+      _localSearch = '';
+      _localBrand = '';
+      _localPage = 1;
       _onlineResults = const <OpenFoodFactsProduct>[];
       _onlineError = '';
       _onlineAttempt = 0;
@@ -6138,6 +6208,56 @@ class _ManualIngredientDraft {
   final double fatPerReference;
   final double fiberPerReference;
   final double sugarPerReference;
+}
+
+class _LocalIngredientPager extends StatelessWidget {
+  const _LocalIngredientPager({
+    required this.page,
+    required this.pageCount,
+    required this.total,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final int page;
+  final int pageCount;
+  final int total;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    return TtAppCard(
+      child: Row(
+        children: <Widget>[
+          IconButton(
+            tooltip: 'Pagina precedente',
+            onPressed: onPrevious,
+            icon: const Icon(Icons.chevron_left_rounded),
+          ),
+          Expanded(
+            child: Column(
+              children: <Widget>[
+                Text(
+                  'Pagina $page di $pageCount',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                Text(
+                  '$total ingredienti - 10 per pagina',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Pagina successiva',
+            onPressed: onNext,
+            icon: const Icon(Icons.chevron_right_rounded),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ManualIngredientSheet extends StatefulWidget {
@@ -6450,9 +6570,192 @@ class IngredientDetailScreen extends ConsumerStatefulWidget {
 
 class _IngredientDetailScreenState
     extends ConsumerState<IngredientDetailScreen> {
+  static const int _usagePageSize = 10;
+
   bool _isWorking = false;
+  bool _usageLoading = false;
   DateTime? _usageFrom;
   DateTime? _usageTo;
+  String _usageIngredientUuid = '';
+  String _usageError = '';
+  List<IngredientMealUsageSnapshot> _usageItems =
+      const <IngredientMealUsageSnapshot>[];
+  int _usagePage = 1;
+  int _usageTotalCount = 0;
+  int _usageRequestId = 0;
+
+  int get _usageTotalPages {
+    if (_usageTotalCount <= 0) return 0;
+    return (_usageTotalCount / _usagePageSize).ceil();
+  }
+
+  void _ensureUsageLoadedFor(IngredientEntity ingredient) {
+    if (_usageIngredientUuid == ingredient.uuid) {
+      return;
+    }
+    _usageIngredientUuid = ingredient.uuid;
+    _usagePage = 1;
+    _usageTotalCount = 0;
+    _usageItems = const <IngredientMealUsageSnapshot>[];
+    _usageError = '';
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_loadUsagePage(page: 1));
+    });
+  }
+
+  Future<void> _loadUsagePage({required int page}) async {
+    final String ingredientUuid = _usageIngredientUuid;
+    if (ingredientUuid.isEmpty) {
+      return;
+    }
+    final int requestId = ++_usageRequestId;
+    final int safePage = PagedResult.normalizePage(page);
+    final Stopwatch totalWatch = Stopwatch()..start();
+    unawaited(
+      AppDiagnostics.instance.info(
+        'ingredient_usage.page_load.started',
+        data: <String, Object?>{
+          'page': safePage,
+          'pageSize': _usagePageSize,
+        },
+      ),
+    );
+    unawaited(
+      AppDiagnostics.instance.info(
+        'pagination.page_load.started',
+        data: <String, Object?>{
+          'entityType': 'ingredient_usage',
+          'screen': 'ingredient_detail',
+          'page': safePage,
+          'pageSize': _usagePageSize,
+          'searchActive': false,
+          'filterCount': _usageFrom == null && _usageTo == null ? 0 : 1,
+        },
+      ),
+    );
+    setState(() {
+      _usageLoading = true;
+      _usageError = '';
+    });
+    try {
+      final Stopwatch dbWatch = Stopwatch()..start();
+      final Store store = ref.read(objectBoxStoreProvider);
+      final IngredientUsagePageSnapshot result = await store
+          .runAsync<IngredientUsagePageRequest, IngredientUsagePageSnapshot>(
+        loadIngredientUsagePageInBackground,
+        IngredientUsagePageRequest(
+          ingredientUuid: ingredientUuid,
+          page: safePage,
+          pageSize: _usagePageSize,
+          fromDateKey: _usageFrom == null ? null : _dateKey(_usageFrom!),
+          toDateKey: _usageTo == null ? null : _dateKey(_usageTo!),
+        ),
+      );
+      dbWatch.stop();
+      totalWatch.stop();
+      if (!mounted || requestId != _usageRequestId) {
+        unawaited(
+          AppDiagnostics.instance.info(
+            'pagination.page_load.completed',
+            data: <String, Object?>{
+              'entityType': 'ingredient_usage',
+              'screen': 'ingredient_detail',
+              'page': safePage,
+              'pageSize': _usagePageSize,
+              'resultCount': result.items.length,
+              'totalCount': result.totalCount,
+              'searchActive': false,
+              'filterCount': _usageFrom == null && _usageTo == null ? 0 : 1,
+              'dbMs': dbWatch.elapsedMilliseconds,
+              'mappingMs': 0,
+              'imageMetadataMs': 0,
+              'totalMs': totalWatch.elapsedMilliseconds,
+              'cacheHit': false,
+              'requestDiscarded': true,
+            },
+          ),
+        );
+        return;
+      }
+      setState(() {
+        _usagePage = result.page;
+        _usageItems = result.items;
+        _usageTotalCount = result.totalCount;
+        _usageLoading = false;
+      });
+      unawaited(
+        AppDiagnostics.instance.info(
+          'ingredient_usage.page_load.completed',
+          data: <String, Object?>{
+            'page': result.page,
+            'pageSize': result.pageSize,
+            'resultCount': result.items.length,
+            'totalCount': result.totalCount,
+            'dbMs': dbWatch.elapsedMilliseconds,
+            'mapMs': 0,
+            'totalMs': totalWatch.elapsedMilliseconds,
+            'cacheHit': false,
+          },
+        ),
+      );
+      unawaited(
+        AppDiagnostics.instance.info(
+          'pagination.page_load.completed',
+          data: <String, Object?>{
+            'entityType': 'ingredient_usage',
+            'screen': 'ingredient_detail',
+            'page': result.page,
+            'pageSize': result.pageSize,
+            'resultCount': result.items.length,
+            'totalCount': result.totalCount,
+            'searchActive': false,
+            'filterCount': _usageFrom == null && _usageTo == null ? 0 : 1,
+            'dbMs': dbWatch.elapsedMilliseconds,
+            'mappingMs': 0,
+            'imageMetadataMs': 0,
+            'totalMs': totalWatch.elapsedMilliseconds,
+            'cacheHit': false,
+            'requestDiscarded': false,
+          },
+        ),
+      );
+    } on Object catch (error, stackTrace) {
+      totalWatch.stop();
+      if (mounted && requestId == _usageRequestId) {
+        setState(() {
+          _usageLoading = false;
+          _usageError = error.toString();
+        });
+      }
+      unawaited(
+        AppDiagnostics.instance.error(
+          'ingredient_usage.page_load.failed',
+          error: error,
+          stackTrace: stackTrace,
+          data: <String, Object?>{
+            'page': safePage,
+            'pageSize': _usagePageSize,
+            'totalMs': totalWatch.elapsedMilliseconds,
+          },
+        ),
+      );
+      unawaited(
+        AppDiagnostics.instance.error(
+          'pagination.page_load.failed',
+          error: error,
+          stackTrace: stackTrace,
+          data: <String, Object?>{
+            'entityType': 'ingredient_usage',
+            'screen': 'ingredient_detail',
+            'page': safePage,
+            'pageSize': _usagePageSize,
+            'totalMs': totalWatch.elapsedMilliseconds,
+          },
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -6468,19 +6771,13 @@ class _IngredientDetailScreenState
         body: const _EmptyInline(message: 'Ingrediente non trovato.'),
       );
     }
-    final List<IngredientMealUsage> ingredientUsage =
-        ref.read(mealRepositoryProvider).getIngredientUsage(
-              ingredient.uuid,
-              fromDateKey: _usageFrom == null ? null : _dateKey(_usageFrom!),
-              toDateKey: _usageTo == null ? null : _dateKey(_usageTo!),
-            );
+    _ensureUsageLoadedFor(ingredient);
     final _IngredientUsageStats usageStats = _IngredientUsageStats.fromUsage(
-      ingredientUsage,
+      _usageItems,
       from: _usageFrom,
       to: _usageTo,
     );
-    final List<IngredientMealUsage> recentUsage =
-        ingredientUsage.take(10).toList();
+    final List<IngredientMealUsageSnapshot> recentUsage = _usageItems;
 
     return Scaffold(
       appBar: AppBar(
@@ -6619,7 +6916,9 @@ class _IngredientDetailScreenState
                               setState(() {
                                 _usageFrom = null;
                                 _usageTo = null;
+                                _usagePage = 1;
                               });
+                              unawaited(_loadUsagePage(page: 1));
                             },
                             icon: const Icon(Icons.clear_rounded),
                             label: const Text('Azzera'),
@@ -6627,42 +6926,54 @@ class _IngredientDetailScreenState
                       ],
                     ),
                     const SizedBox(height: AppSpacing.md),
-                    _MetricGrid(
-                      metrics: <_Metric>[
-                        _Metric(
-                          'Grammi totali',
-                          '${_fmt(usageStats.totalGrams)} g',
-                        ),
-                        _Metric(
-                          'Registrazioni',
-                          usageStats.registrationCount.toString(),
-                        ),
-                        _Metric(
-                          'Media settimanale',
-                          '${_fmt(usageStats.registrationsPerWeek)} / sett.',
-                        ),
-                      ],
-                    ),
+                    if (_usageLoading && recentUsage.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (_usageError.isNotEmpty)
+                      Text('Storico non disponibile: $_usageError')
+                    else
+                      _MetricGrid(
+                        metrics: <_Metric>[
+                          _Metric(
+                            'Grammi pagina',
+                            '${_fmt(usageStats.totalGrams)} g',
+                          ),
+                          _Metric(
+                            'Registrazioni pagina',
+                            usageStats.registrationCount.toString(),
+                          ),
+                          _Metric(
+                            'Media pagina',
+                            '${_fmt(usageStats.registrationsPerWeek)} / sett.',
+                          ),
+                        ],
+                      ),
                   ],
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
-              if (recentUsage.isEmpty)
+              if (_usageLoading && recentUsage.isNotEmpty) ...<Widget>[
+                const LinearProgressIndicator(),
+                const SizedBox(height: AppSpacing.md),
+              ],
+              if (!_usageLoading && recentUsage.isEmpty)
                 const _EmptyInline(
                   message: 'Nessun pasto trovato nell’intervallo selezionato.',
                 )
               else
-                for (final IngredientMealUsage usage in recentUsage)
+                for (final IngredientMealUsageSnapshot usage in recentUsage)
                   Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                     child: TtAppCard(
-                      onTap: () => context.push('/food/meals/${usage.meal.id}'),
+                      onTap: () => context.push('/food/meals/${usage.mealId}'),
                       child: Row(
                         children: <Widget>[
                           CircleAvatar(
                             child: Text(
-                              usage.meal.dateKey.length >= 10
-                                  ? usage.meal.dateKey.substring(8, 10)
+                              usage.dateKey.length >= 10
+                                  ? usage.dateKey.substring(8, 10)
                                   : '•',
                             ),
                           ),
@@ -6672,13 +6983,13 @@ class _IngredientDetailScreenState
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: <Widget>[
                                 Text(
-                                  usage.meal.title,
+                                  usage.title,
                                   style:
                                       Theme.of(context).textTheme.titleMedium,
                                 ),
                                 Text(
-                                  '${usage.meal.dateKey} · '
-                                  '${_slotLabel(usage.meal.mealTypeCode)}',
+                                  '${usage.dateKey} · '
+                                  '${_slotLabel(usage.mealTypeCode)}',
                                   style: Theme.of(context).textTheme.bodySmall,
                                 ),
                               ],
@@ -6705,6 +7016,38 @@ class _IngredientDetailScreenState
                       ),
                     ),
                   ),
+              if (_usageTotalPages > 1) ...<Widget>[
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: <Widget>[
+                    IconButton.outlined(
+                      tooltip: 'Pagina precedente',
+                      onPressed: _usagePage <= 1 || _usageLoading
+                          ? null
+                          : () => unawaited(
+                                _loadUsagePage(page: _usagePage - 1),
+                              ),
+                      icon: const Icon(Icons.chevron_left_rounded),
+                    ),
+                    Expanded(
+                      child: Text(
+                        'Pagina $_usagePage di $_usageTotalPages - $_usageTotalCount risultati',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                    IconButton.outlined(
+                      tooltip: 'Pagina successiva',
+                      onPressed: _usagePage >= _usageTotalPages || _usageLoading
+                          ? null
+                          : () => unawaited(
+                                _loadUsagePage(page: _usagePage + 1),
+                              ),
+                      icon: const Icon(Icons.chevron_right_rounded),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: AppSpacing.sectionGap),
               const TtSectionHeader(title: 'Dettagli'),
               const SizedBox(height: AppSpacing.md),
@@ -6779,7 +7122,9 @@ class _IngredientDetailScreenState
           _usageFrom = picked;
         }
       }
+      _usagePage = 1;
     });
+    unawaited(_loadUsagePage(page: 1));
   }
 
   Future<void> _confirmDeleteIngredient(IngredientEntity ingredient) async {
@@ -6861,17 +7206,18 @@ class _IngredientUsageStats {
   });
 
   factory _IngredientUsageStats.fromUsage(
-    List<IngredientMealUsage> usage, {
+    List<IngredientMealUsageSnapshot> usage, {
     DateTime? from,
     DateTime? to,
   }) {
     final double totalGrams = usage.fold<double>(
       0,
-      (double sum, IngredientMealUsage item) => sum + item.grams,
+      (double sum, IngredientMealUsageSnapshot item) => sum + item.grams,
     );
     final int registrationCount = usage.fold<int>(
       0,
-      (int sum, IngredientMealUsage item) => sum + item.registrationCount,
+      (int sum, IngredientMealUsageSnapshot item) =>
+          sum + item.registrationCount,
     );
     if (usage.isEmpty) {
       return const _IngredientUsageStats(
@@ -6882,7 +7228,7 @@ class _IngredientUsageStats {
     }
 
     final List<DateTime> usageDates = usage
-        .map((IngredientMealUsage item) => DateTime.parse(item.meal.dateKey))
+        .map((IngredientMealUsageSnapshot item) => DateTime.parse(item.dateKey))
         .toList()
       ..sort();
     final DateTime rangeStart = from ?? usageDates.first;
@@ -8414,276 +8760,30 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   }
 
   Future<void> _showAddRecipeIngredientDialog() async {
-    final List<IngredientEntity> archive =
-        ref.read(ingredientRepositoryProvider).getAllActive();
-    if (archive.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nessun ingrediente disponibile.')),
-      );
-      return;
-    }
-    final TextEditingController query = TextEditingController();
-    final Set<int> selectedIds = <int>{};
-    final Map<int, TextEditingController> gramsControllers =
-        <int, TextEditingController>{};
-    int step = 0;
-    await showModalBottomSheet<void>(
+    final List<_RecipeIngredientSelection>? selections =
+        await showModalBottomSheet<List<_RecipeIngredientSelection>>(
       context: context,
-      showDragHandle: true,
       isScrollControlled: true,
+      useSafeArea: true,
       builder: (BuildContext sheetContext) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setSheetState) {
-            final String clean = query.text.trim().toLowerCase();
-// RECIPE_PICKER_MAX_10_SENTINEL
-            final List<IngredientEntity> filtered = clean.isEmpty
-                ? const <IngredientEntity>[]
-                : archive
-                    .where((IngredientEntity ingredient) {
-                      return ingredient.name.toLowerCase().contains(clean) ||
-                          ingredient.brand.toLowerCase().contains(clean);
-                    })
-                    .take(10)
-                    .toList(growable: false);
-            final List<IngredientEntity> selected = archive
-                .where((IngredientEntity ingredient) =>
-                    selectedIds.contains(ingredient.id))
-                .toList();
-            for (final IngredientEntity ingredient in selected) {
-              gramsControllers.putIfAbsent(
-                ingredient.id,
-                () => TextEditingController(text: '100'),
-              );
-            }
-            return DraggableScrollableSheet(
-              expand: false,
-              initialChildSize: 0.9,
-              minChildSize: 0.35,
-              maxChildSize: 0.96,
-              builder: (BuildContext context, ScrollController controller) {
-                return SafeArea(
-                  child: ListView(
-                    controller: controller,
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg,
-                      AppSpacing.sm,
-                      AppSpacing.lg,
-                      AppSpacing.lg,
-                    ),
-                    children: <Widget>[
-                      Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: Text(
-                              step == 0
-                                  ? 'Ingredienti ricetta'
-                                  : 'Grammature ricetta',
-                              style: Theme.of(context).textTheme.headlineSmall,
-                            ),
-                          ),
-                          _StatusPill(
-                            label: '${selectedIds.length} selezionati',
-                            isWarning: selectedIds.isEmpty,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                if (step == 1) {
-                                  setSheetState(() => step = 0);
-                                } else {
-                                  Navigator.of(sheetContext).pop();
-                                }
-                              },
-                              icon: Icon(step == 1
-                                  ? Icons.arrow_back_rounded
-                                  : Icons.keyboard_arrow_down),
-                              label: Text(step == 1 ? 'Indietro' : 'Chiudi'),
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: selectedIds.isEmpty
-                                  ? null
-                                  : () {
-                                      if (step == 0) {
-                                        setSheetState(() => step = 1);
-                                      } else {
-                                        _appendRecipeIngredients(
-                                          selected,
-                                          gramsControllers,
-                                        );
-                                        Navigator.of(sheetContext).pop();
-                                      }
-                                    },
-                              icon: Icon(step == 0
-                                  ? Icons.arrow_forward_rounded
-                                  : Icons.check_rounded),
-                              label: Text(step == 0 ? 'Continua' : 'Conferma'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      if (step == 0) ...<Widget>[
-                        TextField(
-                          controller: query,
-                          decoration: const InputDecoration(
-                            labelText: 'Cerca archivio ingredienti',
-                            prefixIcon: Icon(Icons.search_rounded),
-                          ),
-                          onChanged: (_) => setSheetState(() {}),
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        for (final IngredientEntity ingredient in filtered)
-                          Padding(
-                            padding:
-                                const EdgeInsets.only(bottom: AppSpacing.sm),
-                            child: TtAppCard(
-                              onTap: () {
-                                setSheetState(() {
-                                  if (selectedIds.contains(ingredient.id)) {
-                                    selectedIds.remove(ingredient.id);
-                                  } else {
-                                    selectedIds.add(ingredient.id);
-                                    gramsControllers.putIfAbsent(
-                                      ingredient.id,
-                                      () => TextEditingController(text: '100'),
-                                    );
-                                  }
-                                });
-                              },
-                              child: Row(
-                                children: <Widget>[
-                                  _FoodThumb(
-                                    imageUrl: ingredient.imageUrl,
-                                    fallbackIcon: Icons.inventory_2_outlined,
-                                  ),
-                                  const SizedBox(width: AppSpacing.md),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: <Widget>[
-                                        Text(
-                                          ingredient.name,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleMedium,
-                                        ),
-                                        Text(
-                                          ingredient.brand,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodySmall,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Icon(
-                                    selectedIds.contains(ingredient.id)
-                                        ? Icons.check_circle_rounded
-                                        : Icons.circle_outlined,
-                                    color: selectedIds.contains(ingredient.id)
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Theme.of(context).colorScheme.outline,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                      ] else ...<Widget>[
-                        for (final IngredientEntity ingredient in selected)
-                          Padding(
-                            padding:
-                                const EdgeInsets.only(bottom: AppSpacing.sm),
-                            child: TtAppCard(
-                              child: Row(
-                                children: <Widget>[
-                                  Expanded(child: Text(ingredient.name)),
-                                  SizedBox(
-                                    width: 110,
-                                    child: TextField(
-                                      controller:
-                                          gramsControllers[ingredient.id],
-                                      keyboardType: TextInputType.number,
-                                      decoration: const InputDecoration(
-                                        labelText: 'g',
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                      ],
-                      const SizedBox(height: AppSpacing.sectionGap),
-                      Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                if (step == 1) {
-                                  setSheetState(() => step = 0);
-                                } else {
-                                  Navigator.of(sheetContext).pop();
-                                }
-                              },
-                              icon: Icon(step == 1
-                                  ? Icons.arrow_back_rounded
-                                  : Icons.keyboard_arrow_down),
-                              label: Text(step == 1 ? 'Indietro' : 'Chiudi'),
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: selectedIds.isEmpty
-                                  ? null
-                                  : () {
-                                      if (step == 0) {
-                                        setSheetState(() => step = 1);
-                                      } else {
-                                        _appendRecipeIngredients(
-                                          selected,
-                                          gramsControllers,
-                                        );
-                                        Navigator.of(sheetContext).pop();
-                                      }
-                                    },
-                              icon: Icon(step == 0
-                                  ? Icons.arrow_forward_rounded
-                                  : Icons.check_rounded),
-                              label: Text(step == 0 ? 'Continua' : 'Conferma'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                );
-              },
-            );
-          },
+        return _RecipeIngredientPickerSheet(
+          repository: ref.read(ingredientRepositoryProvider),
         );
       },
     );
+    if (selections == null || selections.isEmpty || !mounted) {
+      return;
+    }
+    _appendRecipeIngredientSelections(selections);
   }
 
-  void _appendRecipeIngredients(
-    List<IngredientEntity> selected,
-    Map<int, TextEditingController> gramsControllers,
+  void _appendRecipeIngredientSelections(
+    List<_RecipeIngredientSelection> selections,
   ) {
     final List<String> lines = <String>[];
-    for (final IngredientEntity ingredient in selected) {
-      final double gramsValue =
-          _toDouble(gramsControllers[ingredient.id]?.text ?? '') ?? 100;
-      final double safeGrams = gramsValue <= 0 ? 100 : gramsValue;
+    for (final _RecipeIngredientSelection selection in selections) {
+      final IngredientEntity ingredient = selection.ingredient;
+      final double safeGrams = selection.grams <= 0 ? 100 : selection.grams;
       final double factor = ingredient.nutritionReferenceAmount == 0
           ? 0
           : safeGrams / ingredient.nutritionReferenceAmount;
@@ -9043,6 +9143,329 @@ void _applyRecipeTotals(
       ..proteinPer100Grams = null
       ..carbsPer100Grams = null
       ..fatPer100Grams = null;
+  }
+}
+
+class _RecipeIngredientSelection {
+  const _RecipeIngredientSelection({
+    required this.ingredient,
+    required this.grams,
+  });
+
+  final IngredientEntity ingredient;
+  final double grams;
+}
+
+class _RecipeIngredientPickerSheet extends StatefulWidget {
+  const _RecipeIngredientPickerSheet({required this.repository});
+
+  final IngredientRepository repository;
+
+  @override
+  State<_RecipeIngredientPickerSheet> createState() =>
+      _RecipeIngredientPickerSheetState();
+}
+
+class _RecipeIngredientPickerSheetState
+    extends State<_RecipeIngredientPickerSheet> {
+  static const int _pageSize = 10;
+
+  final TextEditingController _query = TextEditingController();
+  final Map<int, IngredientEntity> _selected = <int, IngredientEntity>{};
+  final Map<int, TextEditingController> _gramsControllers =
+      <int, TextEditingController>{};
+
+  Timer? _debounce;
+  PagedResult<IngredientEntity> _result = const PagedResult<IngredientEntity>(
+    items: <IngredientEntity>[],
+    page: 1,
+    pageSize: _pageSize,
+    totalCount: 0,
+  );
+  int _requestId = 0;
+  int _step = 0;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadPage(page: 1));
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _query.dispose();
+    for (final TextEditingController controller in _gramsControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _loadPage({required int page}) async {
+    final int requestId = ++_requestId;
+    setState(() => _loading = true);
+    await Future<void>.delayed(Duration.zero);
+    final PagedResult<IngredientEntity> result =
+        widget.repository.loadIngredientPage(
+      page: page,
+      pageSize: _pageSize,
+      search: _query.text,
+    );
+    if (!mounted || requestId != _requestId) {
+      return;
+    }
+    setState(() {
+      _result = result;
+      _loading = false;
+    });
+  }
+
+  void _onQueryChanged(String _) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 250), () {
+      if (mounted) {
+        unawaited(_loadPage(page: 1));
+      }
+    });
+  }
+
+  void _toggle(IngredientEntity ingredient) {
+    setState(() {
+      if (_selected.remove(ingredient.id) != null) {
+        return;
+      }
+      _selected[ingredient.id] = ingredient;
+      _gramsControllers.putIfAbsent(
+        ingredient.id,
+        () => TextEditingController(text: '100'),
+      );
+    });
+  }
+
+  List<_RecipeIngredientSelection> _buildSelections() {
+    return <_RecipeIngredientSelection>[
+      for (final IngredientEntity ingredient in _selected.values)
+        _RecipeIngredientSelection(
+          ingredient: ingredient,
+          grams: _toDouble(_gramsControllers[ingredient.id]?.text ?? '') ?? 100,
+        ),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FractionallySizedBox(
+      heightFactor: 0.92,
+      child: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: AppSpacing.lg,
+            right: AppSpacing.lg,
+            bottom: MediaQuery.viewInsetsOf(context).bottom + AppSpacing.md,
+          ),
+          child: Column(
+            children: <Widget>[
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      _step == 0 ? 'Ingredienti ricetta' : 'Grammature ricetta',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                  ),
+                  _StatusPill(
+                    label: '${_selected.length} selezionati',
+                    isWarning: _selected.isEmpty,
+                  ),
+                  IconButton(
+                    tooltip: 'Chiudi',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              if (_step == 0) ...<Widget>[
+                const SizedBox(height: AppSpacing.sm),
+                TextField(
+                  controller: _query,
+                  decoration: const InputDecoration(
+                    labelText: 'Cerca archivio ingredienti',
+                    prefixIcon: Icon(Icons.search_rounded),
+                  ),
+                  onChanged: _onQueryChanged,
+                ),
+              ],
+              const SizedBox(height: AppSpacing.md),
+              Expanded(
+                child: _step == 0 ? _buildArchivePage() : _buildAmounts(),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        if (_step == 1) {
+                          setState(() => _step = 0);
+                        } else {
+                          Navigator.of(context).pop();
+                        }
+                      },
+                      icon: Icon(
+                        _step == 1
+                            ? Icons.arrow_back_rounded
+                            : Icons.keyboard_arrow_down,
+                      ),
+                      label: Text(_step == 1 ? 'Indietro' : 'Chiudi'),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _selected.isEmpty
+                          ? null
+                          : () {
+                              if (_step == 0) {
+                                setState(() => _step = 1);
+                              } else {
+                                Navigator.of(context).pop(_buildSelections());
+                              }
+                            },
+                      icon: Icon(
+                        _step == 0
+                            ? Icons.arrow_forward_rounded
+                            : Icons.check_rounded,
+                      ),
+                      label: Text(_step == 0 ? 'Continua' : 'Conferma'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildArchivePage() {
+    if (_loading) {
+      return const DelayedLoadingIndicator();
+    }
+    return Column(
+      children: <Widget>[
+        Expanded(
+          child: _result.items.isEmpty
+              ? const Center(child: Text('Nessun ingrediente disponibile.'))
+              : ListView.separated(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  itemCount: _result.items.length,
+                  separatorBuilder: (_, __) =>
+                      const SizedBox(height: AppSpacing.sm),
+                  itemBuilder: (BuildContext context, int index) {
+                    final IngredientEntity ingredient = _result.items[index];
+                    final bool selected = _selected.containsKey(ingredient.id);
+                    return TtAppCard(
+                      onTap: () => _toggle(ingredient),
+                      child: Row(
+                        children: <Widget>[
+                          _FoodThumb(
+                            imageUrl: ingredient.imageUrl,
+                            fallbackIcon: Icons.inventory_2_outlined,
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Text(
+                                  ingredient.name,
+                                  style:
+                                      Theme.of(context).textTheme.titleMedium,
+                                ),
+                                if (ingredient.brand.trim().isNotEmpty)
+                                  Text(
+                                    ingredient.brand,
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            selected
+                                ? Icons.check_circle_rounded
+                                : Icons.circle_outlined,
+                            color: selected
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).colorScheme.outline,
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+        if (_result.totalPages > 1) ...<Widget>[
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: <Widget>[
+              IconButton(
+                tooltip: 'Pagina precedente',
+                onPressed: _result.hasPrevious
+                    ? () => unawaited(_loadPage(page: _result.page - 1))
+                    : null,
+                icon: const Icon(Icons.chevron_left_rounded),
+              ),
+              Expanded(
+                child: Text(
+                  'Pagina ${_result.page} di ${_result.totalPages} · '
+                  '${_result.totalCount} ingredienti',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Pagina successiva',
+                onPressed: _result.hasNext
+                    ? () => unawaited(_loadPage(page: _result.page + 1))
+                    : null,
+                icon: const Icon(Icons.chevron_right_rounded),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildAmounts() {
+    return ListView.separated(
+      itemCount: _selected.length,
+      separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
+      itemBuilder: (BuildContext context, int index) {
+        final IngredientEntity ingredient = _selected.values.elementAt(index);
+        return TtAppCard(
+          child: Row(
+            children: <Widget>[
+              Expanded(child: Text(ingredient.name)),
+              SizedBox(
+                width: 110,
+                child: TextField(
+                  controller: _gramsControllers[ingredient.id],
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(labelText: 'g'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
 

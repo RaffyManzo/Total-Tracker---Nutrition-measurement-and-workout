@@ -40,8 +40,20 @@ void main() {
       'Batch picker must return data before caller persists it',
     );
     expectSource(
-      source.contains('la pagina resta utilizzabile'),
+      source.contains('continuare a usare la pagina'),
       'Collapsed state must explain that the page remains usable',
+    );
+    expectSource(
+      source.contains('DraggableScrollableSheet('),
+      'Batch picker must use the bounded draggable sheet',
+    );
+    expectSource(
+      source.contains('_collapsedExtent = 0.22'),
+      'Collapsed extent must match the current bounded layout',
+    );
+    expectSource(
+      !source.contains('OverflowBox('),
+      'Batch picker must not escape viewport constraints',
     );
   });
 
@@ -78,6 +90,7 @@ void main() {
     final String source = File(
       'lib/features/nutrition/presentation/safe_meal_ingredient_overlay.dart',
     ).readAsStringSync();
+
     expectSource(
       source.contains('int _childRevision = 0;'),
       'Missing meal-detail revision',
@@ -96,6 +109,7 @@ void main() {
     final String source = File(
       'lib/features/nutrition/presentation/widgets/month_meal_calendar_card.dart',
     ).readAsStringSync();
+
     for (final String marker in <String>[
       'trackedFreeMeals',
       'estimatedFreeMeals',
@@ -109,6 +123,7 @@ void main() {
     ]) {
       expectSource(source.contains(marker), 'Missing calendar marker: $marker');
     }
+
     expectSource(
       RegExp(
         r'if\s*\(\s*!isFuture\s*&&\s*info\s*!=\s*null\s*&&\s*'
@@ -123,6 +138,7 @@ void main() {
     final String source = File(
       'lib/features/nutrition/presentation/food_v01_screens.dart',
     ).readAsStringSync();
+
     for (final String utf8Marker in <String>[
       'Libero · non tracciato',
       'Libero · stimato',
@@ -135,6 +151,7 @@ void main() {
         'Missing or corrupted V24 UTF-8 marker: $utf8Marker',
       );
     }
+
     expectSource(
       source.contains("phases['liveTargetCalculations']"),
       'Missing weekly live-target counter',
@@ -157,6 +174,7 @@ void main() {
     final String source = File(
       'lib/features/nutrition/presentation/food_v01_screens.dart',
     ).readAsStringSync();
+
     expectSource(
       source.contains("'dailyTargetResultMs'"),
       'Dashboard provider does not expose the single target phase',
